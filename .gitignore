@@ -1,0 +1,10 @@
+# Task
+.task/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Devbox
+.devbox/

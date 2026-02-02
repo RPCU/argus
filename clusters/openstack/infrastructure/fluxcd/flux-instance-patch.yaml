@@ -1,0 +1,10 @@
+apiVersion: fluxcd.controlplane.io/v1
+kind: FluxInstance
+metadata:
+  name: flux
+  namespace: flux-system
+spec:
+  cluster:
+    domain: "openstack.local"
+  sync:
+    path: "./clusters/openstack"

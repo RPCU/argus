@@ -1,0 +1,4 @@
+resources:
+  - cilium.yaml
+  - flux-operator.yaml
+  - fluxcd/

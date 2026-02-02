@@ -1,0 +1,4 @@
+resources:
+  - ../../../../infrastructure/fluxcd/instances
+patches:
+  - path: flux-instance-patch.yaml

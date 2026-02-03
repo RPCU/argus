@@ -1,0 +1,28 @@
+apiVersion: ceph.rook.io/v1
+kind: CephCluster
+metadata:
+  name: rook-ceph
+  namespace: rook-ceph
+spec:
+  cephVersion:
+    image: quay.io/ceph/ceph:v19.2.3
+  dataDirHostPath: /var/lib/rook
+  mon:
+    count: 3
+    allowMultiplePerNode: false
+  dashboard:
+    enabled: true
+  # cluster level storage configuration and selection
+  storage:
+    useAllNodes: false
+    useAllDevices: false
+    nodes:
+      - name: "lucy"
+        devices: # specific devices to use for storage can be specified for each node
+          - name: "nvme1n1" # Whole storage device
+      - name: "makise"
+        devices:
+          - name: "nvme1n1"
+      - name: "quinn"
+        devices:
+          - name: "nvme1n1"

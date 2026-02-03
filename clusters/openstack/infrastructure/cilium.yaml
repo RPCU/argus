@@ -44,7 +44,8 @@ spec:
         spec:
           allowFirstLastIPs: "No"
           blocks:
-            - cidr: 10.0.1.0/24
+            - start: 10.0.0.251
+            - stop: 10.0.0.253
           disabled: false
       target:
         kind: CiliumLoadBalancerIPPool

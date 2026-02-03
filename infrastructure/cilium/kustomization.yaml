@@ -2,6 +2,8 @@ namespace: kube-system
 resources:
   - helmrepo.yaml
   - helmrelease.yaml
+  - ciliumloadbalancerippool.yaml
+  - ciliuml2announcementpolicy.yaml
 configMapGenerator:
   - name: cilium-values
     files:

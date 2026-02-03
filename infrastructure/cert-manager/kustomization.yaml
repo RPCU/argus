@@ -1,0 +1,11 @@
+namespace: cert-manager
+resources:
+  - namespace.yaml
+  - helmrepo.yaml
+  - helmrelease.yaml
+configMapGenerator:
+  - name: cert-manager-values
+    files:
+      - values.yaml
+generatorOptions:
+  disableNameSuffixHash: true

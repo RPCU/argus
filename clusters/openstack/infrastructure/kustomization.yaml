@@ -1,4 +1,5 @@
 resources:
+  - cert-manager.yaml
   - cilium.yaml
   - flux-operator.yaml
   - fluxcd/

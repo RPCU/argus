@@ -13,8 +13,6 @@ spec:
         kind: HelmRepository
         name: openstack-helm
         namespace: openstack
-  install:
-    createNamespace: true
   upgrade:
     crds: CreateReplace
   valuesFrom:

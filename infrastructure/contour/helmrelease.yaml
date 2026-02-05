@@ -16,3 +16,7 @@ spec:
     createNamespace: true
   upgrade:
     crds: CreateReplace
+  values:
+    envoy:
+      podLabels:
+        app: ingress-api

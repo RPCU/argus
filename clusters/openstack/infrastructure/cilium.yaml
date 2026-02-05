@@ -44,7 +44,7 @@ spec:
         spec:
           allowFirstLastIPs: "Yes"
           blocks:
-            - start: 10.0.0.251
+            - start: 10.0.0.240
             - stop: 10.0.0.253
           disabled: false
       target:

@@ -3,6 +3,7 @@ resources:
   - cert-manager.yaml
   - internal-issuer.yaml
   - cilium.yaml
+  - contour.yaml
   - flux-operator.yaml
   - rook.yaml
   - fluxcd/

@@ -1,0 +1,11 @@
+namespace: openstack
+resources:
+  - namespace.yaml
+  - helmrepo.yaml
+  - helmrelease.yaml
+configMapGenerator:
+  - name: mariadb-values
+    files:
+      - values.yaml
+generatorOptions:
+  disableNameSuffixHash: true

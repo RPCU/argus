@@ -1,0 +1,9 @@
+images:
+  tags:
+    prometheus_mysql_exporter_helm_tests: quay.io/airshipit/openstack-client:2025.2-ubuntu_noble
+    ks_user: quay.io/airshipit/openstack-client:2025.2-ubuntu_noble
+endpoints:
+  cluster_domain_suffix: openstack.local
+pod:
+  replicas:
+    server: 1

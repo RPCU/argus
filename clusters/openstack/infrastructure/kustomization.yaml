@@ -6,4 +6,7 @@ resources:
   - contour.yaml
   - flux-operator.yaml
   - rook.yaml
+  - openstack-rabbitmq.yaml
+  - openstack-mariadb.yaml
+  - openstack-memcached.yaml
   - fluxcd/

@@ -9,4 +9,5 @@ resources:
   - openstack-rabbitmq.yaml
   - openstack-mariadb.yaml
   - openstack-memcached.yaml
+  - openstack-keystone.yaml
   - fluxcd/

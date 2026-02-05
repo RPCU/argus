@@ -3,7 +3,7 @@ resources:
   - helmrepo.yaml
   - helmrelease.yaml
 configMapGenerator:
-  - name: rabbitmq-values
+  - name: keystone-values
     files:
       - values.yaml
 generatorOptions:

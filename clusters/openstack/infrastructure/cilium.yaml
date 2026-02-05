@@ -42,7 +42,7 @@ spec:
         metadata:
           name: internal
         spec:
-          allowFirstLastIPs: "No"
+          allowFirstLastIPs: "Yes"
           blocks:
             - start: 10.0.0.251
             - stop: 10.0.0.253

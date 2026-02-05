@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: rook-ceph-manager-dashboard-lb
+  namespace: rook-ceph
+  annotations:
+    lbipam.cilium.io/ips: "10.0.1.1"
+spec:
+  selector:
+    app: rook-ceph-mgr
+    mgr_role: active
+    rook_cluster: rook-ceph
+  ports:
+    - protocol: TCP
+      port: 7000
+      targetPort: 7000
+  type: LoadBalancer

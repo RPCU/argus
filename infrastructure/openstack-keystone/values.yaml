@@ -14,9 +14,3 @@ images:
     ks_user: "quay.io/airshipit/openstack-client:2025.2-ubuntu_noble"
 endpoints:
   cluster_domain_suffix: openstack.local
-network:
-  api:
-    ingress:
-      public: true
-      classes:
-        namespace: "contour"

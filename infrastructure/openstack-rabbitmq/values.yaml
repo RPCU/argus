@@ -7,8 +7,3 @@ endpoints:
 pod:
   replicas:
     server: 1
-network:
-  management:
-    ingress:
-      classes:
-        namespace: "contour"

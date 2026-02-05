@@ -1,6 +1,5 @@
 namespace: openstack
 resources:
-  - namespace.yaml
   - helmrepo.yaml
   - helmrelease.yaml
 configMapGenerator:

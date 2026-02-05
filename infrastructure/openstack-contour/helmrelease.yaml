@@ -20,3 +20,6 @@ spec:
     envoy:
       podLabels:
         app: ingress-api
+    contour:
+      ingressClass:
+        name: ingress-openstack

@@ -1,0 +1,15 @@
+apiVersion: ceph.rook.io/v1
+kind: CephObjectStoreUser
+metadata:
+  name: rpcu
+  namespace: rook-ceph
+spec:
+  store: rpcu-store
+  displayName: rpcu
+  quotas:
+    maxBuckets: -1
+    maxSize: -1
+    maxObjects: -1
+  capabilities:
+    user: "*"
+    bucket: "*"

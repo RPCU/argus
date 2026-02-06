@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rook-ceph-tools
+  labels:
+    app: rook-ceph-tools
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rook-ceph-tools
+  template:
+    metadata:
+      labels:
+        app: rook-ceph-tools
+    spec:
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: rook-ceph-tools
+          image: quay.io/ceph/ceph:v19.2.3 # Matches your cephClusterSpec.cephVersion.image
+          command:
+            - /bin/bash
+            - -c
+            - |
+              # Sleep forever to keep the pod running
+              sleep infinity
+          env:
+            - name: ROOK_CEPH_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: rook-ceph-mon
+                  key: ceph-username
+          volumeMounts:
+            - mountPath: /etc/ceph
+              name: ceph-config
+            - mountPath: /etc/rook
+              name: mon-endpoint-conf
+          resources: # Injected from your toolbox.resources block
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+      volumes:
+        - name: ceph-config
+          emptyDir: {}
+        - name: mon-endpoint-conf
+          configMap:
+            name: rook-ceph-mon-endpoints
+            items:
+              - key: data
+                path: mon-endpoints

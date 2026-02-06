@@ -26,7 +26,7 @@ conf:
       l3_ha: False
       max_l3_agents_per_router: 1
   auto_bridge_add:
-    br-ex: eno1
+    br-ex: eno1.4000
   plugins:
     ml2_conf:
       ml2_type_flat:

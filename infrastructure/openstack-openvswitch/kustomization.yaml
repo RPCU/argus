@@ -1,0 +1,11 @@
+namespace: openstack
+resources:
+  - helmrepo.yaml
+  - helmrelease.yaml
+  - cm.yaml
+configMapGenerator:
+  - name: openvswitch-values
+    files:
+      - values.yaml
+generatorOptions:
+  disableNameSuffixHash: true

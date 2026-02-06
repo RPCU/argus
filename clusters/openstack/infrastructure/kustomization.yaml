@@ -13,4 +13,5 @@ resources:
   - openstack-keystone.yaml
   - openstack-glance.yaml
   - openstack-cinder.yaml
+  - openstack-openvswitch.yaml
   - fluxcd/

@@ -1,0 +1,10 @@
+namespace: openstack
+resources:
+  - helmrepo.yaml
+  - helmrelease.yaml
+configMapGenerator:
+  - name: cinder-values
+    files:
+      - values.yaml
+generatorOptions:
+  disableNameSuffixHash: true

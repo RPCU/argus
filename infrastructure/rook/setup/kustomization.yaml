@@ -3,4 +3,3 @@ resources:
   - helmrelease.yaml
   - helmrepo.yaml
   - ingress.yaml
-  - toolbox-deployment.yaml

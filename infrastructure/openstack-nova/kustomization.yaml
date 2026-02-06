@@ -2,7 +2,7 @@ namespace: openstack
 resources:
   - helmrelease.yaml
 configMapGenerator:
-  - name: keystone-values
+  - name: nova-values
     files:
       - values.yaml
 generatorOptions:

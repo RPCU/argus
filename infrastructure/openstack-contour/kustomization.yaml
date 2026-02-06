@@ -3,3 +3,4 @@ kind: Kustomization
 namespace: openstack
 resources:
   - helmrelease.yaml
+  - rbacs.yaml

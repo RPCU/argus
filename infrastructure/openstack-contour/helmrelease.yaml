@@ -23,3 +23,5 @@ spec:
     contour:
       ingressClass:
         name: ingress-openstack
+    rbac:
+      create: false

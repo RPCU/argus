@@ -35,4 +35,4 @@ conf:
       ovs:
         bridge_mappings: public:br-ex
 manifests:
-  configmap_bin: true
+  configmap_bin: false

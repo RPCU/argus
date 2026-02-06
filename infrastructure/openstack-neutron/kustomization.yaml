@@ -1,8 +1,9 @@
 namespace: openstack
 resources:
   - helmrelease.yaml
+  - cm-bin.yaml
 configMapGenerator:
-  - name: keystone-values
+  - name: neutron-values
     files:
       - values.yaml
 generatorOptions:

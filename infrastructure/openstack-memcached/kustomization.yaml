@@ -1,6 +1,5 @@
 namespace: openstack
 resources:
-  - helmrepo.yaml
   - helmrelease.yaml
 configMapGenerator:
   - name: memcached-values

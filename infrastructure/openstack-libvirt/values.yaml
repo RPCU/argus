@@ -1,0 +1,8 @@
+images:
+  tags:
+    libvirt: quay.io/airshipit/libvirt:2025.2-ubuntu_noble
+conf:
+  ceph:
+    enabled: true
+endpoints:
+  cluster_domain_suffix: openstack.local

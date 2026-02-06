@@ -11,7 +11,11 @@ resources:
   - openstack-mariadb.yaml
   - openstack-memcached.yaml
   - openstack-keystone.yaml
+  - openstack-placement.yaml
   - openstack-glance.yaml
   - openstack-cinder.yaml
   - openstack-openvswitch.yaml
+  # - openstack-libvirt.yaml
+  # - openstack-neutron.yaml
+  # - openstack-nova.yaml
   - fluxcd/

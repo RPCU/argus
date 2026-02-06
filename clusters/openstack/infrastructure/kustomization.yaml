@@ -15,6 +15,7 @@ resources:
   - openstack-glance.yaml
   - openstack-cinder.yaml
   - openstack-openvswitch.yaml
+  - openstack-contour.yaml
   # - openstack-libvirt.yaml
   # - openstack-neutron.yaml
   # - openstack-nova.yaml

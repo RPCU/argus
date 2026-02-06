@@ -1,0 +1,144 @@
+apiVersion: v1
+data:
+  openvswitch-db-server.sh: |
+    #!/bin/bash
+
+
+
+    set -ex
+    COMMAND="${@:-start}"
+
+    OVS_DB=/run/openvswitch/conf.db
+    OVS_SCHEMA=/usr/share/openvswitch/vswitch.ovsschema
+    OVS_PID=/run/openvswitch/ovsdb-server.pid
+    OVS_SOCKET=/run/openvswitch/db.sock
+
+    function start () {
+      mkdir -p "$(dirname ${OVS_DB})"
+      if [[ ! -e "${OVS_DB}" ]]; then
+        ovsdb-tool create "${OVS_DB}"
+      fi
+
+      if [[ "$(ovsdb-tool needs-conversion ${OVS_DB} ${OVS_SCHEMA})" == 'yes' ]]; then
+          ovsdb-tool convert ${OVS_DB} ${OVS_SCHEMA}
+      fi
+
+      umask 000
+      exec /usr/sbin/ovsdb-server ${OVS_DB} \
+              -vconsole:emer \
+              -vconsole:err \
+              -vconsole:info \
+              --pidfile=${OVS_PID} \
+              --remote=punix:${OVS_SOCKET} \
+              --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
+              --private-key=db:Open_vSwitch,SSL,private_key \
+              --certificate=db:Open_vSwitch,SSL,certificate \
+              --bootstrap-ca-cert=db:Open_vSwitch,SSL,ca_cert
+    }
+
+    function stop () {
+      PID=$(cat $OVS_PID)
+      ovs-appctl -T1 -t /run/openvswitch/ovsdb-server.${PID}.ctl exit
+    }
+
+    $COMMAND
+  openvswitch-vswitchd-init-modules.sh: |
+    #!/bin/bash
+    echo "skipping module activation (nixOS).."
+  openvswitch-vswitchd.sh: |
+    #!/bin/bash
+
+
+
+    set -ex
+    COMMAND="${@:-start}"
+
+    OVS_SOCKET=/run/openvswitch/db.sock
+    OVS_PID=/run/openvswitch/ovs-vswitchd.pid
+
+    # Create vhostuser directory and grant nova user (default UID 42424) access
+    # permissions.
+
+    function start () {
+      t=0
+      while [ ! -e "${OVS_SOCKET}" ] ; do
+          echo "waiting for ovs socket $sock"
+          sleep 1
+          t=$(($t+1))
+          if [ $t -ge 10 ] ; then
+              echo "no ovs socket, giving up"
+              exit 1
+          fi
+      done
+
+      ovs-vsctl --db=unix:${OVS_SOCKET} --no-wait show
+
+      exec /usr/sbin/ovs-vswitchd unix:${OVS_SOCKET} \
+              -vconsole:emer \
+              -vconsole:err \
+              -vconsole:info \
+              --pidfile=${OVS_PID} \
+              --user="openvswitch:openvswitch" \
+              --mlockall
+    }
+
+    function stop () {
+      PID=$(cat $OVS_PID)
+      ovs-appctl -T1 -t /run/openvswitch/ovs-vswitchd.${PID}.ctl exit
+    }
+
+    find_latest_ctl_file() {
+        latest_file=""
+        latest_file=$(ls -lt /run/openvswitch/*.ctl | awk 'NR==1 {if ($3 == "root") print $NF}')
+
+        echo "$latest_file"
+    }
+
+    function poststart () {
+      # This enables the usage of 'ovs-appctl' from neutron-ovs-agent pod.
+
+      # Wait for potential new ctl file before continuing
+      timeout=5
+      start_time=$(date +%s)
+      while true; do
+          latest_ctl_file=$(find_latest_ctl_file)
+          if [ -n "$latest_ctl_file" ]; then
+              break
+          fi
+          current_time=$(date +%s)
+          if (( current_time - start_time >= timeout )); then
+              break
+          fi
+          sleep 1
+      done
+
+      until [ -f $OVS_PID ]
+      do
+          echo "Waiting for file $OVS_PID"
+          sleep 1
+      done
+
+      PID=$(cat $OVS_PID)
+      OVS_CTL=/run/openvswitch/ovs-vswitchd.${PID}.ctl
+
+      until [ -S $OVS_CTL ]
+      do
+          echo "Waiting for file $OVS_CTL"
+          sleep 1
+      done
+      chown 42424.42424 ${OVS_CTL}
+
+    }
+
+    $COMMAND
+kind: ConfigMap
+metadata:
+  annotations:
+    meta.helm.sh/release-name: openvswitch
+    meta.helm.sh/release-namespace: openstack
+  labels:
+    app.kubernetes.io/managed-by: Helm
+    helm.toolkit.fluxcd.io/name: openvswitch
+    helm.toolkit.fluxcd.io/namespace: openstack
+  name: openvswitch-bin
+  namespace: openstack

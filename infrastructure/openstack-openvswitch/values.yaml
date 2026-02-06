@@ -1,0 +1,9 @@
+endpoints:
+  cluster_domain_suffix: openstack.local
+images:
+  tags:
+    openvswitch_db_server: quay.io/airshipit/openvswitch:latest-ubuntu_noble
+    openvswitch_vswitchd: quay.io/airshipit/openvswitch:latest-ubuntu_noble
+    dep_check: quay.io/airshipit/kubernetes-entrypoint:latest-ubuntu_noble
+manifests:
+  configmap_bin: false

@@ -12,4 +12,5 @@ resources:
   - openstack-memcached.yaml
   - openstack-keystone.yaml
   - openstack-glance.yaml
+  - openstack-cinder.yaml
   - fluxcd/

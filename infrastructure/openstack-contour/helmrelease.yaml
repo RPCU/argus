@@ -4,6 +4,7 @@ metadata:
   name: contour
 spec:
   interval: 5m
+  targetNamespace: openstack
   chart:
     spec:
       chart: contour

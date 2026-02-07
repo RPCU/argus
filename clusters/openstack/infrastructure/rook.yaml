@@ -31,3 +31,8 @@ spec:
   prune: false
   wait: true
   timeout: 5m
+  healthChecks:
+    - apiVersion: ceph.rook.io/v1
+      kind: CephCluster
+      name: rook-ceph
+      namespace: rook-ceph

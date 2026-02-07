@@ -21,3 +21,26 @@ spec:
   valuesFrom:
     - kind: ConfigMap
       name: neutron-values
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: DaemonSet
+              name: neutron-ovs-agent-default
+            patch: |
+              - op: replace
+                path: /spec/template/spec/securityContext/runAsUser
+                value: 0
+          - target:
+              kind: DaemonSet
+              name: neutron-ovs-agent-default
+            patch: |
+              - op: add
+                path: /spec/template/spec/containers/0/securityContext/runAsUser
+                value: 0
+          - target:
+              kind: DaemonSet
+              name: neutron-ovs-agent-default
+            patch: |
+              - op: remove
+                path: /spec/template/spec/initContainers/0

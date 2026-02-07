@@ -1,0 +1,20 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: horizon
+spec:
+  interval: 5m
+  timeout: 10m
+  chart:
+    spec:
+      chart: horizon
+      version: "*"
+      sourceRef:
+        kind: HelmRepository
+        name: openstack-helm
+        namespace: flux-system
+  upgrade:
+    crds: CreateReplace
+  valuesFrom:
+    - kind: ConfigMap
+      name: horizon-values

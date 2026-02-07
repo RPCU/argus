@@ -1,0 +1,9 @@
+namespace: openstack
+resources:
+  - helmrelease.yaml
+configMapGenerator:
+  - name: horizon-values
+    files:
+      - values.yaml
+generatorOptions:
+  disableNameSuffixHash: true

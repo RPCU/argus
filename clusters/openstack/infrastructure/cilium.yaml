@@ -22,6 +22,7 @@ spec:
             k8sServiceHost: "10.0.0.5"
             k8sServicePort: 6443
             extraArgs:
+              - --devices=eno1.4000,br-ex
               - --direct-routing-device=eno1.4000
       target:
         kind: HelmRelease

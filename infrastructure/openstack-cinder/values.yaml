@@ -15,5 +15,17 @@ images:
     cinder_storage_init: "quay.io/airshipit/ceph-config-helper:latest-ubuntu_jammy"
     cinder_backup: "quay.io/airshipit/cinder:2025.2-ubuntu_noble"
     cinder_backup_storage_init: "quay.io/airshipit/ceph-config-helper:latest-ubuntu_jammy"
+conf:
+  cinder:
+    DEFAULT:
+      # Enable debug logging to troubleshoot volume issues
+      debug: true
+  policy:
+    # Allow admin and owner to delete volumes
+    "volume:delete": "rule:admin_or_owner"
+    # Allow admin to force delete volumes
+    "volume:force_delete": "rule:admin_api"
+    # Allow admin to delete volumes in any state
+    "volume_extension:volume_admin_actions:force_delete": "rule:admin_api"
 endpoints:
   cluster_domain_suffix: openstack.local

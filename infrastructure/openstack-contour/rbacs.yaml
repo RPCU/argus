@@ -8,7 +8,7 @@ roleRef:
   name: contour-contour
 subjects:
   - kind: ServiceAccount
-    name: contour-contour
+    name: openstack-contour-contour
     namespace: openstack
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -21,7 +21,7 @@ roleRef:
   name: contour-contour
 subjects:
   - kind: ServiceAccount
-    name: contour-contour
+    name: openstack-contour-contour
     namespace: openstack
 ---
 apiVersion: rbac.authorization.k8s.io/v1

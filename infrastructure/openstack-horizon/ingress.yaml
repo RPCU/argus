@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: horizon-ingress
+  annotations:
+    cert-manager.io/cluster-issuer: root-rpcu
+spec:
+  ingressClassName: contour
+  rules:
+    - host: openstack.rpcu.vpn
+      http:
+        paths:
+          - backend:
+              service:
+                name: horizon-int
+                port:
+                  name: web
+            path: /
+            pathType: Prefix
+  tls:
+    - hosts:
+        - openstack.rpcu.vpn
+      secretName: horizon-exposed-tls-secret

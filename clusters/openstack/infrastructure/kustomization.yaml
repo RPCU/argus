@@ -1,7 +1,7 @@
 resources:
   - ceph-adapter-rook.yaml
   - cert-manager.yaml
-  - internal-issuer.yaml
+  - cert-manager-issuer.yaml
   - cilium.yaml
   - contour.yaml
   - flux-operator.yaml

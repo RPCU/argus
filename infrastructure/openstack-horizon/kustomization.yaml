@@ -1,6 +1,7 @@
 namespace: openstack
 resources:
   - helmrelease.yaml
+  - ingress.yaml
 configMapGenerator:
   - name: horizon-values
     files:

@@ -13,7 +13,7 @@ conf:
       # Interval in seconds between each retry (default: 3)
       block_device_allocate_retries_interval: 10
     vnc:
-      novncproxy_base_url: http://openstack.rpcu.vpn/vnc/
+      novncproxy_base_url: http://openstack.rpcu.vpn/vnc/vnc_auto.html
 network:
   osapi:
     ingress:
@@ -63,4 +63,14 @@ endpoints:
       public: http
     port:
       metadata:
+        public: 80
+  compute_novnc_proxy:
+    host_fqdn_override:
+      public:
+        host: openstack.rpcu.vpn
+        path: /vnc
+    scheme:
+      public: http
+    port:
+      novnc_proxy:
         public: 80

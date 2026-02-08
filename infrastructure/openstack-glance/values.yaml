@@ -10,6 +10,16 @@ images:
     glance_api: "quay.io/airshipit/glance:2025.2-ubuntu_noble"
     glance_metadefs_load: "quay.io/airshipit/glance:2025.2-ubuntu_noble"
     glance_storage_init: "quay.io/airshipit/ceph-config-helper:latest-ubuntu_jammy"
+network:
+  api:
+    ingress:
+      public: true
+      classes:
+        namespace: "contour"
+        cluster: "contour"
+      annotations:
+        cert-manager.io/cluster-issuer: "root-rpcu"
+        projectcontour.io/rewrite-target: "/"
 storage: pvc
 volume:
   class_name: general
@@ -18,3 +28,13 @@ volume:
     - ReadWriteOnce
 endpoints:
   cluster_domain_suffix: openstack.local
+  image:
+    host_fqdn_override:
+      public:
+        host: openstack.rpcu.vpn
+        path: /glance
+    scheme:
+      public: http
+    port:
+      api:
+        public: 80

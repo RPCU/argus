@@ -15,6 +15,16 @@ images:
     cinder_storage_init: "quay.io/airshipit/ceph-config-helper:latest-ubuntu_jammy"
     cinder_backup: "quay.io/airshipit/cinder:2025.2-ubuntu_noble"
     cinder_backup_storage_init: "quay.io/airshipit/ceph-config-helper:latest-ubuntu_jammy"
+network:
+  api:
+    ingress:
+      public: true
+      classes:
+        namespace: "contour"
+        cluster: "contour"
+      annotations:
+        cert-manager.io/cluster-issuer: "root-rpcu"
+        projectcontour.io/rewrite-target: "/"
 conf:
   cinder:
     DEFAULT:
@@ -29,3 +39,33 @@ conf:
     "volume_extension:volume_admin_actions:force_delete": "rule:admin_api"
 endpoints:
   cluster_domain_suffix: openstack.local
+  volume:
+    host_fqdn_override:
+      public:
+        host: openstack.rpcu.vpn
+        path: /cinder/v1
+    scheme:
+      public: http
+    port:
+      api:
+        public: 80
+  volumev2:
+    host_fqdn_override:
+      public:
+        host: openstack.rpcu.vpn
+        path: /cinder/v2
+    scheme:
+      public: http
+    port:
+      api:
+        public: 80
+  volumev3:
+    host_fqdn_override:
+      public:
+        host: openstack.rpcu.vpn
+        path: /cinder/v3
+    scheme:
+      public: http
+    port:
+      api:
+        public: 80

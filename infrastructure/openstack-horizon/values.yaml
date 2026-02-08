@@ -4,5 +4,25 @@ images:
     db_drop: quay.io/airshipit/openstack-client:2025.2-ubuntu_noble
     horizon_db_sync: quay.io/airshipit/horizon:2025.2-ubuntu_noble
     horizon: quay.io/airshipit/horizon:2025.2-ubuntu_noble
+network:
+  dashboard:
+    ingress:
+      public: true
+      classes:
+        namespace: "contour"
+        cluster: "contour"
+      annotations:
+        cert-manager.io/cluster-issuer: "root-rpcu"
+        projectcontour.io/rewrite-target: "/"
 endpoints:
   cluster_domain_suffix: openstack.local
+  dashboard:
+    host_fqdn_override:
+      public:
+        host: openstack.rpcu.vpn
+        path: /horizon
+    scheme:
+      public: http
+    port:
+      web:
+        public: 80

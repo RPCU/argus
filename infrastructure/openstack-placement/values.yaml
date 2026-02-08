@@ -10,6 +10,16 @@ images:
     placement_db_sync: "quay.io/airshipit/placement:2025.2-ubuntu_noble"
     dep_check: "quay.io/airshipit/kubernetes-entrypoint:latest-ubuntu_jammy"
     image_repo_sync: "docker.io/docker:17.07.0"
+network:
+  api:
+    ingress:
+      public: true
+      classes:
+        namespace: "contour"
+        cluster: "contour"
+      annotations:
+        cert-manager.io/cluster-issuer: "root-rpcu"
+        projectcontour.io/rewrite-target: "/"
 dependencies:
   static:
     db_sync:
@@ -17,3 +27,13 @@ dependencies:
         - placement-db-init
 endpoints:
   cluster_domain_suffix: openstack.local
+  placement:
+    host_fqdn_override:
+      public:
+        host: openstack.rpcu.vpn
+        path: /placement
+    scheme:
+      public: http
+    port:
+      api:
+        public: 80

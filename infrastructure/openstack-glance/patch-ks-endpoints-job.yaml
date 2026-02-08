@@ -1,0 +1,12 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: glance-ks-endpoints
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: ks-endpoints-public
+          env:
+            - name: OS_SERVICE_ENDPOINT
+              value: "http://openstack.rpcu.vpn/glance"

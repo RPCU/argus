@@ -15,22 +15,10 @@ conf:
 network:
   osapi:
     ingress:
-      public: true
-      classes:
-        namespace: "contour"
-        cluster: "contour"
-      annotations:
-        cert-manager.io/cluster-issuer: "root-rpcu"
-        projectcontour.io/rewrite-target: "/"
+      public: false
   metadata:
     ingress:
-      public: true
-      classes:
-        namespace: "contour"
-        cluster: "contour"
-      annotations:
-        cert-manager.io/cluster-issuer: "root-rpcu"
-        projectcontour.io/rewrite-target: "/"
+      public: false
 images:
   tags:
     bootstrap: "quay.io/airshipit/openstack-client:2025.2-ubuntu_noble"

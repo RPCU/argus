@@ -19,10 +19,10 @@ spec:
     nodes:
       - name: "lucy"
         devices: # specific devices to use for storage can be specified for each node
-          - name: "nvme1n1" # Whole storage device
+          - name: "/dev/disk/by-id/nvme-SAMSUNG_MZVLB1T0HBLR-00000_S4GJNX0R204948" # Whole storage device
       - name: "makise"
         devices:
-          - name: "nvme1n1"
+          - name: "/dev/disk/by-id/nvme-SAMSUNG_MZVLB1T0HALR-00000_S3W6NF0K600883"
       - name: "quinn"
         devices:
-          - name: "nvme1n1"
+          - name: "/dev/disk/by-id/nvme-SAMSUNG_MZVLB1T0HBLR-00000_S4GJNX0R532561"

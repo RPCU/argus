@@ -14,10 +14,6 @@ spec:
       services:
         - name: keystone-api
           port: 5000
-      pathRewritePolicy:
-        replacePrefix:
-          - prefix: /keystone
-            replacement: /
 
     # Glance - /glance -> glance-api:9292
     - conditions:
@@ -25,10 +21,6 @@ spec:
       services:
         - name: glance-api
           port: 9292
-      pathRewritePolicy:
-        replacePrefix:
-          - prefix: /glance
-            replacement: /
 
     # Nova - /nova -> nova-api:8774
     - conditions:
@@ -36,20 +28,12 @@ spec:
       services:
         - name: nova-metadata
           port: 8775
-      pathRewritePolicy:
-        replacePrefix:
-          - prefix: /nova/metadata
-            replacement: /
 
     - conditions:
         - prefix: /nova
       services:
         - name: nova-api
           port: 8774
-      pathRewritePolicy:
-        replacePrefix:
-          - prefix: /nova
-            replacement: /
 
     # Neutron - /neutron -> neutron-server:9696
     - conditions:
@@ -57,10 +41,6 @@ spec:
       services:
         - name: neutron-server
           port: 9696
-      pathRewritePolicy:
-        replacePrefix:
-          - prefix: /neutron
-            replacement: /
 
     # Cinder - /cinder/v3 -> cinder-api:8776
     - conditions:
@@ -68,30 +48,18 @@ spec:
       services:
         - name: cinder-api
           port: 8776
-      pathRewritePolicy:
-        replacePrefix:
-          - prefix: /cinder/v3
-            replacement: /v3
 
     - conditions:
         - prefix: /cinder/v2
       services:
         - name: cinder-api
           port: 8776
-      pathRewritePolicy:
-        replacePrefix:
-          - prefix: /cinder/v2
-            replacement: /v2
 
     - conditions:
         - prefix: /cinder/v1
       services:
         - name: cinder-api
           port: 8776
-      pathRewritePolicy:
-        replacePrefix:
-          - prefix: /cinder/v1
-            replacement: /v1
 
     # Placement - /placement -> placement-api:8778
     - conditions:
@@ -99,12 +67,8 @@ spec:
       services:
         - name: placement-api
           port: 8778
-      pathRewritePolicy:
-        replacePrefix:
-          - prefix: /placement
-            replacement: /
 
-    # Nova VNC Proxy - /vnc/ -> nova-novncproxy:6080 (avec websockets)
+    # Nova VNC Proxy - /vnc/ -> nova-novncproxy:6080 (with websockets)
     - conditions:
         - prefix: /vnc/
       services:
@@ -116,7 +80,7 @@ spec:
           - prefix: /vnc/
             replacement: /
 
-    # Websocket pour noVNC - /websockify -> nova-novncproxy:6080
+    # Websocket for noVNC - /websockify -> nova-novncproxy:6080
     - conditions:
         - prefix: /websockify
       services:
@@ -124,7 +88,7 @@ spec:
           port: 6080
       enableWebsockets: true
 
-    # Route par défaut - / -> horizon:80 (dashboard)
+    # Default route - / -> horizon:80 (dashboard)
     - conditions:
         - prefix: /
       services:

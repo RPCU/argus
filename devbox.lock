@@ -447,6 +447,70 @@
         }
       }
     },
+    "openstackclient@latest": {
+      "last_modified": "2026-01-30T02:32:49Z",
+      "resolved": "github:NixOS/nixpkgs/6308c3b21396534d8aaeac46179c14c439a89b8a#openstackclient",
+      "source": "devbox-search",
+      "version": "8.3.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/y9zl57xnsx438k37nxxl043shzxp1q38-python3.13-python-openstackclient-8.3.0",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/f798fpbma8i8h1qbl43yqi47333ig8bm-python3.13-python-openstackclient-8.3.0-dist"
+            }
+          ],
+          "store_path": "/nix/store/y9zl57xnsx438k37nxxl043shzxp1q38-python3.13-python-openstackclient-8.3.0"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/ipqhcvy9zxy6fwdbd6avnmxsapmz3yj9-python3.13-python-openstackclient-8.3.0",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/cclb5zb7s3qsf0675h073bxzpny8x9bj-python3.13-python-openstackclient-8.3.0-dist"
+            }
+          ],
+          "store_path": "/nix/store/ipqhcvy9zxy6fwdbd6avnmxsapmz3yj9-python3.13-python-openstackclient-8.3.0"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/kd8q0bm40gcji5w6k63pqhd5s69v70m2-python3.13-python-openstackclient-8.3.0",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/h5kpns1zrvdw60hni03hawg4p4p5f99s-python3.13-python-openstackclient-8.3.0-dist"
+            }
+          ],
+          "store_path": "/nix/store/kd8q0bm40gcji5w6k63pqhd5s69v70m2-python3.13-python-openstackclient-8.3.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/d0xqbpfchad3d7n02862zzp4pbbw60ak-python3.13-python-openstackclient-8.3.0",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/q33v805s3b2gv1chadhpgrq4jn4c3k4b-python3.13-python-openstackclient-8.3.0-dist"
+            }
+          ],
+          "store_path": "/nix/store/d0xqbpfchad3d7n02862zzp4pbbw60ak-python3.13-python-openstackclient-8.3.0"
+        }
+      }
+    },
     "runme@latest": {
       "last_modified": "2026-01-23T17:20:52Z",
       "resolved": "github:NixOS/nixpkgs/a1bab9e494f5f4939442a57a58d0449a109593fe#runme",

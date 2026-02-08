@@ -38,12 +38,3 @@ spec:
             target:
               kind: DaemonSet
               name: nova-compute-default
-          - patch: |
-              - op: add
-                path: /spec/template/spec/initContainers/0/env/-
-                value:
-                  name: OS_SERVICE_ENDPOINT
-                  value: "http://openstack.rpcu.vpn/nova/v2.1/"
-            target:
-              kind: Job
-              name: nova-ks-endpoints

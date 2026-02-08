@@ -44,12 +44,3 @@ spec:
             patch: |
               - op: remove
                 path: /spec/template/spec/initContainers/0
-          - target:
-              kind: Job
-              name: neutron-ks-endpoints
-            patch: |
-              - op: add
-                path: /spec/template/spec/initContainers/0/env/-
-                value:
-                  name: OS_SERVICE_ENDPOINT
-                  value: "http://openstack.rpcu.vpn/neutron"

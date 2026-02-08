@@ -2,6 +2,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: cinder-ks-endpoints
+  namespace: openstack
 spec:
   template:
     spec:

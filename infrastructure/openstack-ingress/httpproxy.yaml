@@ -104,20 +104,17 @@ spec:
           - prefix: /placement
             replacement: /
 
-    # Nova VNC Proxy - /vnc_auto.html et /websockify -> nova-novncproxy:6080
+    # Nova VNC Proxy - /vnc/ -> nova-novncproxy:6080 (avec websockets)
     - conditions:
-        - prefix: /vnc_auto.html
+        - prefix: /vnc/
       services:
         - name: nova-novncproxy
           port: 6080
       enableWebsockets: true
-
-    - conditions:
-        - prefix: /websockify
-      services:
-        - name: nova-novncproxy
-          port: 6080
-      enableWebsockets: true
+      pathRewritePolicy:
+        replacePrefix:
+          - prefix: /vnc/
+            replacement: /
 
     # Route par défaut - / -> horizon:80 (dashboard)
     - conditions:

@@ -28,7 +28,8 @@ endpoints:
   placement:
     host_fqdn_override:
       public:
-        host: openstack.rpcu.vpn/placement
+        host: openstack.rpcu.vpn
+        path: /placement
     scheme:
       public: http
     port:

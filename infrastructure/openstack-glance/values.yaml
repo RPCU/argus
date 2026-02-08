@@ -29,8 +29,7 @@ endpoints:
   image:
     host_fqdn_override:
       public:
-        host: openstack.rpcu.vpn
-        path: /glance
+        host: openstack.rpcu.vpn/glance
     scheme:
       public: http
     port:

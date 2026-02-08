@@ -25,8 +25,7 @@ endpoints:
   identity:
     host_fqdn_override:
       public:
-        host: openstack.rpcu.vpn
-        path: /keystone
+        host: openstack.rpcu.vpn/keystone
     scheme:
       public: http
     port:

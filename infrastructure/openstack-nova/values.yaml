@@ -48,8 +48,7 @@ endpoints:
   compute:
     host_fqdn_override:
       public:
-        host: openstack.rpcu.vpn
-        path: /nova
+        host: openstack.rpcu.vpn/nova
     scheme:
       public: http
     port:
@@ -58,8 +57,7 @@ endpoints:
   compute_metadata:
     host_fqdn_override:
       public:
-        host: openstack.rpcu.vpn
-        path: /nova/metadata
+        host: openstack.rpcu.vpn/nova/metadata
     scheme:
       public: http
     port:
@@ -68,8 +66,7 @@ endpoints:
   compute_novnc_proxy:
     host_fqdn_override:
       public:
-        host: openstack.rpcu.vpn
-        path: /vnc/vnc_auto.html
+        host: openstack.rpcu.vpn/vnc/vnc_auto.html
     scheme:
       public: http
     port:

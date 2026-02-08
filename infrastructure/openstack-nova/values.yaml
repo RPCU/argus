@@ -1,6 +1,7 @@
 bootstrap:
   wait_for_computes:
     enabled: true
+
 conf:
   ceph:
     enabled: true
@@ -11,6 +12,25 @@ conf:
       block_device_allocate_retries: 120
       # Interval in seconds between each retry (default: 3)
       block_device_allocate_retries_interval: 10
+network:
+  osapi:
+    ingress:
+      public: true
+      classes:
+        namespace: "contour"
+        cluster: "contour"
+      annotations:
+        cert-manager.io/cluster-issuer: "root-rpcu"
+        projectcontour.io/rewrite-target: "/"
+  metadata:
+    ingress:
+      public: true
+      classes:
+        namespace: "contour"
+        cluster: "contour"
+      annotations:
+        cert-manager.io/cluster-issuer: "root-rpcu"
+        projectcontour.io/rewrite-target: "/"
 images:
   tags:
     bootstrap: "quay.io/airshipit/openstack-client:2025.2-ubuntu_noble"
@@ -34,3 +54,23 @@ images:
     nova_service_cleaner: "quay.io/airshipit/ceph-config-helper:latest-ubuntu_jammy"
 endpoints:
   cluster_domain_suffix: openstack.local
+  compute:
+    host_fqdn_override:
+      public:
+        host: openstack.rpcu.vpn
+        path: /nova
+    scheme:
+      public: http
+    port:
+      api:
+        public: 80
+  compute_metadata:
+    host_fqdn_override:
+      public:
+        host: openstack.rpcu.vpn
+        path: /nova/metadata
+    scheme:
+      public: http
+    port:
+      metadata:
+        public: 80

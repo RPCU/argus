@@ -4,6 +4,7 @@ metadata:
   name: openstack-unified
   namespace: openstack
 spec:
+  ingressClassName: contour
   virtualhost:
     fqdn: openstack.rpcu.vpn
   routes:
@@ -103,13 +104,9 @@ spec:
           - prefix: /placement
             replacement: /
 
-    # Horizon - /horizon -> horizon:80
+    # Route par défaut - / -> horizon:80 (dashboard)
     - conditions:
-        - prefix: /horizon
+        - prefix: /
       services:
-        - name: horizon
+        - name: horizon-int
           port: 80
-      pathRewritePolicy:
-        replacePrefix:
-          - prefix: /horizon
-            replacement: /

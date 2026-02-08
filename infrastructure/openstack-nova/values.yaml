@@ -7,6 +7,7 @@ conf:
     enabled: true
   nova:
     DEFAULT:
+      osapi_compute_link_prefix: http://openstack.rpcu.vpn/nova
       # Increase timeouts for volume creation
       # Number of retries to wait for volume creation (default: 60)
       block_device_allocate_retries: 120

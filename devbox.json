@@ -11,7 +11,8 @@
     "kustomize@latest",
     "kubernetes-helm@latest",
     "path:.#sveltosctl",
-    "kube-capacity@latest"
+    "kube-capacity@latest",
+    "openstackclient@latest"
   ],
   "shell": {
     "init_hook": [

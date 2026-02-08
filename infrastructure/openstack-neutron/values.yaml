@@ -37,6 +37,7 @@ endpoints:
 conf:
   neutron:
     DEFAULT:
+      public_endpoint: http://openstack.rpcu.vpn/neutron
       l3_ha: False
       max_l3_agents_per_router: 1
   auto_bridge_add:

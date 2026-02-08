@@ -12,6 +12,10 @@ images:
     keystone_fernet_rotate: "quay.io/airshipit/keystone:2025.2-ubuntu_noble"
     keystone_fernet_setup: "quay.io/airshipit/keystone:2025.2-ubuntu_noble"
     ks_user: "quay.io/airshipit/openstack-client:2025.2-ubuntu_noble"
+conf:
+  keystone:
+    DEFAULT:
+      public_endpoint: http://openstack.rpcu.vpn/keystone
 network:
   api:
     ingress:

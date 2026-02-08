@@ -14,7 +14,6 @@ endpoints:
     host_fqdn_override:
       public:
         host: openstack.rpcu.vpn
-        path: /horizon
     scheme:
       public: http
     port:

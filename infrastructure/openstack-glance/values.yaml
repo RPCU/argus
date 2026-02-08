@@ -10,6 +10,10 @@ images:
     glance_api: "quay.io/airshipit/glance:2025.2-ubuntu_noble"
     glance_metadefs_load: "quay.io/airshipit/glance:2025.2-ubuntu_noble"
     glance_storage_init: "quay.io/airshipit/ceph-config-helper:latest-ubuntu_jammy"
+conf:
+  glance:
+    DEFAULT:
+      public_endpoint: http://openstack.rpcu.vpn/glance
 network:
   api:
     ingress:

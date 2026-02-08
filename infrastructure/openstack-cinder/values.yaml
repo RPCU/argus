@@ -24,6 +24,7 @@ conf:
     DEFAULT:
       # Enable debug logging to troubleshoot volume issues
       debug: true
+      public_endpoint: http://openstack.rpcu.vpn/cinder
   policy:
     # Allow admin and owner to delete volumes
     "volume:delete": "rule:admin_or_owner"

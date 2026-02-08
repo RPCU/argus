@@ -7,5 +7,3 @@ configMapGenerator:
       - values.yaml
 generatorOptions:
   disableNameSuffixHash: true
-patches:
-  - path: patch-ks-endpoints-job.yaml

@@ -15,18 +15,6 @@ spec:
         namespace: flux-system
   upgrade:
     crds: CreateReplace
-  postRenderers:
-    - kustomize:
-        patches:
-          - target:
-              kind: Job
-              name: placement-ks-endpoints
-            patch: |
-              - op: add
-                path: /spec/template/spec/initContainers/0/env/-
-                value:
-                  name: OS_SERVICE_ENDPOINT
-                  value: "http://openstack.rpcu.vpn/placement"
   valuesFrom:
     - kind: ConfigMap
       name: placement-values

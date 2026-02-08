@@ -37,8 +37,7 @@ endpoints:
   volume:
     host_fqdn_override:
       public:
-        host: openstack.rpcu.vpn
-        path: /cinder/v1
+        host: openstack.rpcu.vpn/cinder/v1
     scheme:
       public: http
     port:
@@ -47,8 +46,7 @@ endpoints:
   volumev2:
     host_fqdn_override:
       public:
-        host: openstack.rpcu.vpn
-        path: /cinder/v2
+        host: openstack.rpcu.vpn/cinder/v2
     scheme:
       public: http
     port:
@@ -57,8 +55,7 @@ endpoints:
   volumev3:
     host_fqdn_override:
       public:
-        host: openstack.rpcu.vpn
-        path: /cinder/v3
+        host: openstack.rpcu.vpn/cinder/v3
     scheme:
       public: http
     port:

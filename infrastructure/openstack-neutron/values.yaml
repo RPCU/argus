@@ -27,8 +27,7 @@ endpoints:
   network:
     host_fqdn_override:
       public:
-        host: openstack.rpcu.vpn
-        path: /neutron
+        host: openstack.rpcu.vpn/neutron
     scheme:
       public: http
     port:

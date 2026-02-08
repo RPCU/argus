@@ -20,4 +20,5 @@ resources:
   - openstack-neutron.yaml
   - openstack-nova.yaml
   - openstack-horizon.yaml
+  - openstack-ingress.yaml
   - fluxcd/

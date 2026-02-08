@@ -7,13 +7,7 @@ images:
 network:
   dashboard:
     ingress:
-      public: true
-      classes:
-        namespace: "contour"
-        cluster: "contour"
-      annotations:
-        cert-manager.io/cluster-issuer: "root-rpcu"
-        projectcontour.io/rewrite-target: "/"
+      public: false
 endpoints:
   cluster_domain_suffix: openstack.local
   dashboard:

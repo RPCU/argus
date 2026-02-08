@@ -1,0 +1,115 @@
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: openstack-unified
+  namespace: openstack
+spec:
+  virtualhost:
+    fqdn: openstack.rpcu.vpn
+  routes:
+    # Keystone - /keystone -> keystone-api:5000
+    - conditions:
+        - prefix: /keystone
+      services:
+        - name: keystone-api
+          port: 5000
+      pathRewritePolicy:
+        replacePrefix:
+          - prefix: /keystone
+            replacement: /
+
+    # Glance - /glance -> glance-api:9292
+    - conditions:
+        - prefix: /glance
+      services:
+        - name: glance-api
+          port: 9292
+      pathRewritePolicy:
+        replacePrefix:
+          - prefix: /glance
+            replacement: /
+
+    # Nova - /nova -> nova-api:8774
+    - conditions:
+        - prefix: /nova/metadata
+      services:
+        - name: nova-metadata
+          port: 8775
+      pathRewritePolicy:
+        replacePrefix:
+          - prefix: /nova/metadata
+            replacement: /
+
+    - conditions:
+        - prefix: /nova
+      services:
+        - name: nova-api
+          port: 8774
+      pathRewritePolicy:
+        replacePrefix:
+          - prefix: /nova
+            replacement: /
+
+    # Neutron - /neutron -> neutron-server:9696
+    - conditions:
+        - prefix: /neutron
+      services:
+        - name: neutron-server
+          port: 9696
+      pathRewritePolicy:
+        replacePrefix:
+          - prefix: /neutron
+            replacement: /
+
+    # Cinder - /cinder/v3 -> cinder-api:8776
+    - conditions:
+        - prefix: /cinder/v3
+      services:
+        - name: cinder-api
+          port: 8776
+      pathRewritePolicy:
+        replacePrefix:
+          - prefix: /cinder/v3
+            replacement: /v3
+
+    - conditions:
+        - prefix: /cinder/v2
+      services:
+        - name: cinder-api
+          port: 8776
+      pathRewritePolicy:
+        replacePrefix:
+          - prefix: /cinder/v2
+            replacement: /v2
+
+    - conditions:
+        - prefix: /cinder/v1
+      services:
+        - name: cinder-api
+          port: 8776
+      pathRewritePolicy:
+        replacePrefix:
+          - prefix: /cinder/v1
+            replacement: /v1
+
+    # Placement - /placement -> placement-api:8778
+    - conditions:
+        - prefix: /placement
+      services:
+        - name: placement-api
+          port: 8778
+      pathRewritePolicy:
+        replacePrefix:
+          - prefix: /placement
+            replacement: /
+
+    # Horizon - /horizon -> horizon:80
+    - conditions:
+        - prefix: /horizon
+      services:
+        - name: horizon
+          port: 80
+      pathRewritePolicy:
+        replacePrefix:
+          - prefix: /horizon
+            replacement: /

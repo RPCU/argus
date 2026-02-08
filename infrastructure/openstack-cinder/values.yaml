@@ -18,13 +18,7 @@ images:
 network:
   api:
     ingress:
-      public: true
-      classes:
-        namespace: "contour"
-        cluster: "contour"
-      annotations:
-        cert-manager.io/cluster-issuer: "root-rpcu"
-        projectcontour.io/rewrite-target: "/"
+      public: false
 conf:
   cinder:
     DEFAULT:

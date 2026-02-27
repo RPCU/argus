@@ -1,9 +1,0 @@
-namespace: openstack
-resources:
-  - helmrelease.yaml
-configMapGenerator:
-  - name: rabbitmq-values
-    files:
-      - values.yaml
-generatorOptions:
-  disableNameSuffixHash: true

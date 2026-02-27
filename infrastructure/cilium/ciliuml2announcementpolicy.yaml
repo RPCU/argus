@@ -7,4 +7,3 @@ spec:
   loadBalancerIPs: true
   interfaces:
     - "eno1.4000"
-    - "enp0s31f6.4000"

@@ -37,6 +37,7 @@ in
     # lint shell scripts
     shellcheck.enable = true;
     nixfmt-rfc-style.enable = true;
+    mdsh.enable = true;
     # lint yaml
     prettier.enable = true;
   };

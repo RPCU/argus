@@ -5,8 +5,8 @@ metadata:
   namespace: rook-ceph
 spec:
   caps:
-    mon: 'profile rbd'
-    osd: 'profile rbd pool=rdb-pool'
+    mon: "profile rbd"
+    osd: "profile rbd pool=rdb-pool"
 ---
 apiVersion: ceph.rook.io/v1
 kind: CephClient
@@ -15,5 +15,5 @@ metadata:
   namespace: rook-ceph
 spec:
   caps:
-    mon: 'profile rbd'
-    osd: 'profile rbd pool=rdb-pool'
+    mon: "profile rbd"
+    osd: "profile rbd pool=rdb-pool"

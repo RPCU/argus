@@ -46,13 +46,26 @@ Whenever you modify the codebase:
 
 - `clusters/` - Cluster-specific Kubernetes configurations
 - `infrastructure/` - Reusable infrastructure components
-- `flake.nix` - Nix flake definition for reproducible builds
+- `nix/` - Custom Nix packages and dependency management
+- `npins/` - Pinned external dependencies (managed by npins tool)
 - `devenv.nix` - Development environment setup
 - `devenv.yaml` - DevEnv configuration
-- `devenv.lock`, `flake.lock` - Locked dependency versions
+- `devenv.lock` - Locked dependency versions
 - `.envrc` - Direnv shell environment loader
 - `.gitignore` - Git ignore patterns
 - `README.md` - Project overview
+
+### nix/ - Custom Nix Packages & Sources
+
+- `default.nix` - Imports and exposes all custom packages
+- `sveltosctl.nix` - Sveltos CLI tool package definition (v1.4.0)
+
+### npins/ - Pinned Dependencies
+
+- `default.nix` - npins infrastructure (do not edit manually)
+- `sources.json` - npins sources pinned versions
+  - Defines GitHub source locations and hashes
+  - Update with `npins update` command
 
 ### clusters/ - Cluster-Specific Configurations
 
@@ -181,7 +194,9 @@ _fluxcd/instances/_ - Instance configuration
 - `fluxcd` - Flux CLI
 - `kustomize` - Kustomize CLI
 - `kubernetes-helm` - Helm CLI
+- `kube-capacity` - Kubernetes resource analyzer
 - `openstackclient` - OpenStack CLI
+- `sveltosctl` - Sveltos multi-cluster management CLI (v1.4.0)
 
 ---
 

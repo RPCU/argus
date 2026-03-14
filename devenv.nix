@@ -4,6 +4,11 @@
   ...
 }:
 let
+  # Import custom packages
+  customPkgs = import ./nix {
+    inherit pkgs;
+  };
+
   packageList = with pkgs; [
     jq
     yq
@@ -15,6 +20,7 @@ let
     kubernetes-helm
     kube-capacity
     openstackclient
+    customPkgs.sveltosctl
   ];
 
   # Extract package names and generate formatted list

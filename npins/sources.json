@@ -1,0 +1,21 @@
+{
+  "pins": {
+    "sveltosctl": {
+      "type": "GitRelease",
+      "repository": {
+        "type": "GitHub",
+        "owner": "projectsveltos",
+        "repo": "sveltosctl"
+      },
+      "pre_releases": false,
+      "version_upper_bound": null,
+      "release_prefix": null,
+      "submodules": false,
+      "version": "v1.4.0",
+      "revision": "df581bfb041fcb216439ef7d8b714743b55acd9b",
+      "url": "https://api.github.com/repos/projectsveltos/sveltosctl/tarball/refs/tags/v1.4.0",
+      "hash": "sha256-i3XTzzj7UK+GSlFIIbzpu85hmUBuAxJfrXvsVd9H7Pk="
+    }
+  },
+  "version": 7
+}

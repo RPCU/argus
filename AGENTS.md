@@ -242,18 +242,21 @@ _fluxcd/instances/_ - Instance configuration
 ### Code Quality & Formatting Configuration
 
 **`.yamllint`** - YAML linting rules
+
 - Extends default yamllint rules
 - Disables `document-start` rule (not auto-fixed by prettier)
 - Line length rule disabled for flexibility
 - Indentation set to 2 spaces
 
 **`.prettierrc.yaml`** - Prettier formatting configuration
+
 - `proseWrap: preserve` - Keeps prose as-is
 - `tabWidth: 2` - 2-space indentation
 - `useTabs: false` - Use spaces instead of tabs
 - Applies to YAML/JSON files via devenv treefmt
 
 **Note**: `treefmt` with `prettier` handles structure formatting but NOT:
+
 - Inline comment spacing (requires manual fixing)
 - YAML document start markers (handled via `.yamllint` rules)
 

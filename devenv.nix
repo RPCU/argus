@@ -36,10 +36,12 @@ in
   git-hooks.hooks = {
     # lint shell scripts
     shellcheck.enable = true;
-    nixfmt-rfc-style.enable = true;
     mdsh.enable = true;
     # lint yaml
-    prettier.enable = true;
+    treefmt = {
+      enable = true;
+      settings.fail-on-change = false;
+    };
   };
 
   difftastic.enable = true;

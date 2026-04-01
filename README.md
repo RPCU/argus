@@ -6,7 +6,7 @@ Argus is RPCU's GitOps repository for Kubernetes cluster configuration, built wi
 
 ## 📚 Documentation
 
-For complete documentation, installation guides, and configuration examples, visit:
+For complete documentation, installation guides, architecture, and configuration examples, visit:
 
 **[🔗 docs.rpcu.io/gitops](https://docs.rpcu.io/gitops/)**
 

@@ -1,0 +1,39 @@
+apiVersion: yaook.cloud/v1
+kind: GlanceDeployment
+metadata:
+  name: glance
+spec:
+  keystoneRef:
+    name: keystone
+  database:
+    replicas: 1
+    timeoutClient: 300
+    proxy:
+      replicas: 1
+    backup:
+      schedule: "0 * * * *"
+  memcached: {}
+  api:
+    replicas: 1
+    ingress:
+      createIngress: false
+      fqdn: "glance.rpcu.vpn"
+      port: 443
+  glanceConfig:
+    glance_store:
+      default_store: "rbd"
+  backends:
+    ceph:
+      keyringReference: rook-ceph-client-glance
+      keyringUsername: glance
+      keyringPoolname: rdb-pool
+      cephConfig:
+        global:
+          "mon_host": "rook-ceph-mon-a.rook-ceph:6789,rook-ceph-mon-d.rook-ceph:6789,rook-ceph-mon-f.rook-ceph:6789"
+  policy:
+    "context_is_admin": "role:admin"
+  region:
+    name: hetzner
+  issuerRef:
+    name: yaook-internal
+  targetRelease: "2025.1"

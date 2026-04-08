@@ -1,0 +1,15 @@
+apiVersion: yaook.cloud/v1
+kind: HorizonDeployment
+metadata:
+  name: horizon
+spec:
+  keystoneRef:
+    name: keystone
+  replicas: 2
+  ingress:
+      createIngress: false
+      fqdn: "os.rpcu.vpn"
+      port: 443
+  issuerRef:
+    name: yaook-internal
+  targetRelease: "2025.1"

@@ -1,0 +1,28 @@
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: yaook-internal-ca
+spec:
+  isCA: true
+  privateKey:
+    rotationPolicy: Never
+  commonName: yaook-internal-ca
+  secretName: yaook-internal-ca
+  issuerRef:
+    name: selfsigned-issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: yaook-internal
+spec:
+  ca:
+    secretName: yaook-internal-ca

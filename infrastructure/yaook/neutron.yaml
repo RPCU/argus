@@ -1,0 +1,74 @@
+apiVersion: yaook.cloud/v1
+kind: NeutronDeployment
+metadata:
+  name: neutron-ovn
+spec:
+  api:
+    ingress:
+      createIngress: false
+      fqdn: "neutron.rpcu.vpn"
+      port: 443
+    replicas: 1
+  database:
+    backup:
+      schedule: "0 * * * *"
+    proxy: {}
+    replicas: 1
+    timeoutClient: 300
+  issuerRef:
+    name: yaook-internal
+  keystoneRef:
+    name: keystone
+  messageQueue:
+    replicas: 1
+    resources:
+      rabbitmq:
+        limits:
+          memory: 1G
+          cpu: 1000m
+  memcached: {}
+  neutronConfig:
+    DEFAULT:
+      debug: true
+  neutronML2Config:
+    ml2_type_flat:
+      flat_networks:
+        - public
+  novaRef:
+    name: nova
+  policy:
+    "context_is_admin": "role:admin"
+  region:
+    name: hetzner
+  setup:
+    ovn:
+      northboundOVSDB:
+        replicas: 3
+        backup:
+          schedule: 0 12 * * *
+      northd:
+        # northd remote probe interval (to nb or nb relay) can be adjusted individually
+        remoteInactivityProbeMs: 60000
+      southboundOVSDB:
+        # recommended to increase inactivityProbe and raftElectionTimer at scale (default 5s/1s)
+        inactivityProbeMs: 60000
+        raftElectionTimerMs: 60000
+        ovnRelay: # add this section to deploy ovn-relays
+          # in large scale deployments, tune probe intervals separately for the ovsdb relays
+          inactivityProbeMs: 120000
+          remoteInactivityProbeMs: 60000
+          replicas: 5
+        replicas: 3
+        backup:
+          schedule: 0 12 * * *
+      controller:
+        # ovn-controller remote probe interval (to sb or sb relay) can be adjusted individually
+        remoteInactivityProbeMs: 60000
+        configTemplates:
+          - nodeSelectors:
+              - matchLabels: {}
+            bridgeConfig:
+              - bridgeName: br-ex
+                uplinkDevice: enp3s0
+                openstackPhysicalNetwork: "public"
+  targetRelease: "2025.1"

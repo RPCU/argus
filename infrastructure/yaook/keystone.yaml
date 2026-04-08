@@ -1,0 +1,42 @@
+apiVersion: yaook.cloud/v1
+kind: KeystoneDeployment
+metadata:
+  name: keystone
+spec:
+  database:
+    replicas: 1
+    timeoutClient: 300
+    proxy: {}
+    backup:
+      schedule: "0 * * * *"
+  memcached:
+    memory: 1024
+    connections: 2000
+  api:
+    ingress:
+      createIngress: false
+      fqdn: "keystone.rpcu.vpn"
+      port: 443
+    replicas: 1
+    wsgiProcesses: 10
+  keystoneConfig:
+    DEFAULT:
+      # specify CADF to enable advanced audit logging
+      notification_format: "cadf"
+    oslo_messaging_notifications:
+      # select an oslo.messaging notifications driver to activate audit logging
+      driver:
+        - log
+    token:
+      expiration: 86400
+    database:
+      # (optional) connection_recycle_time hould always be ~10%
+      # smaller than the haproxy timeoutClient
+      connection_recycle_time: 280
+  policy:
+    "admin_required": "role:admin or is_admin:1"
+  region:
+    name: hetzner
+  issuerRef:
+    name: yaook-internal
+  targetRelease: "2025.1"

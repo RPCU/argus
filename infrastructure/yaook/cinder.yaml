@@ -1,0 +1,62 @@
+apiVersion: yaook.cloud/v1
+kind: CinderDeployment
+metadata:
+  name: cinder
+spec:
+  keystoneRef:
+    name: keystone
+  database:
+    replicas: 1
+    timeoutClient: 300
+    proxy:
+      replicas: 1
+    backup:
+      schedule: "0 * * * *"
+  messageQueue:
+    replicas: 1
+    resources:
+      rabbitmq:
+        limits:
+          memory: 1G
+          cpu: 1000m
+  memcached: {}
+  api:
+    replicas: 1
+    ingress:
+      createIngress: false
+      fqdn: "cinder.rpcu.vpn"
+      port: 443
+  scheduler:
+    replicas: 1
+  cinderConfig:
+    DEFAULT:
+      debug: True
+    database:
+      # (optional) connection_recycle_time hould always be ~10%
+      # smaller than the haproxy timeoutClient
+      connection_recycle_time: 280
+  policy:
+    "context_is_admin": "role:admin"
+  backends:
+    my-ceph-backend-1:
+      volume:
+        replicas: 1
+      rbd:
+        keyringReference: rook-ceph-client-cinder
+        keyringUsername: cinder
+        backendConfig:
+          backend_availability_zone: nova
+          backend_host: ceph-rbd
+          rbd_pool: rdb-pool
+          rbd_secret_uuid: "b3ab713d-912b-49ed-adaf-bd74368e567a"
+        cephConfig:
+          "mon host": "rook-ceph-mon-a.rook-ceph.svc:6789,rook-ceph-mon-d.rook-ceph.svc:6789,rook-ceph-mon-f.rook-ceph.svc:6789"
+  backup: {}
+  region:
+    name: hetzner
+  issuerRef:
+    name: yaook-internal
+  databaseCleanup:
+    schedule: "0 0 * * *"
+    deletionTimeRange: 60
+  targetRelease: "2025.1"

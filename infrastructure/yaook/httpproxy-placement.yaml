@@ -1,0 +1,16 @@
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: placement
+  namespace: yaook
+spec:
+  ingressClassName: contour
+  virtualhost:
+    fqdn: placement.rpcu.vpn
+  routes:
+    - conditions:
+        - prefix: /
+      services:
+        - name: placement
+          port: 8779
+          protocol: tls

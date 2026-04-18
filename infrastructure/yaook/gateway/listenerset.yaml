@@ -18,6 +18,12 @@ spec:
         mode: Passthrough
     - protocol: TLS
       port: 443
+      name: yaook-passthrough-horizon
+      hostname: "os.rpcu.vpn"
+      tls:
+        mode: Passthrough
+    - protocol: TLS
+      port: 443
       name: yaook-passthrough-vnc
       hostname: "vnc.rpcu.vpn"
       tls:

@@ -4,11 +4,11 @@ metadata:
   name: yaook-passthrough-listeners
   namespace: yaook # XListenerSet is namespaced
 spec:
-  targetRefs:
-    - group: gateway.networking.k8s.io
-      kind: Gateway
-      name: https
-      namespace: kgateway-system
+  parentRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: https
+    namespace: kgateway-system
   listeners:
     - protocol: TLS
       port: 443

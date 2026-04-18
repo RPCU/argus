@@ -12,7 +12,49 @@ spec:
   listeners:
     - protocol: TLS
       port: 443
-      name: yaook-passthrough
-      hostname: "*.rpcu.vpn"
+      name: yaook-passthrough-neutron
+      hostname: "neutron.rpcu.vpn"
+      tls:
+        mode: Passthrough
+    - protocol: TLS
+      port: 443
+      name: yaook-passthrough-horizon
+      hostname: "os.rpcu.vpn"
+      tls:
+        mode: Passthrough
+    - protocol: TLS
+      port: 443
+      name: yaook-passthrough-vnc
+      hostname: "vnc.rpcu.vpn"
+      tls:
+        mode: Passthrough
+    - protocol: TLS
+      port: 443
+      name: yaook-passthrough-placement
+      hostname: "placement.rpcu.vpn"
+      tls:
+        mode: Passthrough
+    - protocol: TLS
+      port: 443
+      name: yaook-passthrough-glance
+      hostname: "glance.rpcu.vpn"
+      tls:
+        mode: Passthrough
+    - protocol: TLS
+      port: 443
+      name: yaook-passthrough-cinder
+      hostname: "cinder.rpcu.vpn"
+      tls:
+        mode: Passthrough
+    - protocol: TLS
+      port: 443
+      name: yaook-passthrough-nova
+      hostname: "nova.rpcu.vpn"
+      tls:
+        mode: Passthrough
+    - protocol: TLS
+      port: 443
+      name: yaook-passthrough-keystone
+      hostname: "keystone.rpcu.vpn"
       tls:
         mode: Passthrough

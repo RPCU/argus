@@ -166,7 +166,7 @@ _rook/configs/_ - Ceph cluster configuration
 - `helmrelease-neutron-ovn-operator.yaml` - Neutron OVN operator
 - `helmrelease-horizon-operator.yaml` - Horizon operator
 - `gateway/` - Gateway API resources for Yaook services
-  - `listenerset.yaml` - XListenerSet for Yaook TLS passthrough
+  - `listenerset.yaml` - XListenerSet for Yaook TLS passthrough (multiple entries for specific hostnames)
   - `tlsroute-*.yaml` - TLSRoutes for various OpenStack services (TLS passthrough)
   - `kustomization.yaml` - Kustomization manifest
 - `kustomization.yaml` - Kustomization manifest

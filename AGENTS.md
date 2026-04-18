@@ -196,7 +196,7 @@ _fluxcd/instances/_ - Instance configuration
 ### Networking
 
 - **Cilium** - v1.18.6 (eBPF-based networking)
-- **Gateway API** - v1.4.1 (experimental channel)
+- **Gateway API** - v1alpha3 (experimental channel)
 - **kgateway** - v2.2.2 (Kubernetes API Gateway)
 - **L2 Announcements** - VLAN interface eno1.4000
 

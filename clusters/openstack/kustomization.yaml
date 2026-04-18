@@ -1,8 +1,9 @@
 resources:
   - cert-manager.yaml
   - cert-manager-issuer.yaml
+  - gateway-api.yaml
+  - kgateway.yaml
   - cilium.yaml
-  - contour.yaml
   - flux-operator.yaml
   - rook.yaml
   - yaook-operator.yaml

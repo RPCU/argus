@@ -1,0 +1,10 @@
+resources:
+  - listenerset.yaml
+  - tlsroute-keystone.yaml
+  - tlsroute-glance.yaml
+  - tlsroute-neutron.yaml
+  - tlsroute-nova.yaml
+  - tlsroute-placement.yaml
+  - tlsroute-vnc.yaml
+  - tlsroute-cinder.yaml
+  - tlsroute-horizon.yaml

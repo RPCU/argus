@@ -1,0 +1,18 @@
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: XListenerSet
+metadata:
+  name: yaook-passthrough-listeners
+  namespace: yaook # XListenerSet is namespaced
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: https
+      namespace: kgateway-system
+  listeners:
+    - protocol: TLS
+      port: 443
+      name: yaook-passthrough
+      hostname: "*.rpcu.vpn"
+      tls:
+        mode: Passthrough

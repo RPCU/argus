@@ -1,0 +1,19 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: TLSRoute
+metadata:
+  name: horizon
+  namespace: yaook
+spec:
+  parentRefs:
+    - name: yaook-passthrough-listeners
+      namespace: yaook
+      sectionName: yaook-passthrough
+  hostnames:
+    - "os.rpcu.vpn"
+  rules:
+    - backendRefs:
+        - name: horizon
+          port: 8443
+          # The protocol field in backendRefs for TLSRoute is implicitly TCP or TLS
+          # based on the parent listener's protocol (TLS in this case).
+          # Since it's passthrough, we don't specify protocol here.

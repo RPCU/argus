@@ -1,0 +1,16 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: TLSRoute
+# metadata: # No change
+#   name: keystone
+#   namespace: yaook
+spec:
+  parentRefs:
+    - name: yaook-passthrough-listeners
+      namespace: yaook
+      sectionName: yaook-passthrough # Target the new TLS passthrough listener
+  hostnames:
+    - "keystone.rpcu.vpn"
+  rules:
+    - backendRefs:
+        - name: keystone
+          port: 5001

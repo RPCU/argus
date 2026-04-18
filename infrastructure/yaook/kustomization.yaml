@@ -2,16 +2,9 @@ namespace: yaook
 resources:
   - ca-cert.yaml
   - keystone.yaml
-  - httpproxy-keystone.yaml
   - glance.yaml
-  - httpproxy-glance.yaml
   - neutron.yaml
-  - httpproxy-neutron.yaml
   - nova.yaml
-  - httpproxy-nova.yaml
-  - httpproxy-placement.yaml
-  - httpproxy-vnc.yaml
   - cinder.yaml
-  - httpproxy-cinder.yaml
   - horizon.yaml
-  - httpproxy-horizon.yaml
+  - gateway/

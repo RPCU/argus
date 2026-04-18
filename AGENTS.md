@@ -76,7 +76,9 @@ Key files:
 - `kustomization.yaml` - Master orchestration file
 - `cilium.yaml` - Cilium networking with cluster-specific patches
 - `cert-manager.yaml` - Certificate management
-- `contour.yaml` - Ingress controller
+- `cert-manager-issuer.yaml` - Cert-Manager issuers
+- `gateway-api.yaml` - Gateway API CRDs installation
+- `kgateway.yaml` - kgateway controller and Gateway installation
 - `ceph-adapter-rook.yaml` - OpenStack/Ceph integration
 - `rook.yaml` - Rook storage orchestrator
 - `yaook-operator.yaml` - Yaook OpenStack operators
@@ -104,11 +106,18 @@ Key files:
 - `values.yaml` - Custom values
 - `kustomization.yaml` - Kustomization manifest
 
-**contour/** - Ingress Controller (v0.3.0)
+**gateway-api/** - Kubernetes Gateway API CRDs (v1.4.1)
 
-- `helmrelease.yaml` - Helm deployment
-- `helmrepo.yaml` - Repository reference
-- `namespace.yaml` - Namespace definition
+- `kustomization.yaml` - Kustomization to deploy upstream experimental CRDs
+
+**kgateway/** - Kubernetes API Gateway (v2.2.2)
+
+- `namespace.yaml` - Kubernetes namespace (`kgateway-system`)
+- `helmrepo.yaml` - Helm repository (`oci://cr.kgateway.dev/kgateway-dev/charts`)
+- `helmrelease-crds.yaml` - kgateway CRDs Helm chart
+- `helmrelease.yaml` - kgateway controller Helm chart
+- `gateway.yaml` - `Gateway` resource definition
+- `httplistenerpolicy.yaml` - `HTTPListenerPolicy` for WebSocket upgrades and access logs
 - `kustomization.yaml` - Kustomization manifest
 
 **rook/** - Distributed Storage (Ceph v19.2.3)
@@ -128,7 +137,10 @@ _rook/configs/_ - Ceph cluster configuration
 - `storageclassrdb.yaml` - RBD storage class
 - `openstack-clients.yaml` - OpenStack client pods
 - `toolbox-deployment.yaml` - Ceph admin toolbox
-- `ingress.yaml` - Service ingress
+- `gateway/` - Gateway API resources for Rook services
+  - `httproute-ceph.yaml` - HTTPRoute for Ceph dashboard (TLS termination at Gateway)
+  - `kustomization.yaml` - Kustomization manifest
+- `kustomization.yaml` - Kustomization manifest
 
 **ceph-adapter-rook/** - OpenStack Integration
 
@@ -150,6 +162,10 @@ _rook/configs/_ - Ceph cluster configuration
 - `helmrelease-neutron-operator.yaml` - Neutron operator
 - `helmrelease-neutron-ovn-operator.yaml` - Neutron OVN operator
 - `helmrelease-horizon-operator.yaml` - Horizon operator
+- `gateway/` - Gateway API resources for Yaook services
+  - `listenerset.yaml` - XListenerSet for Yaook TLS passthrough
+  - `tlsroute-*.yaml` - TLSRoutes for various OpenStack services (TLS passthrough)
+  - `kustomization.yaml` - Kustomization manifest
 - `kustomization.yaml` - Kustomization manifest
 
 **fluxcd/** - GitOps Operator
@@ -177,7 +193,8 @@ _fluxcd/instances/_ - Instance configuration
 ### Networking
 
 - **Cilium** - v1.18.6 (eBPF-based networking)
-- **Contour** - v0.3.0 (Ingress controller)
+- **Gateway API** - v1.4.1 (experimental channel)
+- **kgateway** - v2.2.2 (Kubernetes API Gateway)
 - **L2 Announcements** - VLAN interface eno1.4000
 
 ### Storage
@@ -250,7 +267,7 @@ _fluxcd/instances/_ - Instance configuration
 - **Kubernetes API**: 10.0.0.5:6443
 - **Device Routing**: eno1.4000 (VLAN)
 - **L2 Announcement Interface**: eno1.4000
-- **Load Balancer IPs**: 10.0.0.240-10.0.0.253
+- **Load Balancer IPs**: 10.0.0.240-10.0.0.253 (now used by kgateway)
 
 ### Ceph Cluster
 
@@ -284,14 +301,14 @@ _fluxcd/instances/_ - Instance configuration
 
 ### Helm Chart Versions
 
-| Component    | Version | Repository             | Sync Interval |
-| ------------ | ------- | ---------------------- | ------------- |
-| cert-manager | v1.19.2 | jetstack/cert-manager  | 5m            |
-| cilium       | v1.18.6 | cilium/cilium          | 5m            |
-| contour      | v0.3.0  | projectcontour/contour | 5m            |
-| rook         | v1.19.0 | rook-release/rook-ceph | 5m            |
-| yaook-crds   | 2.0.3   | yaook.cloud/crds       | 5m            |
-| yaook-ops    | 2.0.3   | yaook.cloud/operators  | 5m            |
+| Component    | Version | Repository                                | Sync Interval |
+| ------------ | ------- | ----------------------------------------- | ------------- |
+| cert-manager | v1.19.2 | jetstack/cert-manager                     | 5m            |
+| cilium       | v1.18.6 | cilium/cilium                             | 5m            |
+| kgateway     | v2.2.2  | oci://cr.kgateway.dev/kgateway-dev/charts | 5m            |
+| rook         | v1.19.0 | rook-release/rook-ceph                    | 5m            |
+| yaook-crds   | 2.0.3   | yaook.cloud/crds                          | 5m            |
+| yaook-ops    | 2.0.3   | yaook.cloud/operators                     | 5m            |
 
 ---
 
@@ -306,10 +323,12 @@ _fluxcd/instances/_ - Instance configuration
    - Instantiates Flux CD components
    - Configures Git sync from RPCU/argus:main
 
-3. **Parallel Components** (after Flux):
+3. **Core Components** (after Flux):
    - cert-manager
+   - cert-manager-issuer
+   - gateway-api (CRDs)
+   - kgateway (depends on gateway-api)
    - cilium (with VLAN patches)
-   - contour
    - ceph-adapter-rook
    - rook (setup → configs with health checks)
    - yaook-operator (CRDs first, then operators via dependsOn)
@@ -355,7 +374,7 @@ Validates devenv configuration and hello script.
 **Add New Certificate Issuer**:
 
 1. Create file in clusters/openstack/cert-manager-issuer/[name].yaml
-2. Reference in clusters/openstack/kustomization.yaml
+2. Reference in clusters/openstack/cert-manager-issuer/kustomization.yaml
 3. Apply via Flux
 
 **Modify Cilium Network Policy**:
@@ -411,6 +430,8 @@ Prettier, nixfmt, and shfmt are integrated for automatic formatting on commit.
 - **Official Docs**: https://docs.rpcu.io/gitops/
 - **Flux CD**: https://fluxcd.io/docs/
 - **Cilium**: https://docs.cilium.io/
+- **Gateway API**: https://gateway-api.sigs.k8s.io/
+- **kgateway**: https://kgateway.dev/
 - **Rook**: https://rook.io/docs/rook/
 - **Cert-Manager**: https://cert-manager.io/docs/
 
@@ -479,20 +500,25 @@ cilium status
 # Kubernetes resources
 kubectl get helmrelease -A
 kubectl get kustomization -n flux-system
+kubectl get gateway -A
+kubectl get httproute -A
+kubectl get tlsroute -A
+kubectl get backendtlspolicy -A
+kubectl get xlistenersets -A
 ```
 
 ---
 
 ## 9. Project Statistics
 
-| Metric                              | Value  |
-| ----------------------------------- | ------ |
-| Infrastructure YAML files           | 32     |
-| Cluster YAML files                  | 11     |
-| Helm charts managed                 | 5+     |
-| Kubernetes namespaces               | 8+     |
-| Git branches (local)                | 4      |
-| Total project size (excluding .git) | 280 KB |
+| Metric                              | Value     |
+| ----------------------------------- | --------- |
+| Infrastructure YAML files           | (updated) |
+| Cluster YAML files                  | (updated) |
+| Helm charts managed                 | (updated) |
+| Kubernetes namespaces               | (updated) |
+| Git branches (local)                | 4         |
+| Total project size (excluding .git) | (updated) |
 
 ---
 
@@ -503,7 +529,7 @@ Argus is a **production-grade Kubernetes GitOps repository** that:
 ✅ Declares infrastructure as code (YAML/Helm)  
 ✅ Manages via Flux CD for automatic reconciliation  
 ✅ Supports multi-cluster deployments (OpenStack-based)  
-✅ Provides networking (Cilium), storage (Rook/Ceph), ingress (Contour), TLS (Cert-Manager)  
+✅ Provides networking (Cilium), storage (Rook/Ceph), API Gateway (kgateway), TLS (Cert-Manager)  
 ✅ Uses NixOS ecosystem for reproducible development  
 ✅ Enforces code quality through pre-commit hooks  
 ✅ Syncs from GitHub automatically (1-minute intervals)  

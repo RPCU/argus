@@ -1,5 +1,4 @@
 resources:
-  - ceph-adapter-rook.yaml
   - cert-manager.yaml
   - cert-manager-issuer.yaml
   - cilium.yaml

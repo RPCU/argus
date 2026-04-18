@@ -1,7 +1,5 @@
 namespace: kgateway-system
 resources:
-  - helmrepo.yaml
-  - helmrelease-crds.yaml
   - helmrelease.yaml
   - gateway.yaml
   - httplistenerpolicy.yaml

@@ -79,6 +79,7 @@ Key files:
 - `contour.yaml` - Ingress controller
 - `ceph-adapter-rook.yaml` - OpenStack/Ceph integration
 - `rook.yaml` - Rook storage orchestrator
+- `yaook-operator.yaml` - Yaook OpenStack operators
 - `flux-operator.yaml` - Flux operator deployment
 - `fluxcd/` - Flux CD configuration
   - `flux-instance-patch.yaml` - Flux instance patches
@@ -135,6 +136,22 @@ _rook/configs/_ - Ceph cluster configuration
 - `helmrepo.yaml` - Repository reference
 - `kustomization.yaml` - Kustomization manifest
 
+**yaook-operator/** - Yaook OpenStack Operators (v2.0.3)
+
+- `namespace.yaml` - Kubernetes namespace (yaook)
+- `helmrepo.yaml` - Repository reference (charts.yaook.cloud)
+- `helmrelease-crds.yaml` - Yaook CRDs Helm chart
+- `helmrelease-infra-operator.yaml` - Infrastructure operator
+- `helmrelease-keystone-operator.yaml` - Keystone operator
+- `helmrelease-keystone-resources-operator.yaml` - Keystone resources operator
+- `helmrelease-glance-operator.yaml` - Glance operator
+- `helmrelease-nova-operator.yaml` - Nova operator
+- `helmrelease-nova-compute-operator.yaml` - Nova compute operator
+- `helmrelease-neutron-operator.yaml` - Neutron operator
+- `helmrelease-neutron-ovn-operator.yaml` - Neutron OVN operator
+- `helmrelease-horizon-operator.yaml` - Horizon operator
+- `kustomization.yaml` - Kustomization manifest
+
 **fluxcd/** - GitOps Operator
 
 _fluxcd/operator/_ - Operator installation
@@ -168,6 +185,11 @@ _fluxcd/instances/_ - Instance configuration
 - **Rook/Ceph** - v19.2.3
 - **Block Storage** - RBD
 - **Object Storage** - S3-compatible
+
+### OpenStack Operators
+
+- **Yaook Operators** - v2.0.3 (charts.yaook.cloud)
+- **Operators**: infra, keystone, keystone-resources, glance, nova, nova-compute, neutron, neutron-ovn, horizon
 
 ### Certificate Management
 
@@ -268,6 +290,8 @@ _fluxcd/instances/_ - Instance configuration
 | cilium       | v1.18.6 | cilium/cilium          | 5m            |
 | contour      | v0.3.0  | projectcontour/contour | 5m            |
 | rook         | v1.19.0 | rook-release/rook-ceph | 5m            |
+| yaook-crds   | 2.0.3   | yaook.cloud/crds       | 5m            |
+| yaook-ops    | 2.0.3   | yaook.cloud/operators  | 5m            |
 
 ---
 
@@ -288,6 +312,7 @@ _fluxcd/instances/_ - Instance configuration
    - contour
    - ceph-adapter-rook
    - rook (setup → configs with health checks)
+   - yaook-operator (CRDs first, then operators via dependsOn)
 
 ### Health Checks
 
@@ -488,7 +513,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: March 2026
+**Last Updated**: April 2026
 **Repository**: https://github.com/RPCU/argus.git
 **Main Branch**: main
 **Cluster**: OpenStack

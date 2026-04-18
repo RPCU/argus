@@ -1,0 +1,14 @@
+namespace: yaook
+resources:
+  - namespace.yaml
+  - helmrepo.yaml
+  - helmrelease-crds.yaml
+  - helmrelease-infra-operator.yaml
+  - helmrelease-keystone-operator.yaml
+  - helmrelease-keystone-resources-operator.yaml
+  - helmrelease-glance-operator.yaml
+  - helmrelease-nova-operator.yaml
+  - helmrelease-nova-compute-operator.yaml
+  - helmrelease-neutron-operator.yaml
+  - helmrelease-neutron-ovn-operator.yaml
+  - helmrelease-horizon-operator.yaml

@@ -1,7 +1,7 @@
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
-  name: openstack-helm
+  name: yaook-operator
 spec:
   interval: 1h
-  url: https://tarballs.opendev.org/openstack/openstack-helm
+  url: https://charts.yaook.cloud/operator/stable/

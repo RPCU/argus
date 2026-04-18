@@ -7,9 +7,9 @@ spec:
     name: keystone
   replicas: 2
   ingress:
-      createIngress: false
-      fqdn: "os.rpcu.vpn"
-      port: 443
+    createIngress: false
+    fqdn: "os.rpcu.vpn"
+    port: 443
   issuerRef:
     name: yaook-internal
   targetRelease: "2025.1"

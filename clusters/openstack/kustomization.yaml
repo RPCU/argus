@@ -6,4 +6,5 @@ resources:
   - contour.yaml
   - flux-operator.yaml
   - rook.yaml
+  - yaook-operator.yaml
   - fluxcd/

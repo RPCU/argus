@@ -1,8 +1,7 @@
 apiVersion: gateway.networking.k8s.io/v1
 kind: TLSRoute
 metadata:
-  name: horizon
-  namespace: yaook
+  name: tlsroute-horizon
 spec:
   parentRefs:
     - name: yaook-passthrough-listeners

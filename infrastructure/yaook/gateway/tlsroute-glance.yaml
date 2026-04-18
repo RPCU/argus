@@ -5,9 +5,11 @@ metadata:
   namespace: yaook
 spec:
   parentRefs:
-    - name: yaook-passthrough-listeners
+    - group: gateway.networking.x-k8s.io
+      kind: XListenerSet
+      name: yaook-passthrough-listeners
       namespace: yaook
-      sectionName: yaook-passthrough
+      sectionName: yaook-passthrough-glance
   hostnames:
     - "glance.rpcu.vpn"
   rules:

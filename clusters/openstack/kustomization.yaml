@@ -2,6 +2,7 @@ resources:
   - cert-manager.yaml
   - cert-manager-issuer.yaml
   - gateway-api.yaml
+  - kgateway-crds.yaml
   - kgateway.yaml
   - cilium.yaml
   - flux-operator.yaml

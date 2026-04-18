@@ -78,6 +78,7 @@ Key files:
 - `cert-manager.yaml` - Certificate management
 - `cert-manager-issuer.yaml` - Cert-Manager issuers
 - `gateway-api.yaml` - Gateway API CRDs installation
+- `kgateway-crds.yaml` - kgateway CRDs installation
 - `kgateway.yaml` - kgateway controller and Gateway installation
 - `ceph-adapter-rook.yaml` - OpenStack/Ceph integration
 - `rook.yaml` - Rook storage orchestrator
@@ -112,9 +113,11 @@ Key files:
 
 **kgateway/** - Kubernetes API Gateway (v2.2.2)
 
-- `namespace.yaml` - Kubernetes namespace (`kgateway-system`)
-- `helmrepo.yaml` - Helm repository (`oci://cr.kgateway.dev/kgateway-dev/charts`)
-- `helmrelease-crds.yaml` - kgateway CRDs Helm chart
+- `crds/` - kgateway CRDs deployment
+  - `namespace.yaml` - Kubernetes namespace (`kgateway-system`)
+  - `helmrepo.yaml` - Helm repository (`oci://cr.kgateway.dev/kgateway-dev/charts`)
+  - `helmrelease-crds.yaml` - kgateway CRDs Helm chart
+  - `kustomization.yaml` - Kustomization manifest
 - `helmrelease.yaml` - kgateway controller Helm chart
 - `gateway.yaml` - `Gateway` resource definition
 - `httplistenerpolicy.yaml` - `HTTPListenerPolicy` for WebSocket upgrades and access logs
@@ -327,7 +330,8 @@ _fluxcd/instances/_ - Instance configuration
    - cert-manager
    - cert-manager-issuer
    - gateway-api (CRDs)
-   - kgateway (depends on gateway-api)
+   - kgateway-crds (depends on gateway-api)
+   - kgateway (depends on kgateway-crds)
    - cilium (with VLAN patches)
    - ceph-adapter-rook
    - rook (setup → configs with health checks)
@@ -396,7 +400,7 @@ Validates devenv configuration and hello script.
 3. Run pre-commit: `pre-commit run --all-files` (via devenv)
 4. Test with `fluxcd` CLI if available
 5. Commit with message: `git commit -m "feat: description"`
-6. Push: `git push origin feature/your-feature`
+6. Push: `git push origin feature/your-or-your-team's-feature`
 7. Create PR on GitHub
 
 ---

@@ -1,0 +1,9 @@
+resources:
+  - cephblockpool.yaml
+  - cephcluster.yaml
+  - cephobjectstore.yaml
+  - cephobjectstoreuser.yaml
+  - openstack-clients.yaml
+  - storageclassrdb.yaml
+  - toolbox-deployment.yaml
+  - gateway/

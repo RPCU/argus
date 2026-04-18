@@ -1,0 +1,13 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: rpcu-vpn-wildcard-tls
+  namespace: kgateway-system # Should be in the same namespace as the Gateway
+spec:
+  secretName: rpcu-vpn-wildcard-tls
+  issuerRef:
+    name: root-rpcu
+    kind: ClusterIssuer
+    group: cert-manager.io
+  dnsNames:
+    - "*.rpcu.vpn"

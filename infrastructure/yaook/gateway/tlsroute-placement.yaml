@@ -1,0 +1,13 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: TLSRoute
+spec:
+  parentRefs:
+    - name: yaook-passthrough-listeners
+      namespace: yaook
+      sectionName: yaook-passthrough
+  hostnames:
+    - "placement.rpcu.vpn"
+  rules:
+    - backendRefs:
+        - name: placement
+          port: 8779

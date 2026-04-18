@@ -1,0 +1,13 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: TLSRoute
+spec:
+  parentRefs:
+    - name: yaook-passthrough-listeners
+      namespace: yaook
+      sectionName: yaook-passthrough
+  hostnames:
+    - "cinder.rpcu.vpn"
+  rules:
+    - backendRefs:
+        - name: cinder-api
+          port: 8777

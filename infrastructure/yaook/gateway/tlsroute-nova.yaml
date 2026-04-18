@@ -1,5 +1,7 @@
 apiVersion: gateway.networking.k8s.io/v1
 kind: TLSRoute
+metadata:
+  name: tlsroute-nova
 spec:
   parentRefs:
     - name: yaook-passthrough-listeners

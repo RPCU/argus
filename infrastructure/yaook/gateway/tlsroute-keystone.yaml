@@ -1,8 +1,8 @@
 apiVersion: gateway.networking.k8s.io/v1
 kind: TLSRoute
-# metadata: # No change
-#   name: keystone
-#   namespace: yaook
+metadata:
+  name: tlsroute-keystone
+  namespace: yaook
 spec:
   parentRefs:
     - name: yaook-passthrough-listeners

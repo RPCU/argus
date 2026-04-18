@@ -4,9 +4,11 @@ metadata:
   name: tlsroute-nova
 spec:
   parentRefs:
-    - name: yaook-passthrough-listeners
+    - group: gateway.networking.x-k8s.io
+      kind: XListenerSet
+      name: yaook-passthrough-listeners
       namespace: yaook
-      sectionName: yaook-passthrough
+      sectionName: yaook-passthrough-nova
   hostnames:
     - "nova.rpcu.vpn"
   rules:

@@ -4,9 +4,11 @@ metadata:
   name: tlsroute-vnc
 spec:
   parentRefs:
-    - name: yaook-passthrough-listeners
+    - group: gateway.networking.x-k8s.io
+      kind: XListenerSet
+      name: yaook-passthrough-listeners
       namespace: yaook
-      sectionName: yaook-passthrough
+      sectionName: yaook-passthrough-vnc
   hostnames:
     - "vnc.rpcu.vpn"
   rules:

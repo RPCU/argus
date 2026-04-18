@@ -5,9 +5,11 @@ metadata:
   namespace: yaook
 spec:
   parentRefs:
-    - name: yaook-passthrough-listeners
+    - group: gateway.networking.x-k8s.io
+      kind: XListenerSet
+      name: yaook-passthrough-listeners
       namespace: yaook
-      sectionName: yaook-passthrough # Target the new TLS passthrough listener
+      sectionName: yaook-passthrough-keystone # Target the new TLS passthrough listener
   hostnames:
     - "keystone.rpcu.vpn"
   rules:

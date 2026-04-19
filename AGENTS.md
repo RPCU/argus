@@ -77,6 +77,7 @@ Key files:
 - `cilium.yaml` - Cilium networking with cluster-specific patches
 - `cert-manager.yaml` - Certificate management
 - `cert-manager-issuer.yaml` - Cert-Manager issuers
+- `trust-manager.yaml` - trust-manager (setup + configs with dependsOn)
 - `gateway-api.yaml` - Gateway API CRDs installation
 - `kgateway-crds.yaml` - kgateway CRDs installation
 - `kgateway.yaml` - kgateway controller and Gateway installation
@@ -96,6 +97,19 @@ Key files:
 - `helmrepo.yaml` - Helm repository
 - `namespace.yaml` - Kubernetes namespace
 - `values.yaml` - Custom Helm values
+- `kustomization.yaml` - Kustomization manifest
+
+**trust-manager/** - Certificate Trust Bundle Distribution (v0.18.0)
+
+_trust-manager/setup/_ - Initial installation
+
+- `helmrelease.yaml` - trust-manager Helm chart (v0.18.0)
+- `helmrepo.yaml` - Helm repository (charts.jetstack.io)
+- `kustomization.yaml` - Kustomization manifest
+
+_trust-manager/configs/_ - Trust bundle configuration
+
+- `bundle.yaml` - Bundle resource distributing RPCU root CA
 - `kustomization.yaml` - Kustomization manifest
 
 **cilium/** - eBPF-Based Networking (v1.18.6)
@@ -329,6 +343,7 @@ _fluxcd/instances/_ - Instance configuration
 3. **Core Components** (after Flux):
    - cert-manager
    - cert-manager-issuer
+   - trust-manager (setup → configs with dependsOn)
    - gateway-api (CRDs)
    - kgateway-crds (depends on gateway-api)
    - kgateway (depends on kgateway-crds)

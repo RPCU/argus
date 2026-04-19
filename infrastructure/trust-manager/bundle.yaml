@@ -1,0 +1,14 @@
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: rpcu-bundle
+spec:
+  sources:
+    - secret:
+        name: root-rpcu
+        key: "ca.crt"
+  target:
+    secret:
+      key: "ca.crt"
+    configMap:
+      key: "ca.crt"

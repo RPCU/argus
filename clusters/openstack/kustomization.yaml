@@ -1,6 +1,7 @@
 resources:
   - cert-manager.yaml
   - cert-manager-issuer.yaml
+  - trust-manager.yaml
   - gateway-api.yaml
   - kgateway-crds.yaml
   - kgateway.yaml

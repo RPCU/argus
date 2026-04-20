@@ -7,4 +7,5 @@ resources:
   - nova.yaml
   - cinder.yaml
   - horizon.yaml
+  - octavia.yaml
   - gateway/

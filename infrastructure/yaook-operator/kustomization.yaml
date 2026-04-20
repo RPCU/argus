@@ -12,3 +12,5 @@ resources:
   - helmrelease-neutron-operator.yaml
   - helmrelease-neutron-ovn-operator.yaml
   - helmrelease-horizon-operator.yaml
+  - helmrelease-octavia-operator.yaml
+  - helmrelease-cds-operator.yaml

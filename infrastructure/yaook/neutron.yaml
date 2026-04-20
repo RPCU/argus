@@ -71,4 +71,4 @@ spec:
               - bridgeName: br-ex
                 uplinkDevice: enp3s0
                 openstackPhysicalNetwork: "public"
-  targetRelease: "2026.1"
+  targetRelease: "2025.1"

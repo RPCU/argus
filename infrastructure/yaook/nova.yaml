@@ -80,7 +80,7 @@ spec:
     replicas: 1
   metadata:
     replicas: 1
-  targetRelease: "2026.1"
+  targetRelease: "2025.1"
   novaConfig:
     DEFAULT:
       debug: True

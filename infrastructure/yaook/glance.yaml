@@ -36,4 +36,4 @@ spec:
     name: hetzner
   issuerRef:
     name: yaook-internal
-  targetRelease: "2025.1"
+  targetRelease: "2026.1"

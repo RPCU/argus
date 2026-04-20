@@ -1,0 +1,64 @@
+apiVersion: yaook.cloud/v1
+kind: OctaviaDeployment
+metadata:
+  name: octavia
+spec:
+  keystoneRef:
+    name: keystone
+  neutronRef:
+    name: neutron-ovn
+  api:
+    replicas: 1
+    ingress:
+      createIngress: false
+      fqdn: "octavia.rpcu.vpn"
+      port: 443
+  health_manager: {}
+  worker: {}
+  housekeeping:
+    replicas: 0
+  networking:
+    # CIDR of the Neutron network to be used to connect Octavia management
+    # services and the Amphora VMs. Will be exposed via OVS internal ports
+    # on Kubernetes nodes and must not collide with Kubernetes IP ranges!
+    managementSubnetCIDR: "172.16.0.0/12"
+  database:
+    replicas: 1
+    timeoutClient: 300
+    proxy:
+      replicas: 1
+    backup:
+      schedule: "0 * * * *"
+  memcached: {}
+  messageQueue:
+    replicas: 1
+  issuerRef:
+    name: yaook-internal
+  targetRelease: "2025.1"
+  region:
+    name: hetzner
+  policy:
+    "context_is_admin": "role:load-balancer_admin or role:admin"
+  octaviaConfig:
+    DEFAULT:
+      debug: True
+    api_settings:
+      enabled_provider_drivers: "ovn:OVN provider"
+      default_provider_driver: "ovn"
+    # (optional) enable audit logging
+    audit:
+      enabled: True
+      audit_map_file: "/usr/local/etc/octavia/octavia_api_audit_map.conf"
+    audit_middleware_notifications:
+      use_oslo_messaging: True
+      driver: "log"
+    # controller_worker:
+    #   # (optional) value of the 'owner' attribute of the Amphora image in
+    #   # Glance, defaults to the ID of the 'service' project.
+    #   amp_image_owner_id: "98a3c44385de48ddba045d8c19340451"
+    #   # (optional) ID of the flavor in Nova to use for the Amphora VMs,
+    #   # defaults to 'octavia-amphora'.
+    #   amp_flavor_id: "my-flavor-id"
+    #   # (optional) Name of the image tag for Amphora images, defaults to
+    #   # 'amphora'.
+    #   amp_image_tag: "custom-amphora-images"

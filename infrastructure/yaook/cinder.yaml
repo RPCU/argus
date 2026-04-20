@@ -59,4 +59,4 @@ spec:
   databaseCleanup:
     schedule: "0 0 * * *"
     deletionTimeRange: 60
-  targetRelease: "2026.1"
+  targetRelease: "2025.1"

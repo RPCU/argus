@@ -1,0 +1,4 @@
+resources:
+  - xrd-router.yaml
+  - composition-router.yaml
+  - function-patch-and-transform.yaml

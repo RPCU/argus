@@ -21,7 +21,7 @@ spec:
     # CIDR of the Neutron network to be used to connect Octavia management
     # services and the Amphora VMs. Will be exposed via OVS internal ports
     # on Kubernetes nodes and must not collide with Kubernetes IP ranges!
-    managementSubnetCIDR: "172.16.0.0/12"
+    managementSubnetCIDR: "172.31.0.0/12"
   database:
     replicas: 1
     timeoutClient: 300

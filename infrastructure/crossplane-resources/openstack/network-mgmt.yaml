@@ -1,0 +1,41 @@
+apiVersion: networking.openstack.m.crossplane.io/v1alpha1
+kind: NetworkV2
+metadata:
+  labels:
+    network: mgmt
+  name: mgmt
+spec:
+  forProvider:
+    adminStateUp: true
+    name: mgmt
+---
+apiVersion: networking.openstack.m.crossplane.io/v1alpha1
+kind: SubnetV2
+metadata:
+  labels:
+    network: mgmt
+  name: mgmt
+spec:
+  forProvider:
+    cidr: 192.168.0.0/24
+    networkIdSelector:
+      matchLabels:
+        network: mgmt
+---
+apiVersion: networking.openstack.m.crossplane.io/v1alpha1
+kind: RouterInterfaceV2
+metadata:
+  annotations:
+    meta.upbound.io/example-id: networking/v1alpha1/routerroutev2
+  labels:
+    testing.upbound.io/example-name: int_1
+  name: int-1
+  namespace: upbound-system
+spec:
+  forProvider:
+    routerIdSelector:
+      matchLabels:
+        network: ext
+    subnetIdSelector:
+      matchLabels:
+        network: mgmt

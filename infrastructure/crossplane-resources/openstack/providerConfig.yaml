@@ -1,0 +1,11 @@
+apiVersion: openstack.m.crossplane.io/v1beta1
+kind: ClusterProviderConfig
+metadata:
+  name: default
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      key: config.json
+      name: crossplane-provider-openstack
+      namespace: yaook

@@ -23,6 +23,7 @@ spec:
   interval: 10m0s
   dependsOn:
     - name: yaook-operator
+    - name: external-secrets
   sourceRef:
     kind: GitRepository
     name: flux-system

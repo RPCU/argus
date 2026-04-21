@@ -1,0 +1,41 @@
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: xrouters.networking.rpcu.io
+spec:
+  scope: Namespaced
+  group: networking.rpcu.io
+  names:
+    kind: XRouter
+    plural: xrouters
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                routerName:
+                  type: string
+                  description: Name of the router in OpenStack
+                externalNetworkName:
+                  type: string
+                  description: Name of the external gateway NetworkV2 resource
+                externalNetwork:
+                  type: boolean
+                  description: Whether it's an external network or not
+              required:
+                - routerName
+            status:
+              type: object
+              properties:
+                networkId:
+                  type: string
+                  description: Resolved external network ID from OpenStack
+                routerId:
+                  type: string
+                  description: Router ID from OpenStack

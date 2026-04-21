@@ -1,0 +1,8 @@
+apiVersion: networking.rpcu.io/v1alpha1
+kind: XRouter
+metadata:
+  name: ext
+spec:
+  routerName: ext
+  externalNetworkName: ext
+  externalNetwork: true

@@ -1,0 +1,11 @@
+namespace: external-secrets
+resources:
+  - namespace.yaml
+  - helmrepo.yaml
+  - helmrelease.yaml
+configMapGenerator:
+  - name: external-secrets-values
+    files:
+      - values.yaml
+generatorOptions:
+  disableNameSuffixHash: true

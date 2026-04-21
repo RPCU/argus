@@ -1,0 +1,3 @@
+args:
+  - --enable-usages
+  - --enable-realtime-compositions

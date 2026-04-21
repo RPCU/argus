@@ -84,6 +84,8 @@ Key files:
 - `ceph-adapter-rook.yaml` - OpenStack/Ceph integration
 - `rook.yaml` - Rook storage orchestrator
 - `yaook-operator.yaml` - Yaook OpenStack operators
+- `crossplane.yaml` - Crossplane universal control plane
+- `external-secrets.yaml` - External Secrets Operator
 - `flux-operator.yaml` - Flux operator deployment
 - `fluxcd/` - Flux CD configuration
   - `flux-instance-patch.yaml` - Flux instance patches
@@ -154,6 +156,7 @@ _rook/configs/_ - Ceph cluster configuration
 - `storageclassrdb.yaml` - RBD storage class
 - `openstack-clients.yaml` - OpenStack client pods
 - `toolbox-deployment.yaml` - Ceph admin toolbox
+- `yaook-secret-reader-rbac.yaml` - RBAC allowing yaook to read secrets
 - `gateway/` - Gateway API resources for Rook services
   - `httproute-ceph.yaml` - HTTPRoute for Ceph dashboard (TLS termination at Gateway)
   - `kustomization.yaml` - Kustomization manifest
@@ -163,6 +166,35 @@ _rook/configs/_ - Ceph cluster configuration
 
 - `helmrelease.yaml` - Helm chart
 - `helmrepo.yaml` - Repository reference
+- `kustomization.yaml` - Kustomization manifest
+
+**crossplane/** - Universal Control Plane (v2.2.0)
+
+- `helmrelease.yaml` - Helm deployment
+- `helmrepo.yaml` - Helm repository (charts.crossplane.io/stable)
+- `namespace.yaml` - Kubernetes namespace (crossplane-system)
+- `values.yaml` - Custom Helm values (beta features enabled: usages, realtime-compositions)
+- `kustomization.yaml` - Kustomization manifest
+
+**crossplane-compositions/** - Crossplane XRDs & Compositions
+
+- `xrd-router.yaml` - CompositeResourceDefinition for XRouter (networking.rpcu.io/v1alpha1)
+- `composition-router.yaml` - Composition wiring NetworkV2 ID into RouterV2 externalNetworkId
+- `kustomization.yaml` - Kustomization manifest (no namespace, cluster-scoped resources)
+
+**crossplane-resources/** - Crossplane Managed Resources & Composite Resources
+
+- `network-mgmt.yaml` - Management network (NetworkV2 + SubnetV2, CIDR 192.168.0.0/24)
+- `network-ext.yaml` - External network subnet (SubnetV2, CIDR 172.16.0.0/16)
+- `routers.yaml` - XRouter composite resource (router-ext with ext network gateway)
+- `kustomization.yaml` - Kustomization manifest (namespace: crossplane-system)
+
+**external-secrets/** - External Secrets Operator (v2.3.0)
+
+- `helmrelease.yaml` - Helm deployment
+- `helmrepo.yaml` - Helm repository (charts.external-secrets.io)
+- `namespace.yaml` - Kubernetes namespace (external-secrets)
+- `values.yaml` - Custom Helm values
 - `kustomization.yaml` - Kustomization manifest
 
 **yaook-operator/** - Yaook OpenStack Operators (v2.0.3)
@@ -179,6 +211,12 @@ _rook/configs/_ - Ceph cluster configuration
 - `helmrelease-neutron-operator.yaml` - Neutron operator
 - `helmrelease-neutron-ovn-operator.yaml` - Neutron OVN operator
 - `helmrelease-horizon-operator.yaml` - Horizon operator
+- `secretstore.yaml` - SecretStore for Kubernetes secrets provider
+- `secretstore-rbac.yaml` - ServiceAccount for SecretStore
+- `secretstore-cluster-rbac.yaml` - ClusterRole permissions for SecretStore to read across namespaces
+- `secretstore-rook.yaml` - SecretStore for reading secrets from rook-ceph namespace
+- `externalsecret-crossplane-openstack.yaml` - ExternalSecret transforming keystone-admin to Crossplane format
+- `externalsecret-rook-ceph.yaml` - ExternalSecrets syncing cinder and glance credentials from rook-ceph
 - `gateway/` - Gateway API resources for Yaook services
   - `listenerset.yaml` - XListenerSet for Yaook TLS passthrough (multiple entries for specific hostnames)
   - `tlsroute-*.yaml` - TLSRoutes for various OpenStack services (TLS passthrough)
@@ -229,6 +267,10 @@ _fluxcd/instances/_ - Instance configuration
 
 - **Cert-Manager** - v1.19.2
 - **Internal CA Issuer**
+
+### Infrastructure Abstraction
+
+- **Crossplane** - v2.2.0 (universal control plane)
 
 ### Development Tools
 
@@ -318,14 +360,16 @@ _fluxcd/instances/_ - Instance configuration
 
 ### Helm Chart Versions
 
-| Component    | Version | Repository                                | Sync Interval |
-| ------------ | ------- | ----------------------------------------- | ------------- |
-| cert-manager | v1.19.2 | jetstack/cert-manager                     | 5m            |
-| cilium       | v1.18.6 | cilium/cilium                             | 5m            |
-| kgateway     | v2.2.2  | oci://cr.kgateway.dev/kgateway-dev/charts | 5m            |
-| rook         | v1.19.0 | rook-release/rook-ceph                    | 5m            |
-| yaook-crds   | 2.0.3   | yaook.cloud/crds                          | 5m            |
-| yaook-ops    | 2.0.3   | yaook.cloud/operators                     | 5m            |
+| Component        | Version | Repository                                | Sync Interval |
+| ---------------- | ------- | ----------------------------------------- | ------------- |
+| cert-manager     | v1.19.2 | jetstack/cert-manager                     | 5m            |
+| cilium           | v1.18.6 | cilium/cilium                             | 5m            |
+| kgateway         | v2.2.2  | oci://cr.kgateway.dev/kgateway-dev/charts | 5m            |
+| rook             | v1.19.0 | rook-release/rook-ceph                    | 5m            |
+| crossplane       | 2.2.0   | charts.crossplane.io/stable               | 5m            |
+| external-secrets | 2.3.0   | charts.external-secrets.io                | 5m            |
+| yaook-crds       | 2.0.3   | yaook.cloud/crds                          | 5m            |
+| yaook-ops        | 2.0.3   | yaook.cloud/operators                     | 5m            |
 
 ---
 
@@ -348,6 +392,8 @@ _fluxcd/instances/_ - Instance configuration
    - kgateway-crds (depends on gateway-api)
    - kgateway (depends on kgateway-crds)
    - cilium (with VLAN patches)
+   - crossplane (Helm → crossplane-openstack → crossplane-compositions → crossplane-resources)
+   - external-secrets
    - ceph-adapter-rook
    - rook (setup → configs with health checks)
    - yaook-operator (CRDs first, then operators via dependsOn)
@@ -453,6 +499,7 @@ Prettier, nixfmt, and shfmt are integrated for automatic formatting on commit.
 - **kgateway**: https://kgateway.dev/
 - **Rook**: https://rook.io/docs/rook/
 - **Cert-Manager**: https://cert-manager.io/docs/
+- **Crossplane**: https://docs.crossplane.io/
 
 ### Git Aliases (from .git/config)
 

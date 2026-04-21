@@ -1,0 +1,65 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: router-with-external-gateway
+spec:
+  compositeTypeRef:
+    apiVersion: networking.rpcu.io/v1alpha1
+    kind: XRouter
+  mode: Pipeline
+  pipeline:
+    - step: patch-and-transform
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          - name: external-network
+            base:
+              apiVersion: networking.openstack.m.crossplane.io/v1alpha1
+              kind: NetworkV2
+              spec:
+                forProvider:
+                  adminStateUp: true
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.externalNetworkName
+                toFieldPath: metadata.name
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.externalNetwork
+                toFieldPath: spec.forProvider.external
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.externalNetworkName
+                toFieldPath: spec.forProvider.name
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.externalNetworkName
+                toFieldPath: metadata.labels["network"]
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.id
+                toFieldPath: status.networkId
+          - name: router
+            base:
+              apiVersion: networking.openstack.m.crossplane.io/v1alpha1
+              kind: RouterV2
+              spec:
+                forProvider:
+                  adminStateUp: true
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.routerName
+                toFieldPath: metadata.name
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.externalNetworkName
+                toFieldPath: metadata.labels["network"]
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.routerName
+                toFieldPath: spec.forProvider.name
+              - type: FromCompositeFieldPath
+                fromFieldPath: status.networkId
+                toFieldPath: spec.forProvider.externalNetworkId
+                policy:
+                  fromFieldPath: Required
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.id
+                toFieldPath: status.routerId

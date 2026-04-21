@@ -6,6 +6,8 @@ resources:
   - kgateway-crds.yaml
   - kgateway.yaml
   - cilium.yaml
+  - crossplane.yaml
+  - external-secrets.yaml
   - flux-operator.yaml
   - rook.yaml
   - yaook-operator.yaml

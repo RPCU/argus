@@ -1,0 +1,6 @@
+namespace: yaook
+resources:
+  - network-mgmt.yaml
+  - network-ext.yaml
+  - xrouters.yaml
+  - providerConfig.yaml

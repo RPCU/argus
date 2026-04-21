@@ -9,3 +9,9 @@ resources:
   - horizon.yaml
   - octavia.yaml
   - gateway/
+  - secretstore-rbac.yaml
+  - secretstore-cluster-rbac.yaml
+  - secretstore.yaml
+  - externalsecret-crossplane-openstack.yaml
+  - secretstore-rook.yaml
+  - externalsecret-rook-ceph.yaml

@@ -1,11 +1,11 @@
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
 metadata:
-  name: router-with-external-gateway
+  name: external-network
 spec:
   compositeTypeRef:
     apiVersion: networking.rpcu.io/v1alpha1
-    kind: XRouter
+    kind: ExternalNetwork
   mode: Pipeline
   pipeline:
     - step: patch-and-transform
@@ -22,26 +22,52 @@ spec:
               spec:
                 forProvider:
                   adminStateUp: true
+                  external: true
                   segments:
                     - networkType: flat
                       physicalNetwork: public
             patches:
               - type: FromCompositeFieldPath
-                fromFieldPath: spec.externalNetworkName
+                fromFieldPath: spec.networkName
                 toFieldPath: metadata.name
               - type: FromCompositeFieldPath
-                fromFieldPath: spec.externalNetwork
-                toFieldPath: spec.forProvider.external
-              - type: FromCompositeFieldPath
-                fromFieldPath: spec.externalNetworkName
+                fromFieldPath: spec.networkName
                 toFieldPath: spec.forProvider.name
               - type: FromCompositeFieldPath
-                fromFieldPath: spec.externalNetworkName
+                fromFieldPath: spec.networkName
                 toFieldPath: metadata.labels["network"]
               - type: ToCompositeFieldPath
                 fromFieldPath: status.atProvider.id
                 toFieldPath: status.networkId
-          - name: router
+          - name: external-subnet
+            base:
+              apiVersion: networking.openstack.m.crossplane.io/v1alpha1
+              kind: SubnetV2
+              spec:
+                forProvider:
+                  cidr: 172.16.0.0/16
+                  networkIdSelector:
+                    matchLabels:
+                      network: ext
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.subnetName
+                toFieldPath: metadata.name
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.subnetCidr
+                toFieldPath: spec.forProvider.cidr
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.subnetName
+                toFieldPath: spec.forProvider.name
+              - type: FromCompositeFieldPath
+                fromFieldPath: status.networkId
+                toFieldPath: spec.forProvider.networkId
+                policy:
+                  fromFieldPath: Required
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.id
+                toFieldPath: status.subnetId
+          - name: external-router
             base:
               apiVersion: networking.openstack.m.crossplane.io/v1alpha1
               kind: RouterV2
@@ -52,9 +78,6 @@ spec:
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.routerName
                 toFieldPath: metadata.name
-              - type: FromCompositeFieldPath
-                fromFieldPath: spec.externalNetworkName
-                toFieldPath: metadata.labels["network"]
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.routerName
                 toFieldPath: spec.forProvider.name

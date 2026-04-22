@@ -1,13 +1,13 @@
 apiVersion: apiextensions.crossplane.io/v2
 kind: CompositeResourceDefinition
 metadata:
-  name: xrouters.networking.rpcu.io
+  name: externalnetworks.networking.rpcu.io
 spec:
   scope: Namespaced
   group: networking.rpcu.io
   names:
-    kind: XRouter
-    plural: xrouters
+    kind: ExternalNetwork
+    plural: externalnetworks
   versions:
     - name: v1alpha1
       served: true
@@ -22,14 +22,20 @@ spec:
                 routerName:
                   type: string
                   description: Name of the router in OpenStack
-                externalNetworkName:
+                networkName:
                   type: string
                   description: Name of the external gateway NetworkV2 resource
-                externalNetwork:
-                  type: boolean
-                  description: Whether it's an external network or not
+                subnetName:
+                  type: string
+                  description: Name of the external subnet resource
+                cidr:
+                  type: string
+                  description: CIDR for the subnet resource
               required:
                 - routerName
+                - subnetName
+                - networkName
+                - cidr
             status:
               type: object
               properties:
@@ -39,3 +45,6 @@ spec:
                 routerId:
                   type: string
                   description: Router ID from OpenStack
+                subnetId:
+                  type: string
+                  description: Subnet ID from OpenStack

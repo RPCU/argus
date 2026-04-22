@@ -1,4 +1,4 @@
 resources:
-  - xrd-router.yaml
+  - xrd-externalnetwork.yaml
   - composition-router.yaml
   - function-patch-and-transform.yaml

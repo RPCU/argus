@@ -3,3 +3,4 @@ resources:
   - network-mgmt.yaml
   - providerConfig.yaml
   - externalnetwork.yaml
+  - flavors.yaml

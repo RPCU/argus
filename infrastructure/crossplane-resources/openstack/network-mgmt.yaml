@@ -5,6 +5,7 @@ metadata:
 spec:
   forProvider:
     adminStateUp: true
+    shared: true
     name: mgmt
 ---
 apiVersion: networking.openstack.m.crossplane.io/v1alpha1
@@ -16,6 +17,7 @@ spec:
     cidr: 192.168.0.0/24
     networkIdRef:
       name: mgmt
+    enableDhcp: true
 ---
 apiVersion: networking.openstack.m.crossplane.io/v1alpha1
 kind: RouterInterfaceV2

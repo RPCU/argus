@@ -23,8 +23,8 @@ spec:
                 forProvider:
                   adminStateUp: true
                   segments:
-                    - networkType: Flat
-                    - physicalNetwork: public
+                    - networkType: flat
+                      physicalNetwork: public
             patches:
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.externalNetworkName

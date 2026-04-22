@@ -7,3 +7,4 @@ spec:
   networkName: ext
   subnetName: ext
   cidr: 172.16.0.0/16
+  gatewayIp: 172.16.0.254

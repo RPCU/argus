@@ -1,0 +1,47 @@
+apiVersion: compute.openstack.m.crossplane.io/v1alpha1
+kind: FlavorV2
+metadata:
+  name: small
+spec:
+  forProvider:
+    name: small
+    vcpus: 1
+    ram: 2048
+    disk: 10
+    isPublic: true
+---
+apiVersion: compute.openstack.m.crossplane.io/v1alpha1
+kind: FlavorV2
+metadata:
+  name: medium
+spec:
+  forProvider:
+    name: medium
+    vcpus: 2
+    ram: 4096
+    disk: 30
+    isPublic: true
+---
+apiVersion: compute.openstack.m.crossplane.io/v1alpha1
+kind: FlavorV2
+metadata:
+  name: large
+spec:
+  forProvider:
+    name: large
+    vcpus: 4
+    ram: 8192
+    disk: 70
+    isPublic: true
+---
+apiVersion: compute.openstack.m.crossplane.io/v1alpha1
+kind: FlavorV2
+metadata:
+  name: xlarge
+spec:
+  forProvider:
+    name: xlarge
+    vcpus: 8
+    ram: 16384
+    disk: 100
+    isPublic: true

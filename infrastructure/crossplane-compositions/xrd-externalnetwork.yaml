@@ -31,11 +31,15 @@ spec:
                 cidr:
                   type: string
                   description: CIDR for the subnet resource
+                gatewayIp:
+                  type: string
+                  description: CIDR for the subnet resource
               required:
                 - routerName
                 - subnetName
                 - networkName
                 - cidr
+                - gatewayIp
             status:
               type: object
               properties:

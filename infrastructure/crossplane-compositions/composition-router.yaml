@@ -23,6 +23,7 @@ spec:
                 forProvider:
                   adminStateUp: true
                   external: true
+                  shared: true
                   segments:
                     - networkType: flat
                       physicalNetwork: public
@@ -45,17 +46,17 @@ spec:
               kind: SubnetV2
               spec:
                 forProvider:
-                  cidr: 172.16.0.0/16
-                  networkIdSelector:
-                    matchLabels:
-                      network: ext
+                  enableDhcp: true
             patches:
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.subnetName
                 toFieldPath: metadata.name
               - type: FromCompositeFieldPath
-                fromFieldPath: spec.subnetCidr
+                fromFieldPath: spec.cidr
                 toFieldPath: spec.forProvider.cidr
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.gatewayIp
+                toFieldPath: spec.forProvider.gatewayIp
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.subnetName
                 toFieldPath: spec.forProvider.name

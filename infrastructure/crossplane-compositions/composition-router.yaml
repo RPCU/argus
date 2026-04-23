@@ -46,7 +46,7 @@ spec:
               kind: SubnetV2
               spec:
                 forProvider:
-                  enableDhcp: true
+                  enableDhcp: false
             patches:
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.subnetName
@@ -85,6 +85,11 @@ spec:
               - type: FromCompositeFieldPath
                 fromFieldPath: status.networkId
                 toFieldPath: spec.forProvider.externalNetworkId
+                policy:
+                  fromFieldPath: Required
+              - type: FromCompositeFieldPath
+                fromFieldPath: status.subnetId
+                toFieldPath: spec.forProvider.externalSubnetIds[0]
                 policy:
                   fromFieldPath: Required
               - type: ToCompositeFieldPath

@@ -34,6 +34,24 @@ spec:
                 gatewayIp:
                   type: string
                   description: CIDR for the subnet resource
+                dnsNameservers:
+                  type: array
+                  items:
+                    type: string
+                  description: DNS nameservers for the subnet resource
+                allocationPool:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      start:
+                        type: string
+                      end:
+                        type: string
+                    required:
+                      - start
+                      - end
+                  description: Allocation pools for the subnet resource
               required:
                 - routerName
                 - subnetName

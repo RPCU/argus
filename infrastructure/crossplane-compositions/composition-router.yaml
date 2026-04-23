@@ -65,6 +65,12 @@ spec:
                 toFieldPath: spec.forProvider.networkId
                 policy:
                   fromFieldPath: Required
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.dnsNameservers
+                toFieldPath: spec.forProvider.dnsNameservers
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.allocationPool
+                toFieldPath: spec.forProvider.allocationPool
               - type: ToCompositeFieldPath
                 fromFieldPath: status.atProvider.id
                 toFieldPath: status.subnetId

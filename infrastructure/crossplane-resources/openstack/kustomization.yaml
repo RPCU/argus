@@ -4,3 +4,4 @@ resources:
   - providerConfig.yaml
   - externalnetwork.yaml
   - flavors.yaml
+  - groups.yaml

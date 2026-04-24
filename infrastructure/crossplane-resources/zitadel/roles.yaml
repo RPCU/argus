@@ -1,0 +1,69 @@
+apiVersion: project.zitadel.didactiklabs.io/v1alpha1
+kind: Role
+metadata:
+  name: rpcu-admin
+spec:
+  forProvider:
+    displayName: rpcu-admin
+    group: rpcu-admin
+    orgIdRef:
+      name: rpcu
+    projectIdRef:
+      name: administration
+    roleKey: rpcu-admin
+---
+apiVersion: project.zitadel.didactiklabs.io/v1alpha1
+kind: Role
+metadata:
+  name: public-admin
+spec:
+  forProvider:
+    displayName: public-admin
+    group: public-admin
+    orgIdRef:
+      name: rpcu
+    projectIdRef:
+      name: public
+    roleKey: public-admin
+---
+apiVersion: project.zitadel.didactiklabs.io/v1alpha1
+kind: Role
+metadata:
+  name: public-user
+spec:
+  forProvider:
+    displayName: public-user
+    group: public-user
+    orgIdRef:
+      name: rpcu
+    projectIdRef:
+      name: public
+    roleKey: public-user
+---
+apiVersion: project.zitadel.didactiklabs.io/v1alpha1
+kind: Role
+metadata:
+  name: kube-user
+spec:
+  forProvider:
+    displayName: kube-user
+    group: kube-user
+    orgIdRef:
+      name: rpcu
+    projectIdRef:
+      name: kubernetes
+    roleKey: kube-user
+---
+apiVersion: project.zitadel.didactiklabs.io/v1alpha1
+kind: Role
+metadata:
+  name: kube-admin
+spec:
+  forProvider:
+    displayName: kube-admin
+    group: kube-admin
+    orgIdRef:
+      name: rpcu
+    projectIdRef:
+      name: kubernetes
+    roleKey: kube-admin

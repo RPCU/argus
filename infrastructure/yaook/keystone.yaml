@@ -3,6 +3,10 @@ kind: KeystoneDeployment
 metadata:
   name: keystone
 spec:
+  extraProjected:
+    sources:
+      - secret:
+          name: keystone-vhost-conf
   database:
     replicas: 1
     timeoutClient: 300
@@ -20,6 +24,14 @@ spec:
     replicas: 1
     wsgiProcesses: 10
   keystoneConfig:
+    auth:
+      methods: ["password", "token", "openid", "application_credential"]
+    openid:
+      # OIDCClaimPrefix: "OIDC-"
+      remote_id_attribute: HTTP_OIDC_ISS
+    federation:
+      trusted_dashboard:
+        - https://os.rpcu.vpn/auth/websso/
     DEFAULT:
       # specify CADF to enable advanced audit logging
       notification_format: "cadf"

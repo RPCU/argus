@@ -3,6 +3,6 @@ kind: Provider
 metadata:
   name: provider-zitadel
 spec:
-  package: xpkg.upbound.io/banhcanh/provider-zitadel:v0.11.0
+  package: xpkg.upbound.io/banhcanh/provider-zitadel:v0.11.0-3.g0f3c6d5
 ---
 

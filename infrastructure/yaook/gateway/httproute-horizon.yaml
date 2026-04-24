@@ -41,5 +41,5 @@ spec:
       name: httproute-horizon
   urlRewrite:
     pathRegex:
-      pattern: "^(.*[^/])$"
+      pattern: "^(/api/nova/features/instance_description)$"
       substitution: "\\1/"

@@ -1,2 +1,3 @@
 resources:
   - openstack/
+  - zitadel/

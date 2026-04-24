@@ -1,0 +1,72 @@
+apiVersion: application.zitadel.didactiklabs.io/v1alpha1
+kind: Oidc
+metadata:
+  name: netbird
+spec:
+  forProvider:
+    accessTokenRoleAssertion: false
+    accessTokenType: OIDC_TOKEN_TYPE_BEARER
+    additionalOrigins: []
+    appType: OIDC_APP_TYPE_WEB
+    authMethodType: OIDC_AUTH_METHOD_TYPE_BASIC
+    clockSkew: 0s
+    devMode: false
+    grantTypes:
+      - OIDC_GRANT_TYPE_AUTHORIZATION_CODE
+    idTokenRoleAssertion: false
+    idTokenUserinfoAssertion: false
+    name: netbird
+    orgIdRef:
+      name: rpcu
+    postLogoutRedirectUris:
+      - "*"
+    projectIdRef:
+      name: administration
+    redirectUris:
+      - https://netbird.rpcu.io/oauth2/callback
+    responseTypes:
+      - OIDC_RESPONSE_TYPE_CODE
+    skipNativeAppSuccessPage: false
+    version: OIDC_VERSION_1_0
+  writeConnectionSecretToRef:
+    name: netbird-oidc
+    namespace: crossplane-system
+---
+apiVersion: application.zitadel.didactiklabs.io/v1alpha1
+kind: Oidc
+metadata:
+  name: openstack
+spec:
+  forProvider:
+    accessTokenRoleAssertion: false
+    accessTokenType: OIDC_TOKEN_TYPE_BEARER
+    additionalOrigins: []
+    appType: OIDC_APP_TYPE_WEB
+    authMethodType: OIDC_AUTH_METHOD_TYPE_BASIC
+    clockSkew: 0s
+    devMode: false
+    grantTypes:
+      - OIDC_GRANT_TYPE_AUTHORIZATION_CODE
+    idTokenRoleAssertion: false
+    idTokenUserinfoAssertion: false
+    name: openstack
+    orgIdRef:
+      name: rpcu
+    postLogoutRedirectUris:
+      - "*"
+    projectIdRef:
+      name: administration
+    redirectUris:
+      - https://os.rpcu.vpn/redirect_uri
+      - https://keystone.rpcu.vpn/redirect_uri
+      - https://keystone.rpcu.vpn:443/redirect_uri
+      - https://keystone.rpcu.vpn/v3/auth/OS-FEDERATION/identity_providers/zitadel/protocols/openid/websso
+      - https://keystone.rpcu.vpn/v3/auth/OS-FEDERATION/websso/openid
+      - https://os.rpcu.vpn
+    responseTypes:
+      - OIDC_RESPONSE_TYPE_CODE
+    skipNativeAppSuccessPage: false
+    version: OIDC_VERSION_1_0
+  writeConnectionSecretToRef:
+    name: openstack-oidc
+    namespace: yaook

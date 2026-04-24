@@ -1,0 +1,9 @@
+apiVersion: zitadel.didactiklabs.io/v1alpha1
+kind: Org
+metadata:
+  name: rpcu
+  annotations:
+    crossplane.io/external-name: "369994019545117645"
+spec:
+  forProvider:
+    name: rpcu

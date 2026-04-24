@@ -220,7 +220,6 @@ _rook/configs/_ - Ceph cluster configuration
 - `gateway/` - Gateway API resources for Yaook services
   - `listenerset.yaml` - XListenerSet for Yaook TLS passthrough (multiple entries for specific hostnames)
   - `tlsroute-*.yaml` - TLSRoutes for various OpenStack services (TLS passthrough)
-  - `httproute-horizon.yaml` - HTTPRoute for Horizon (TLS termination at Gateway, re-encrypt to backend port 8443 with insecureSkipVerify) + BackendConfigPolicy
   - `kustomization.yaml` - Kustomization manifest
 - `kustomization.yaml` - Kustomization manifest
 

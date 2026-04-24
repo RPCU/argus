@@ -11,6 +11,8 @@ WEBSSO_IDP_MAPPING = {
 }
 WEBSSO_KEYSTONE_URL = "https://keystone.rpcu.vpn/v3"
 WEBSSO_INITIAL_CHOICE = "zitadel_openid"
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = True
 
 # Use internal endpoint for the Horizon --> Keystone login
 WEBSSO_USE_HTTP_REFERER = False

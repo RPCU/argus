@@ -1,6 +1,6 @@
 namespace: yaook
 resources:
-  - network-mgmt.yaml
+  - network-default.yaml
   - network-lbext.yaml
   - providerConfig.yaml
   - externalnetwork.yaml

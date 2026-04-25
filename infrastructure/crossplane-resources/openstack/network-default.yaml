@@ -1,35 +1,35 @@
 apiVersion: networking.openstack.m.crossplane.io/v1alpha1
 kind: NetworkV2
 metadata:
-  name: mgmt
+  name: default
 spec:
   forProvider:
     adminStateUp: true
     shared: false
-    name: mgmt
+    name: default
 ---
 apiVersion: networking.openstack.m.crossplane.io/v1alpha1
 kind: SubnetV2
 metadata:
-  name: mgmt
+  name: default
 spec:
   forProvider:
-    name: mgmt
+    name: default
     cidr: 192.168.0.0/24
     dnsNameservers:
       - 1.1.1.1
       - 1.0.0.1
     networkIdRef:
-      name: mgmt
+      name: default
     enableDhcp: true
 ---
 apiVersion: networking.openstack.m.crossplane.io/v1alpha1
 kind: RouterInterfaceV2
 metadata:
-  name: mgmtext
+  name: defaultext
 spec:
   forProvider:
     routerIdRef:
       name: ext
     subnetIdRef:
-      name: mgmt
+      name: default

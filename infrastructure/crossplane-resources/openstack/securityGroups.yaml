@@ -2,7 +2,7 @@ apiVersion: networking.openstack.m.crossplane.io/v1alpha1
 kind: SecgroupV2
 metadata:
   annotations:
-    crossplane.io/external-name: "9f47e67e-fc06-4b20-aadf-63648cf79bb1"
+    crossplane.io/external-name: "395c9782-b28a-4c0f-bb2d-0be9862f6f58"
   name: default
 spec:
   forProvider:

@@ -7,7 +7,7 @@ spec:
     name: keystone
   database:
     api:
-      replicas: 1
+      replicas: 3
       timeoutClient: 300
       proxy: {}
       mysqlConfig:
@@ -17,7 +17,7 @@ spec:
       backup:
         schedule: "0 * * * *"
     placement:
-      replicas: 1
+      replicas: 3
       timeoutClient: 300
       proxy: {}
       mysqlConfig:
@@ -27,7 +27,7 @@ spec:
       backup:
         schedule: "0 * * * *"
     cell0:
-      replicas: 1
+      replicas: 3
       timeoutClient: 300
       proxy: {}
       mysqlConfig:
@@ -36,7 +36,7 @@ spec:
       backup:
         schedule: "0 * * * *"
     cell1:
-      replicas: 1
+      replicas: 3
       # have to be the same value as cell0 and api timeoutClient
       timeoutClient: 300
       proxy: {}
@@ -49,7 +49,7 @@ spec:
     volumeLockDurationSeconds: 30
   messageQueue:
     cell1:
-      replicas: 1
+      replicas: 3
       resources:
         rabbitmq:
           limits:
@@ -57,29 +57,29 @@ spec:
             cpu: 1000m
   memcached: {}
   api:
-    replicas: 1
+    replicas: 3
     ingress:
       createIngress: false
       fqdn: "nova.rpcu.vpn"
       port: 443
   conductor:
-    replicas: 1
+    replicas: 3
   placement:
-    replicas: 1
+    replicas: 3
     ingress:
       createIngress: false
       fqdn: "placement.rpcu.vpn"
       port: 443
   scheduler:
-    replicas: 1
+    replicas: 3
   vnc:
     ingress:
       createIngress: false
       fqdn: "vnc.rpcu.vpn"
       port: 443
-    replicas: 1
+    replicas: 3
   metadata:
-    replicas: 1
+    replicas: 3
   targetRelease: "2025.1"
   novaConfig:
     DEFAULT:

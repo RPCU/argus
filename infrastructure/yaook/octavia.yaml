@@ -8,7 +8,7 @@ spec:
   neutronRef:
     name: neutron-ovn
   api:
-    replicas: 1
+    replicas: 3
     ingress:
       createIngress: false
       fqdn: "octavia.rpcu.vpn"
@@ -23,15 +23,15 @@ spec:
     # on Kubernetes nodes and must not collide with Kubernetes IP ranges!
     managementSubnetCIDR: "172.31.0.0/16"
   database:
-    replicas: 1
+    replicas: 3
     timeoutClient: 300
     proxy:
-      replicas: 1
+      replicas: 3
     backup:
       schedule: "0 * * * *"
   memcached: {}
   messageQueue:
-    replicas: 1
+    replicas: 3
   issuerRef:
     name: yaook-internal
   targetRelease: "2025.1"

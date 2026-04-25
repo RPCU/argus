@@ -6,14 +6,14 @@ spec:
   keystoneRef:
     name: keystone
   database:
-    replicas: 1
+    replicas: 3
     timeoutClient: 300
     proxy:
-      replicas: 1
+      replicas: 3
     backup:
       schedule: "0 * * * *"
   messageQueue:
-    replicas: 1
+    replicas: 3
     resources:
       rabbitmq:
         limits:
@@ -21,13 +21,13 @@ spec:
           cpu: 1000m
   memcached: {}
   api:
-    replicas: 1
+    replicas: 3
     ingress:
       createIngress: false
       fqdn: "cinder.rpcu.vpn"
       port: 443
   scheduler:
-    replicas: 1
+    replicas: 3
   cinderConfig:
     DEFAULT:
       debug: True

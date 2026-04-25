@@ -26,4 +26,5 @@ spec:
     roleIdRef:
       name: admin
     groupId: "1b2083fcdcf5419397ba2e4091da0b62"
-    projectId: "3c1e9678f76b440da67e6a3bca8313a0"
+    projectIdRef:
+      name: admin

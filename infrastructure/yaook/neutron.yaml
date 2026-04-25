@@ -26,7 +26,11 @@ spec:
         limits:
           memory: 1G
           cpu: 1000m
-  memcached: {}
+  memcached:
+    connections: 1024
+    memory: 512
+    replicas: 3
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   neutronConfig:
     DEFAULT:
       debug: true

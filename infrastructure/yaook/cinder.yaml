@@ -24,7 +24,6 @@ spec:
     memory: 512
     replicas: 3
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
-
   api:
     replicas: 3
     ingress:

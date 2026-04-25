@@ -29,7 +29,11 @@ spec:
       replicas: 3
     backup:
       schedule: "0 * * * *"
-  memcached: {}
+  memcached:
+    connections: 1024
+    memory: 512
+    replicas: 3
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   messageQueue:
     replicas: 3
   issuerRef:

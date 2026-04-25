@@ -7,4 +7,4 @@ resources:
   - tlsroute-placement.yaml
   - tlsroute-vnc.yaml
   - tlsroute-cinder.yaml
-  - tlsroute-horizon.yaml
+  - httproute-horizon.yaml

@@ -1,0 +1,50 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: httproute-horizon
+spec:
+  parentRefs:
+    - name: https
+      namespace: kgateway-system
+      sectionName: https
+  hostnames:
+    - "os.rpcu.vpn"
+  rules:
+    # Trailing-slash rewrite for a known problematic API path.
+    - matches:
+        - path:
+            type: Exact
+            value: /api/nova/features/instance_description
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplaceFullPath
+              replaceFullPath: /api/nova/features/instance_description/
+      backendRefs:
+        - name: horizon
+          port: 8443
+    # Default catch-all: forward all other traffic to Horizon.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: horizon
+          port: 8443
+---
+apiVersion: gateway.networking.k8s.io/v1alpha3
+kind: BackendTLSPolicy
+metadata:
+  name: horizon-backend-tls
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: horizon
+  validation:
+    caCertificateRefs:
+      - group: ""
+        kind: ConfigMap
+        name: rpcu-bundle
+    hostname: os.rpcu.vpn

@@ -6,3 +6,4 @@ resources:
   - flavors.yaml
   - groups.yaml
   - projects.yaml
+  - securityGroups.yaml

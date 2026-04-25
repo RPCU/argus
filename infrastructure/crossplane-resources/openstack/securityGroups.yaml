@@ -1,0 +1,114 @@
+apiVersion: networking.openstack.m.crossplane.io/v1alpha1
+kind: SecgroupV2
+metadata:
+  annotations:
+    crossplane.io/external-name: "9f47e67e-fc06-4b20-aadf-63648cf79bb1"
+  name: default
+spec:
+  forProvider:
+    description: Default security group
+    name: default
+---
+apiVersion: networking.openstack.m.crossplane.io/v1alpha1
+kind: SecgroupRuleV2
+metadata:
+  name: allow-ssh
+spec:
+  forProvider:
+    description: "Managed by Crossplane - allow-ssh"
+    direction: ingress
+    ethertype: IPv4
+    portRangeMax: 22
+    portRangeMin: 22
+    protocol: tcp
+    remoteIpPrefix: 0.0.0.0/0
+    securityGroupIdRef:
+      name: default
+---
+apiVersion: networking.openstack.m.crossplane.io/v1alpha1
+kind: SecgroupRuleV2
+metadata:
+  name: allow-ping
+spec:
+  forProvider:
+    description: "Managed by Crossplane - allow-ping"
+    direction: ingress
+    ethertype: IPv4
+    protocol: icmp
+    remoteIpPrefix: 0.0.0.0/0
+    securityGroupIdRef:
+      name: default
+---
+apiVersion: networking.openstack.m.crossplane.io/v1alpha1
+kind: SecgroupRuleV2
+metadata:
+  name: allow-egress-ipv4
+spec:
+  forProvider:
+    description: "Managed by Crossplane - allow-egress-ipv4"
+    direction: egress
+    ethertype: IPv4
+    remoteIpPrefix: 0.0.0.0/0
+    securityGroupIdRef:
+      name: default
+---
+apiVersion: networking.openstack.m.crossplane.io/v1alpha1
+kind: SecgroupRuleV2
+metadata:
+  name: allow-egress-ipv6
+spec:
+  forProvider:
+    description: "Managed by Crossplane - allow-egress-ipv6"
+    direction: egress
+    ethertype: IPv6
+    remoteIpPrefix: "::/0"
+    securityGroupIdRef:
+      name: default
+---
+apiVersion: networking.openstack.m.crossplane.io/v1alpha1
+kind: SecgroupRuleV2
+metadata:
+  name: allow-http
+spec:
+  forProvider:
+    description: "Managed by Crossplane - allow-http"
+    direction: ingress
+    ethertype: IPv4
+    portRangeMax: 80
+    portRangeMin: 80
+    protocol: tcp
+    remoteIpPrefix: 0.0.0.0/0
+    securityGroupIdRef:
+      name: default
+---
+apiVersion: networking.openstack.m.crossplane.io/v1alpha1
+kind: SecgroupRuleV2
+metadata:
+  name: allow-https
+spec:
+  forProvider:
+    description: "Managed by Crossplane - allow-https"
+    direction: ingress
+    ethertype: IPv4
+    portRangeMax: 443
+    portRangeMin: 443
+    protocol: tcp
+    remoteIpPrefix: 0.0.0.0/0
+    securityGroupIdRef:
+      name: default
+---
+apiVersion: networking.openstack.m.crossplane.io/v1alpha1
+kind: SecgroupRuleV2
+metadata:
+  name: allow-kube-api
+spec:
+  forProvider:
+    description: "Managed by Crossplane - allow-kube-api"
+    direction: ingress
+    ethertype: IPv4
+    portRangeMax: 6443
+    portRangeMin: 6443
+    protocol: tcp
+    remoteIpPrefix: 0.0.0.0/0
+    securityGroupIdRef:
+      name: default

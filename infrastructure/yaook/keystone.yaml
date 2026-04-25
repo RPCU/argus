@@ -8,7 +8,7 @@ spec:
       - secret:
           name: keystone-vhost-conf
   database:
-    replicas: 1
+    replicas: 3
     timeoutClient: 300
     proxy: {}
     backup:
@@ -21,7 +21,7 @@ spec:
       createIngress: false
       fqdn: "keystone.rpcu.vpn"
       port: 443
-    replicas: 1
+    replicas: 3
     wsgiProcesses: 10
   keystoneConfig:
     auth:

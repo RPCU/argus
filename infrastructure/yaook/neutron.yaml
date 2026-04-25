@@ -8,19 +8,19 @@ spec:
       createIngress: false
       fqdn: "neutron.rpcu.vpn"
       port: 443
-    replicas: 1
+    replicas: 3
   database:
     backup:
       schedule: "0 * * * *"
     proxy: {}
-    replicas: 1
+    replicas: 3
     timeoutClient: 300
   issuerRef:
     name: yaook-internal
   keystoneRef:
     name: keystone
   messageQueue:
-    replicas: 1
+    replicas: 3
     resources:
       rabbitmq:
         limits:

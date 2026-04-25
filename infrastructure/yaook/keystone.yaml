@@ -14,8 +14,10 @@ spec:
     backup:
       schedule: "0 * * * *"
   memcached:
-    memory: 1024
-    connections: 2000
+    connections: 1024
+    memory: 512
+    replicas: 3
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   api:
     ingress:
       createIngress: false

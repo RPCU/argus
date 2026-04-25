@@ -8,3 +8,4 @@ resources:
   - tlsroute-vnc.yaml
   - tlsroute-cinder.yaml
   - tlsroute-horizon.yaml
+  - tlsroute-octavia.yaml

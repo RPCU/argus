@@ -1,0 +1,18 @@
+apiVersion: gateway.networking.k8s.io/v1alpha3
+kind: TLSRoute
+metadata:
+  name: tlsroute-octavia
+  namespace: yaook
+spec:
+  parentRefs:
+    - group: gateway.networking.x-k8s.io
+      kind: XListenerSet
+      name: yaook-passthrough-listeners
+      namespace: yaook
+      sectionName: yaook-passthrough-octavia # Target the new TLS passthrough listener
+  hostnames:
+    - "octavia.rpcu.vpn"
+  rules:
+    - backendRefs:
+        - name: octavia
+          port: 9877

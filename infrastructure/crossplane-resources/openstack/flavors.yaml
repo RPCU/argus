@@ -45,3 +45,14 @@ spec:
     ram: 16384
     disk: 100
     isPublic: true
+---
+apiVersion: compute.openstack.m.crossplane.io/v1alpha1
+kind: FlavorV2
+metadata:
+  name: octavia-amphora
+spec:
+  forProvider:
+    name: octavia-amphora
+    vcpus: 1
+    ram: 1024
+    disk: 2

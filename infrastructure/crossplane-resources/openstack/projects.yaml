@@ -1,0 +1,70 @@
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: ProjectV3
+metadata:
+  annotations:
+    crossplane.io/external-name: "3c1e9678f76b440da67e6a3bca8313a0"
+  name: admin
+spec:
+  forProvider:
+    name: admin
+---
+apiVersion: compute.openstack.m.crossplane.io/v1alpha1
+kind: QuotasetV2
+metadata:
+  name: admin
+spec:
+  forProvider:
+    cores: -1
+    fixedIps: -1
+    floatingIps: -1
+    injectedFileContentBytes: -1
+    injectedFilePathBytes: -1
+    injectedFiles: -1
+    instances: -1
+    keyPairs: -1
+    metadataItems: -1
+    projectIdRef:
+      name: admin
+    ram: -1
+    securityGroupRules: -1
+    securityGroups: -1
+    serverGroupMembers: -1
+    serverGroups: -1
+---
+apiVersion: blockstorage.openstack.m.crossplane.io/v1alpha1
+kind: QuotasetV3
+metadata:
+  name: admin
+spec:
+  forProvider:
+    backupGigabytes: -1
+    backups: -1
+    gigabytes: -1
+    groups: -1
+    perVolumeGigabytes: -1
+    projectIdRef:
+      name: admin
+    snapshots: -1
+    # volumeTypeQuota:
+    #   gigabytes_ssd: -1
+    #   snapshots_ssd: -1
+    #   volumes_ssd: -1
+    volumes: -1
+---
+apiVersion: networking.openstack.m.crossplane.io/v1alpha1
+kind: QuotaV2
+metadata:
+  name: admin
+spec:
+  forProvider:
+    floatingip: -1
+    network: -1
+    port: -1
+    projectIdRef:
+      name: admin
+    rbacPolicy: -1
+    router: -1
+    securityGroup: -1
+    securityGroupRule: -1
+    subnet: -1
+    subnetpool: -1

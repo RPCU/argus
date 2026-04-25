@@ -38,7 +38,7 @@ spec:
   policy:
     "context_is_admin": "role:admin"
   backends:
-    my-ceph-backend-1:
+    rook-ceph-rbd:
       volume:
         replicas: 1
       rbd:

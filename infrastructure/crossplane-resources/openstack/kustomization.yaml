@@ -5,3 +5,4 @@ resources:
   - externalnetwork.yaml
   - flavors.yaml
   - groups.yaml
+  - projects.yaml

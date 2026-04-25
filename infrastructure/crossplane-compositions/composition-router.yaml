@@ -23,7 +23,7 @@ spec:
                 forProvider:
                   adminStateUp: true
                   external: true
-                  shared: true
+                  # shared: true
                   segments:
                     - networkType: flat
                       physicalNetwork: public

@@ -12,7 +12,6 @@ spec:
   database:
     backup:
       schedule: "0 * * * *"
-    proxy: {}
     replicas: 3
     timeoutClient: 300
   issuerRef:

@@ -3,64 +3,77 @@ kind: CinderDeployment
 metadata:
   name: cinder
 spec:
-  keystoneRef:
-    name: keystone
-  database:
+  api:
+    ingress:
+      createIngress: false
+      fqdn: cinder.rpcu.vpn
+      ingressClassName: nginx
+      port: 443
+    publishEndpoint: true
     replicas: 3
-    timeoutClient: 300
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+  backends:
+    rook-ceph-rbd:
+      rbd:
+        backendConfig:
+          backend_availability_zone: nova
+          backend_host: ceph-rbd
+          rbd_pool: rdb-pool
+          rbd_secret_uuid: b3ab713d-912b-49ed-adaf-bd74368e567a
+        cephConfig:
+          mon host: rook-ceph-mon-a.rook-ceph.svc:6789,rook-ceph-mon-d.rook-ceph.svc:6789,rook-ceph-mon-f.rook-ceph.svc:6789
+        keyringReference: rook-ceph-client-cinder
+        keyringUsername: cinder
+      volume:
+        cluster: false
+        replicas: 1
+        scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+  cinderConfig:
+    DEFAULT:
+      debug: true
+    database:
+      connection_recycle_time: 280
+  database:
+    backup:
+      mysqldump: false
+      schedule: 0 * * * *
+      warmKeepMax: "3"
     proxy:
       replicas: 3
-    backup:
-      schedule: "0 * * * *"
-  messageQueue:
+      scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     replicas: 3
-    resources:
-      rabbitmq:
-        limits:
-          memory: 1G
-          cpu: 1000m
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+    storageSize: 8Gi
+    timeoutClient: 300
+    tolerateNodeDown: false
+  databaseCleanup:
+    deletionTimeRange: 60
+    schedule: 0 0 * * *
+  issuerRef:
+    name: yaook-internal
+  keystoneRef:
+    kind: KeystoneDeployment
+    name: keystone
   memcached:
     connections: 1024
     memory: 512
     replicas: 3
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
-  api:
+  messageQueue:
     replicas: 3
-    ingress:
-      createIngress: false
-      fqdn: "cinder.rpcu.vpn"
-      port: 443
-  scheduler:
-    replicas: 3
-  cinderConfig:
-    DEFAULT:
-      debug: True
-    database:
-      # (optional) connection_recycle_time hould always be ~10%
-      # smaller than the haproxy timeoutClient
-      connection_recycle_time: 280
+    resources:
+      rabbitmq:
+        limits:
+          cpu: 1000m
+          memory: 1G
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+    storageSize: 8Gi
+    tolerateNodeDown: false
   policy:
-    "context_is_admin": "role:admin"
-  backends:
-    rook-ceph-rbd:
-      volume:
-        replicas: 1
-      rbd:
-        keyringReference: rook-ceph-client-cinder
-        keyringUsername: cinder
-        backendConfig:
-          backend_availability_zone: nova
-          backend_host: ceph-rbd
-          rbd_pool: rdb-pool
-          rbd_secret_uuid: "b3ab713d-912b-49ed-adaf-bd74368e567a"
-        cephConfig:
-          "mon host": "rook-ceph-mon-a.rook-ceph.svc:6789,rook-ceph-mon-d.rook-ceph.svc:6789,rook-ceph-mon-f.rook-ceph.svc:6789"
-  backup: {}
+    context_is_admin: role:admin
   region:
     name: hetzner
-  issuerRef:
-    name: yaook-internal
-  databaseCleanup:
-    schedule: "0 0 * * *"
-    deletionTimeRange: 60
+  scheduler:
+    replicas: 3
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   targetRelease: "2025.1"

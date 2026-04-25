@@ -3,56 +3,63 @@ kind: KeystoneDeployment
 metadata:
   name: keystone
 spec:
+  api:
+    ingress:
+      createIngress: false
+      fqdn: keystone.rpcu.vpn
+      ingressClassName: nginx
+      port: 443
+    replicas: 3
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+    wsgiProcesses: 10
+  database:
+    backup:
+      mysqldump: false
+      schedule: 0 * * * *
+      warmKeepMax: "3"
+    proxy:
+      replicas: 2
+      scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+    replicas: 3
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+    storageSize: 8Gi
+    timeoutClient: 300
+    tolerateNodeDown: false
   extraProjected:
     sources:
       - secret:
           name: keystone-vhost-conf
-  database:
-    proxy:
-      replicas: 2
-    replicas: 3
-    timeoutClient: 300
-    backup:
-      schedule: "0 * * * *"
-  memcached:
-    connections: 1024
-    memory: 512
-    replicas: 3
-    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
-  api:
-    ingress:
-      createIngress: false
-      fqdn: "keystone.rpcu.vpn"
-      port: 443
-    replicas: 3
-    wsgiProcesses: 10
+  issuerRef:
+    name: yaook-internal
+  keyRotationSchedule: 0 0 * * *
   keystoneConfig:
+    DEFAULT:
+      notification_format: cadf
     auth:
-      methods: ["password", "token", "openid", "application_credential"]
-    openid:
-      # OIDCClaimPrefix: "OIDC-"
-      remote_id_attribute: HTTP_OIDC_ISS
+      methods:
+        - password
+        - token
+        - openid
+        - application_credential
+    database:
+      connection_recycle_time: 280
     federation:
       trusted_dashboard:
         - https://os.rpcu.vpn/auth/websso/
-    DEFAULT:
-      # specify CADF to enable advanced audit logging
-      notification_format: "cadf"
+    openid:
+      remote_id_attribute: HTTP_OIDC_ISS
     oslo_messaging_notifications:
-      # select an oslo.messaging notifications driver to activate audit logging
       driver:
         - log
     token:
       expiration: 86400
-    database:
-      scheduleRuleWhenUnsatisfiable: ScheduleAnyway
-      # (optional) connection_recycle_time hould always be ~10%
-      # smaller than the haproxy timeoutClient
-      connection_recycle_time: 280
+  memcached:
+    connections: 2000
+    memory: 1024
+    replicas: 3
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   policy:
-    "admin_required": "role:admin or is_admin:1"
+    admin_required: role:admin or is_admin:1
   region:
     name: hetzner
-  issuerRef:
-    name: yaook-internal
   targetRelease: "2025.1"

@@ -10,7 +10,6 @@ spec:
   database:
     replicas: 3
     timeoutClient: 300
-    proxy: {}
     backup:
       schedule: "0 * * * *"
   memcached:

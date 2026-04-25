@@ -10,21 +10,6 @@ spec:
   hostnames:
     - "os.rpcu.vpn"
   rules:
-    # Trailing-slash rewrite for a known problematic API path.
-    - matches:
-        - path:
-            type: Exact
-            value: /api/nova/features/instance_description
-      filters:
-        - type: URLRewrite
-          urlRewrite:
-            path:
-              type: ReplaceFullPath
-              replaceFullPath: /api/nova/features/instance_description/
-      backendRefs:
-        - name: horizon
-          port: 8443
-    # Default catch-all: forward all other traffic to Horizon.
     - matches:
         - path:
             type: PathPrefix
@@ -33,7 +18,10 @@ spec:
         - name: horizon
           port: 8443
 ---
-apiVersion: gateway.networking.k8s.io/v1alpha3
+# Re-encrypt traffic between kgateway and the Horizon pod.
+# The rpcu-bundle ConfigMap (distributed by trust-manager) contains the CA
+# certificate used to verify the Horizon pod's TLS certificate.
+apiVersion: gateway.networking.k8s.io/v1
 kind: BackendTLSPolicy
 metadata:
   name: horizon-backend-tls

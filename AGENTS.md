@@ -218,8 +218,9 @@ _rook/configs/_ - Ceph cluster configuration
 - `externalsecret-crossplane-openstack.yaml` - ExternalSecret transforming keystone-admin to Crossplane format
 - `externalsecret-rook-ceph.yaml` - ExternalSecrets syncing cinder and glance credentials from rook-ceph
 - `gateway/` - Gateway API resources for Yaook services
-  - `listenerset.yaml` - XListenerSet for Yaook TLS passthrough (multiple entries for specific hostnames)
-  - `tlsroute-*.yaml` - TLSRoutes for various OpenStack services (TLS passthrough)
+  - `listenerset.yaml` - XListenerSet for Yaook TLS passthrough (non-Horizon services)
+  - `tlsroute-*.yaml` - TLSRoutes for OpenStack services (TLS passthrough, excludes Horizon)
+  - `httproute-horizon.yaml` - HTTPRoute + BackendTLSPolicy for Horizon (TLS termination + re-encryption with trailing-slash URL rewrite)
   - `kustomization.yaml` - Kustomization manifest
 - `kustomization.yaml` - Kustomization manifest
 

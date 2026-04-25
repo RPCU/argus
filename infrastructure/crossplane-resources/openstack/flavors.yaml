@@ -52,6 +52,7 @@ metadata:
   name: octavia-amphora
 spec:
   forProvider:
+    flavorId: octavia-amphora
     name: octavia-amphora
     vcpus: 1
     ram: 1024

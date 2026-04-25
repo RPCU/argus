@@ -3,115 +3,169 @@ kind: NovaDeployment
 metadata:
   name: nova
 spec:
-  keystoneRef:
-    name: keystone
-  database:
-    api:
-      replicas: 3
-      timeoutClient: 300
-      mysqlConfig:
-        mysqld:
-          max_connections: 1337
-          max_heap_table_size: 64M
-      backup:
-        schedule: "0 * * * *"
-    placement:
-      replicas: 3
-      timeoutClient: 300
-      mysqlConfig:
-        mysqld:
-          max_connections: 1337
-          max_heap_table_size: 64M
-      backup:
-        schedule: "0 * * * *"
-    cell0:
-      replicas: 3
-      timeoutClient: 300
-      mysqlConfig:
-        galera:
-          wsrep_slave_threads: 3
-      backup:
-        schedule: "0 * * * *"
-    cell1:
-      replicas: 3
-      # have to be the same value as cell0 and api timeoutClient
-      timeoutClient: 300
-      mysqlConfig:
-        galera:
-          wsrep_slave_threads: 3
-      backup:
-        schedule: "0 * * * *"
-  eviction:
-    volumeLockDurationSeconds: 30
-  messageQueue:
-    cell1:
-      replicas: 3
-      resources:
-        rabbitmq:
-          limits:
-            memory: 1G
-            cpu: 1000m
-  memcached:
-    connections: 1024
-    memory: 512
+  api:
+    ingress:
+      createIngress: false
+      fqdn: nova.rpcu.vpn
+      ingressClassName: nginx
+      port: 443
+    publishEndpoint: true
     replicas: 3
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
-  api:
-    replicas: 3
-    ingress:
-      createIngress: false
-      fqdn: "nova.rpcu.vpn"
-      port: 443
-  conductor:
-    replicas: 3
-  placement:
-    replicas: 3
-    ingress:
-      createIngress: false
-      fqdn: "placement.rpcu.vpn"
-      port: 443
-  scheduler:
-    replicas: 3
-  vnc:
-    ingress:
-      createIngress: false
-      fqdn: "vnc.rpcu.vpn"
-      port: 443
-    replicas: 3
-  metadata:
-    replicas: 3
-  targetRelease: "2025.1"
-  novaConfig:
-    DEFAULT:
-      debug: True
-  policy:
-    "context_is_admin": "role:admin"
   compute:
     configTemplates:
       - nodeSelectors:
           - matchLabels: {}
         novaComputeConfig:
           DEFAULT:
-            debug: True
+            debug: true
           keystone_authtoken:
             os_region_name: hetzner
           libvirt:
             virt_type: qemu
         volumeBackends:
           ceph:
-            enabled: True
+            cephConfig: {}
+            enabled: true
             keyringSecretName: rook-ceph-client-cinder
             user: cinder
-            uuid: "b3ab713d-912b-49ed-adaf-bd74368e567a"
-            cephConfig: {}
+            uuid: b3ab713d-912b-49ed-adaf-bd74368e567a
+  conductor:
+    replicas: 3
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+  database:
+    api:
+      backup:
+        mysqldump: false
+        schedule: 0 * * * *
+        warmKeepMax: "3"
+      mysqlConfig:
+        mysqld:
+          max_connections: 1337
+          max_heap_table_size: 64M
+      proxy:
+        replicas: 2
+        scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+      replicas: 3
+      scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+      storageSize: 8Gi
+      timeoutClient: 300
+      tolerateNodeDown: false
+    cell0:
+      backup:
+        mysqldump: false
+        schedule: 0 * * * *
+        warmKeepMax: "3"
+      mysqlConfig:
+        galera:
+          wsrep_slave_threads: 3
+      proxy:
+        replicas: 2
+        scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+      replicas: 3
+      scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+      storageSize: 8Gi
+      timeoutClient: 300
+      tolerateNodeDown: false
+    cell1:
+      backup:
+        mysqldump: false
+        schedule: 0 * * * *
+        warmKeepMax: "3"
+      mysqlConfig:
+        galera:
+          wsrep_slave_threads: 3
+      proxy:
+        replicas: 2
+        scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+      replicas: 3
+      scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+      storageSize: 8Gi
+      timeoutClient: 300
+      tolerateNodeDown: false
+    placement:
+      backup:
+        mysqldump: false
+        schedule: 0 * * * *
+        warmKeepMax: "3"
+      mysqlConfig:
+        mysqld:
+          max_connections: 1337
+          max_heap_table_size: 64M
+      proxy:
+        replicas: 2
+        scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+      replicas: 3
+      scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+      storageSize: 8Gi
+      timeoutClient: 300
+      tolerateNodeDown: false
+  databaseCleanup:
+    clearAllEvents: false
+    clearOnlyMigrationEvents: false
+    deletionTimeRange: 60
+    schedule: 0 0 * * *
+  eviction:
+    manager:
+      deleteNode: true
+      enabled: false
+      interval: 15
+      max_per_hour: 5
+    maxParallelMigrations: 2
+    netboxSetFailed: false
+    volumeLockDurationSeconds: 30
   issuerRef:
     name: yaook-internal
+  keystoneRef:
+    kind: KeystoneDeployment
+    name: keystone
+  memcached:
+    connections: 1024
+    memory: 512
+    replicas: 3
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+  messageQueue:
+    cell1:
+      replicas: 3
+      resources:
+        rabbitmq:
+          limits:
+            cpu: 1000m
+            memory: 1G
+      scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+      storageSize: 8Gi
+      tolerateNodeDown: false
+  metadata:
+    replicas: 3
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+  novaConfig:
+    DEFAULT:
+      debug: true
+  placement:
+    ingress:
+      createIngress: false
+      fqdn: placement.rpcu.vpn
+      ingressClassName: nginx
+      port: 443
+    publishEndpoint: true
+    replicas: 3
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+  placementCleanup:
+    schedule: 0 0 1 * *
+  policy:
+    context_is_admin: role:admin
   region:
     name: hetzner
-  databaseCleanup:
-    schedule: "0 0 * * *"
-    clearAllEvents: False
-    clearOnlyMigrationEvents: False
-    deletionTimeRange: 60
-  placementCleanup:
-    schedule: "0 0 1 * *"
+  scheduler:
+    replicas: 3
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+  targetRelease: "2025.1"
+  vnc:
+    ingress:
+      createIngress: false
+      fqdn: vnc.rpcu.vpn
+      ingressClassName: nginx
+      port: 443
+    publishEndpoint: true
+    replicas: 3
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway

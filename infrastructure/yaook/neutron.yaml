@@ -20,7 +20,7 @@ spec:
   keystoneRef:
     name: keystone
   messageQueue:
-    replicas: 1
+    replicas: 3
     resources:
       rabbitmq:
         limits:

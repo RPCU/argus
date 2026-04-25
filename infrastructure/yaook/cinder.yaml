@@ -13,7 +13,7 @@ spec:
     backup:
       schedule: "0 * * * *"
   messageQueue:
-    replicas: 1
+    replicas: 3
     resources:
       rabbitmq:
         limits:

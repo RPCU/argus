@@ -14,5 +14,5 @@ spec:
     - "octavia.rpcu.vpn"
   rules:
     - backendRefs:
-        - name: octavia
+        - name: octavia-api
           port: 9877

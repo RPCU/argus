@@ -6,6 +6,8 @@ spec:
   keystoneRef:
     name: keystone
   database:
+    proxy:
+      replicas: 3
     api:
       replicas: 3
       timeoutClient: 300

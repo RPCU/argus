@@ -30,7 +30,7 @@ spec:
         scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   cinderConfig:
     DEFAULT:
-      debug: true
+      debug: false
     database:
       connection_recycle_time: 280
   database:

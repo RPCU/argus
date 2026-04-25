@@ -18,7 +18,7 @@ spec:
           - matchLabels: {}
         novaComputeConfig:
           DEFAULT:
-            debug: true
+            debug: false
           keystone_authtoken:
             os_region_name: hetzner
           libvirt:
@@ -140,7 +140,7 @@ spec:
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   novaConfig:
     DEFAULT:
-      debug: true
+      debug: false
   placement:
     ingress:
       createIngress: false

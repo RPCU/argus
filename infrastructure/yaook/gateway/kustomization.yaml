@@ -8,3 +8,4 @@ resources:
   - tlsroute-vnc.yaml
   - tlsroute-cinder.yaml
   - httproute-horizon.yaml
+  - trafficpolicy-horizon.yaml

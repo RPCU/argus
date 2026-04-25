@@ -45,7 +45,7 @@ spec:
     "context_is_admin": "role:load-balancer_admin or role:admin"
   octaviaConfig:
     DEFAULT:
-      debug: True
+      debug: false
     api_settings:
       enabled_provider_drivers: "ovn:OVN provider"
       default_provider_driver: "ovn"

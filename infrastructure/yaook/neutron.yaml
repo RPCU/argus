@@ -34,7 +34,7 @@ spec:
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   neutronConfig:
     DEFAULT:
-      debug: true
+      debug: false
   neutronML2Config:
     ml2_type_flat:
       flat_networks:

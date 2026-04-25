@@ -10,6 +10,8 @@ spec:
       port: 443
     replicas: 3
   database:
+    proxy:
+      replicas: 3
     backup:
       schedule: "0 * * * *"
     replicas: 3

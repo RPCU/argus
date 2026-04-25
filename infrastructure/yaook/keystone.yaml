@@ -8,6 +8,8 @@ spec:
       - secret:
           name: keystone-vhost-conf
   database:
+    proxy:
+      replicas: 2
     replicas: 3
     timeoutClient: 300
     backup:
@@ -43,6 +45,7 @@ spec:
     token:
       expiration: 86400
     database:
+      scheduleRuleWhenUnsatisfiable: ScheduleAnyway
       # (optional) connection_recycle_time hould always be ~10%
       # smaller than the haproxy timeoutClient
       connection_recycle_time: 280

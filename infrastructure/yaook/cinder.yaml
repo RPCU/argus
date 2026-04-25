@@ -3,6 +3,7 @@ kind: CinderDeployment
 metadata:
   name: cinder
 spec:
+  backup: {}
   api:
     ingress:
       createIngress: false

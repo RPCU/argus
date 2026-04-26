@@ -35,7 +35,13 @@ spec:
   neutronConfig:
     DEFAULT:
       debug: false
+      global_physnet_mtu: 9000
+      advertise_mtu: True
+      enable_tcp_mss_clamping: True
   neutronML2Config:
+    ml2:
+      path_mtu: 9000
+      physical_network_mtus: enp3s0:9000
     ml2_type_flat:
       flat_networks:
         - public

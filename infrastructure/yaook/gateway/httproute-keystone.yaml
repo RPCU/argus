@@ -1,0 +1,37 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: httproute-keystone
+  namespace: yaook
+spec:
+  parentRefs:
+    - name: https
+      namespace: kgateway-system
+      sectionName: https
+  hostnames:
+    - "keystone.rpcu.vpn"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: keystone
+          port: 5001
+---
+apiVersion: gateway.networking.k8s.io/v1alpha3
+kind: BackendTLSPolicy
+metadata:
+  name: backendtls-keystone
+  namespace: yaook
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: keystone
+  validation:
+    caCertificateRefs:
+      - group: ""
+        kind: ConfigMap
+        name: rpcu-bundle
+    hostname: keystone.rpcu.vpn

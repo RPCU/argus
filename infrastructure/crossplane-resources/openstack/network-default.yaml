@@ -8,6 +8,7 @@ spec:
     shared: false
     mtu: 8942
     name: default
+    dnsDomain: default.openstack.rpcu.vpn.
 ---
 apiVersion: networking.openstack.m.crossplane.io/v1alpha1
 kind: SubnetV2
@@ -17,6 +18,7 @@ spec:
   forProvider:
     name: default
     cidr: 192.168.0.0/24
+    dnsPublishFixedIp: true
     dnsNameservers:
       - 1.1.1.1
       - 1.0.0.1

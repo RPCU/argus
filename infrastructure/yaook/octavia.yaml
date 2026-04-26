@@ -16,7 +16,7 @@ spec:
   health_manager: {}
   worker: {}
   housekeeping:
-    replicas: 0
+    replicas: 3
   networking:
     # CIDR of the Neutron network to be used to connect Octavia management
     # services and the Amphora VMs. Will be exposed via OVS internal ports

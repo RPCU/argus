@@ -64,3 +64,9 @@ spec:
       hostname: "octavia.rpcu.vpn"
       tls:
         mode: Passthrough
+    - protocol: TLS
+      port: 443
+      name: yaook-passthrough-designate
+      hostname: "designate.rpcu.vpn"
+      tls:
+        mode: Passthrough

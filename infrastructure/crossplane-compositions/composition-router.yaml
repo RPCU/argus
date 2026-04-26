@@ -23,6 +23,7 @@ spec:
                 forProvider:
                   adminStateUp: true
                   external: true
+                  mtu: 9000
                   # shared: true
                   segments:
                     - networkType: flat

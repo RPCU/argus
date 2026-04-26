@@ -1,12 +1,11 @@
 resources:
-  - listenerset.yaml
-  - tlsroute-keystone.yaml
-  - tlsroute-glance.yaml
-  - tlsroute-neutron.yaml
-  - tlsroute-nova.yaml
-  - tlsroute-placement.yaml
-  - tlsroute-vnc.yaml
-  - tlsroute-cinder.yaml
-  - tlsroute-horizon.yaml
-  - tlsroute-octavia.yaml
-  - tlsroute-designate.yaml
+  - httproute-keystone.yaml
+  - httproute-glance.yaml
+  - httproute-neutron.yaml
+  - httproute-nova.yaml
+  - httproute-placement.yaml
+  - httproute-vnc.yaml
+  - httproute-cinder.yaml
+  - httproute-horizon.yaml
+  - httproute-octavia.yaml
+  - httproute-designate.yaml

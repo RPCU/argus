@@ -1,0 +1,37 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: httproute-vnc
+  namespace: yaook
+spec:
+  parentRefs:
+    - name: https
+      namespace: kgateway-system
+      sectionName: https
+  hostnames:
+    - "vnc.rpcu.vpn"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: vnc
+          port: 6080
+---
+apiVersion: gateway.networking.k8s.io/v1alpha3
+kind: BackendTLSPolicy
+metadata:
+  name: backendtls-vnc
+  namespace: yaook
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: vnc
+  validation:
+    caCertificateRefs:
+      - group: ""
+        kind: ConfigMap
+        name: rpcu-bundle
+    hostname: vnc.rpcu.vpn

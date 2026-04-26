@@ -218,9 +218,7 @@ _rook/configs/_ - Ceph cluster configuration
 - `externalsecret-crossplane-openstack.yaml` - ExternalSecret transforming keystone-admin to Crossplane format
 - `externalsecret-rook-ceph.yaml` - ExternalSecrets syncing cinder and glance credentials from rook-ceph
 - `gateway/` - Gateway API resources for Yaook services
-  - `listenerset.yaml` - XListenerSet for Yaook TLS passthrough (non-Horizon services)
-  - `tlsroute-*.yaml` - TLSRoutes for OpenStack services (TLS passthrough, excludes Horizon)
-  - `httproute-horizon.yaml` - HTTPRoute + BackendTLSPolicy for Horizon (TLS termination + re-encryption with trailing-slash URL rewrite)
+  - `httproute-*.yaml` - HTTPRoutes + BackendTLSPolicies for all OpenStack services (TLS termination at gateway, re-encryption to backends using RPCU bundle CA)
   - `kustomization.yaml` - Kustomization manifest
 - `kustomization.yaml` - Kustomization manifest
 
@@ -569,9 +567,7 @@ kubectl get helmrelease -A
 kubectl get kustomization -n flux-system
 kubectl get gateway -A
 kubectl get httproute -A
-kubectl get tlsroute -A
 kubectl get backendtlspolicy -A
-kubectl get xlistenersets -A
 ```
 
 ---

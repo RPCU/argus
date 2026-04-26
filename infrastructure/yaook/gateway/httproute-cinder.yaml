@@ -1,0 +1,37 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: httproute-cinder
+  namespace: yaook
+spec:
+  parentRefs:
+    - name: https
+      namespace: kgateway-system
+      sectionName: https
+  hostnames:
+    - "cinder.rpcu.vpn"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: cinder-api
+          port: 8777
+---
+apiVersion: gateway.networking.k8s.io/v1alpha3
+kind: BackendTLSPolicy
+metadata:
+  name: backendtls-cinder
+  namespace: yaook
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: cinder-api
+  validation:
+    caCertificateRefs:
+      - group: ""
+        kind: ConfigMap
+        name: rpcu-bundle
+    hostname: cinder.rpcu.vpn

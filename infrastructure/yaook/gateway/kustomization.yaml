@@ -9,3 +9,4 @@ resources:
   - tlsroute-cinder.yaml
   - tlsroute-horizon.yaml
   - tlsroute-octavia.yaml
+  - tlsroute-designate.yaml

@@ -1,0 +1,83 @@
+# NOTE: This file serves as an example only!
+# It demonstrates a subset of the API features which are available and
+# is NOT FIT FOR PRODUCTIVE USE. You need to adapt them to your
+# specific environment, needs and scale.
+# DO NOT DEPLOY THIS FILE WITH THE EXPECTATION THAT YOU WILL GET A
+# YAOOK DEPLOYMENT FIT FOR ANY USE EXCEPT LOOKING AT IT.
+apiVersion: yaook.cloud/v1
+kind: DesignateDeployment
+metadata:
+  name: designate
+spec:
+  api:
+    ingress:
+      createIngress: false
+      fqdn: designate.rpcu.vpn
+      ingressClassName: nginx
+      port: 32443
+    publishEndpoint: true
+    replicas: 3
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+  database:
+    backup:
+      mysqldump: false
+      schedule: 0 * * * *
+      warmKeepMax: "3"
+    proxy:
+      replicas: 3
+      scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+    replicas: 3
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+    storageSize: 8Gi
+    timeoutClient: 300
+    tolerateNodeDown: false
+  designateConfig:
+    DEFAULT:
+      debug: false
+    service:api:
+      api_paste_config: /usr/local/etc/designate/api-paste-audit.ini
+  issuerRef:
+    name: yaook-internal
+  keystoneRef:
+    kind: KeystoneDeployment
+    name: keystone
+  memcached:
+    connections: 1024
+    memory: 512
+    replicas: 3
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+  messageQueue:
+    replicas: 3
+    resources:
+      rabbitmq:
+        limits:
+          cpu: 1000m
+          memory: 1G
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+    storageSize: 8Gi
+    tolerateNodeDown: false
+  nsRecords:
+    - hostname: powerdns.rpcu.vpn.
+      priority: 1
+  policy:
+    admin: role:admin
+  powerdns:
+    database:
+      backup:
+        mysqldump: false
+        schedule: 0 * * * *
+        warmKeepMax: "3"
+      proxy:
+        replicas: 3
+        scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+      replicas: 3
+      scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+      storageSize: 8Gi
+      timeoutClient: 300
+      tolerateNodeDown: false
+    replicas: 3
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+    subnetCidr: 10.244.0.0/16
+  region:
+    name: hetzner
+  targetRelease: "2025.1"

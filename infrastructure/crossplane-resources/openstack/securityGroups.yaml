@@ -2,7 +2,7 @@ apiVersion: networking.openstack.m.crossplane.io/v1alpha1
 kind: SecgroupV2
 metadata:
   annotations:
-    crossplane.io/external-name: "395c9782-b28a-4c0f-bb2d-0be9862f6f58"
+    crossplane.io/external-name: "a42ce918-46d5-40ee-9e29-1a813f6c31d3"
   name: default
 spec:
   forProvider:
@@ -36,32 +36,6 @@ spec:
     ethertype: IPv4
     protocol: icmp
     remoteIpPrefix: 0.0.0.0/0
-    securityGroupIdRef:
-      name: default
----
-apiVersion: networking.openstack.m.crossplane.io/v1alpha1
-kind: SecgroupRuleV2
-metadata:
-  name: allow-egress-ipv4
-spec:
-  forProvider:
-    description: "Managed by Crossplane - allow-egress-ipv4"
-    direction: egress
-    ethertype: IPv4
-    remoteIpPrefix: 0.0.0.0/0
-    securityGroupIdRef:
-      name: default
----
-apiVersion: networking.openstack.m.crossplane.io/v1alpha1
-kind: SecgroupRuleV2
-metadata:
-  name: allow-egress-ipv6
-spec:
-  forProvider:
-    description: "Managed by Crossplane - allow-egress-ipv6"
-    direction: egress
-    ethertype: IPv6
-    remoteIpPrefix: "::/0"
     securityGroupIdRef:
       name: default
 ---

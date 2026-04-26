@@ -7,3 +7,4 @@ resources:
   - groups.yaml
   - projects.yaml
   - securityGroups.yaml
+  - zonedns.yaml

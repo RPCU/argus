@@ -14,7 +14,7 @@ spec:
       createIngress: false
       fqdn: designate.rpcu.vpn
       ingressClassName: nginx
-      port: 32443
+      port: 443
     publishEndpoint: true
     replicas: 3
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway

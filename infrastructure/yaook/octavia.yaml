@@ -13,8 +13,10 @@ spec:
       createIngress: false
       fqdn: "octavia.rpcu.vpn"
       port: 443
-  health_manager: {}
-  worker: {}
+  worker:
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+  health_manager:
+    scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   housekeeping:
     replicas: 3
   networking:

@@ -46,6 +46,7 @@ spec:
     ml2_type_flat:
       flat_networks:
         - public
+    extension_drivers: port_security,qos,subnet_allocation,subnetpool_prefix_ops_def,dns
   novaRef:
     name: nova
   policy:

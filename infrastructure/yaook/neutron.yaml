@@ -34,9 +34,6 @@ spec:
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   neutronConfig:
     DEFAULT:
-      dnsmasq_dns_servers:
-        - 1.1.1.1
-        - 1.0.0.1
       debug: false
       global_physnet_mtu: 9000
       advertise_mtu: True

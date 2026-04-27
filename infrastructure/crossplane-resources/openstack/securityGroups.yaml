@@ -86,3 +86,19 @@ spec:
     remoteIpPrefix: 0.0.0.0/0
     securityGroupIdRef:
       name: default
+---
+apiVersion: networking.openstack.m.crossplane.io/v1alpha1
+kind: SecgroupRuleV2
+metadata:
+  name: allow-dns
+spec:
+  forProvider:
+    description: "Managed by Crossplane - allow-dns"
+    direction: ingress
+    ethertype: IPv4
+    portRangeMax: 53
+    portRangeMin: 53
+    protocol: udp
+    remoteIpPrefix: 0.0.0.0/0
+    securityGroupIdRef:
+      name: default

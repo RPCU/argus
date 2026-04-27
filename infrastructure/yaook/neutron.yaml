@@ -42,7 +42,6 @@ spec:
     ml2:
       path_mtu: 9000
       physical_network_mtus: enp3s0:9000
-      extension_drivers: port_security,qos,subnet_allocation,subnetpool_prefix_ops_def,dns
     ml2_type_flat:
       flat_networks:
         - public

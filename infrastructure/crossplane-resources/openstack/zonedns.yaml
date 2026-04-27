@@ -1,14 +1,3 @@
-apiVersion: dns.openstack.m.crossplane.io/v1alpha1
-kind: ZoneV2
-metadata:
-  name: default # default zone example for auto dns for vm
-spec:
-  forProvider:
-    description: A default zone
-    email: dnsmaster@rpcu.io
-    name: default.openstack.rpcu.vpn.
-    ttl: 3000
-    type: PRIMARY
 ---
 apiVersion: dns.openstack.m.crossplane.io/v1alpha1
 kind: ZoneV2

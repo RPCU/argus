@@ -11,7 +11,7 @@ spec:
       ingressClassName: nginx
       port: 443
     publishEndpoint: true
-    replicas: 3
+    replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   backends:
     rook-ceph-rbd:
@@ -40,9 +40,9 @@ spec:
       schedule: 0 * * * *
       warmKeepMax: "3"
     proxy:
-      replicas: 3
+      replicas: 1
       scheduleRuleWhenUnsatisfiable: ScheduleAnyway
-    replicas: 3
+    replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     storageSize: 8Gi
     timeoutClient: 300
@@ -58,10 +58,10 @@ spec:
   memcached:
     connections: 1024
     memory: 512
-    replicas: 3
+    replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   messageQueue:
-    replicas: 3
+    replicas: 1
     resources:
       rabbitmq:
         limits:
@@ -75,6 +75,6 @@ spec:
   region:
     name: hetzner
   scheduler:
-    replicas: 3
+    replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   targetRelease: "2025.1"

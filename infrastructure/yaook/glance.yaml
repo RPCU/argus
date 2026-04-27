@@ -6,19 +6,19 @@ spec:
   keystoneRef:
     name: keystone
   database:
-    replicas: 3
+    replicas: 1
     timeoutClient: 300
     proxy:
-      replicas: 3
+      replicas: 1
     backup:
       schedule: "0 * * * *"
   memcached:
     connections: 1024
     memory: 512
-    replicas: 3
+    replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   api:
-    replicas: 3
+    replicas: 1
     ingress:
       createIngress: false
       fqdn: "glance.rpcu.vpn"

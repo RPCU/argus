@@ -8,20 +8,20 @@ spec:
       createIngress: false
       fqdn: "neutron.rpcu.vpn"
       port: 443
-    replicas: 3
+    replicas: 1
   database:
     proxy:
-      replicas: 3
+      replicas: 1
     backup:
       schedule: "0 * * * *"
-    replicas: 3
+    replicas: 1
     timeoutClient: 300
   issuerRef:
     name: yaook-internal
   keystoneRef:
     name: keystone
   messageQueue:
-    replicas: 3
+    replicas: 1
     resources:
       rabbitmq:
         limits:
@@ -30,7 +30,7 @@ spec:
   memcached:
     connections: 1024
     memory: 512
-    replicas: 3
+    replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   neutronConfig:
     DEFAULT:
@@ -57,7 +57,7 @@ spec:
   setup:
     ovn:
       northboundOVSDB:
-        replicas: 3
+        replicas: 1
         backup:
           schedule: 0 12 * * *
       northd:
@@ -71,8 +71,8 @@ spec:
           # in large scale deployments, tune probe intervals separately for the ovsdb relays
           inactivityProbeMs: 120000
           remoteInactivityProbeMs: 60000
-          replicas: 5
-        replicas: 3
+          replicas: 1
+        replicas: 1
         backup:
           schedule: 0 12 * * *
       controller:

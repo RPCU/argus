@@ -8,7 +8,7 @@ spec:
   neutronRef:
     name: neutron-ovn
   api:
-    replicas: 3
+    replicas: 1
     ingress:
       createIngress: false
       fqdn: "octavia.rpcu.vpn"
@@ -18,26 +18,26 @@ spec:
   health_manager:
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   housekeeping:
-    replicas: 3
+    replicas: 1
   networking:
     # CIDR of the Neutron network to be used to connect Octavia management
     # services and the Amphora VMs. Will be exposed via OVS internal ports
     # on Kubernetes nodes and must not collide with Kubernetes IP ranges!
     managementSubnetCIDR: "172.31.0.0/16"
   database:
-    replicas: 3
+    replicas: 1
     timeoutClient: 300
     proxy:
-      replicas: 3
+      replicas: 1
     backup:
       schedule: "0 * * * *"
   memcached:
     connections: 1024
     memory: 512
-    replicas: 3
+    replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   messageQueue:
-    replicas: 3
+    replicas: 1
   issuerRef:
     name: yaook-internal
   targetRelease: "2025.1"

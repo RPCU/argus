@@ -47,6 +47,7 @@ spec:
               kind: SubnetV2
               spec:
                 forProvider:
+                  dnsPublishFixedIp: true
                   enableDhcp: false
             patches:
               - type: FromCompositeFieldPath

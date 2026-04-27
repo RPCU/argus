@@ -17,9 +17,6 @@ spec:
   forProvider:
     name: default
     cidr: 192.168.0.0/24
-    dnsNameservers:
-      - 1.1.1.1
-      - 1.0.0.1
     networkIdRef:
       name: default
     enableDhcp: true

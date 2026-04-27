@@ -12,7 +12,7 @@ kind: RoleV3
 metadata:
   name: admin
   annotations:
-    crossplane.io/external-name: "222436f91fc640ba9e64c67b5779573f"
+    crossplane.io/external-name: "af51259b8601414880f6af3bfd5a8022"
 spec:
   forProvider:
     name: admin
@@ -25,6 +25,6 @@ spec:
   forProvider:
     roleIdRef:
       name: admin
-    groupId: "1b2083fcdcf5419397ba2e4091da0b62"
+    groupId: "06aa1b3667ac4d5196632127eef6969f"
     projectIdRef:
       name: admin

@@ -10,7 +10,7 @@ spec:
       ingressClassName: nginx
       port: 443
     publishEndpoint: true
-    replicas: 3
+    replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   compute:
     configTemplates:
@@ -31,7 +31,7 @@ spec:
             user: cinder
             uuid: b3ab713d-912b-49ed-adaf-bd74368e567a
   conductor:
-    replicas: 3
+    replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   database:
     api:
@@ -44,9 +44,9 @@ spec:
           max_connections: 1337
           max_heap_table_size: 64M
       proxy:
-        replicas: 2
+        replicas: 1
         scheduleRuleWhenUnsatisfiable: ScheduleAnyway
-      replicas: 3
+      replicas: 1
       scheduleRuleWhenUnsatisfiable: ScheduleAnyway
       storageSize: 8Gi
       timeoutClient: 300
@@ -60,9 +60,9 @@ spec:
         galera:
           wsrep_slave_threads: 3
       proxy:
-        replicas: 2
+        replicas: 1
         scheduleRuleWhenUnsatisfiable: ScheduleAnyway
-      replicas: 3
+      replicas: 1
       scheduleRuleWhenUnsatisfiable: ScheduleAnyway
       storageSize: 8Gi
       timeoutClient: 300
@@ -76,9 +76,9 @@ spec:
         galera:
           wsrep_slave_threads: 3
       proxy:
-        replicas: 2
+        replicas: 1
         scheduleRuleWhenUnsatisfiable: ScheduleAnyway
-      replicas: 3
+      replicas: 1
       scheduleRuleWhenUnsatisfiable: ScheduleAnyway
       storageSize: 8Gi
       timeoutClient: 300
@@ -93,9 +93,9 @@ spec:
           max_connections: 1337
           max_heap_table_size: 64M
       proxy:
-        replicas: 2
+        replicas: 1
         scheduleRuleWhenUnsatisfiable: ScheduleAnyway
-      replicas: 3
+      replicas: 1
       scheduleRuleWhenUnsatisfiable: ScheduleAnyway
       storageSize: 8Gi
       timeoutClient: 300
@@ -122,11 +122,11 @@ spec:
   memcached:
     connections: 1024
     memory: 512
-    replicas: 3
+    replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   messageQueue:
     cell1:
-      replicas: 3
+      replicas: 1
       resources:
         rabbitmq:
           limits:
@@ -136,7 +136,7 @@ spec:
       storageSize: 8Gi
       tolerateNodeDown: false
   metadata:
-    replicas: 3
+    replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   novaConfig:
     DEFAULT:
@@ -148,7 +148,7 @@ spec:
       ingressClassName: nginx
       port: 443
     publishEndpoint: true
-    replicas: 3
+    replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   placementCleanup:
     schedule: 0 0 1 * *
@@ -157,7 +157,7 @@ spec:
   region:
     name: hetzner
   scheduler:
-    replicas: 3
+    replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   targetRelease: "2025.1"
   vnc:
@@ -167,5 +167,5 @@ spec:
       ingressClassName: nginx
       port: 443
     publishEndpoint: true
-    replicas: 3
+    replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway

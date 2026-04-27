@@ -9,7 +9,7 @@ spec:
           name: horizon-websso
   keystoneRef:
     name: keystone
-  replicas: 3
+  replicas: 1
   ingress:
     createIngress: false
     fqdn: "os.rpcu.vpn"

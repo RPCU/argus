@@ -16,7 +16,7 @@ spec:
       ingressClassName: nginx
       port: 443
     publishEndpoint: true
-    replicas: 3
+    replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   database:
     backup:
@@ -24,9 +24,9 @@ spec:
       schedule: 0 * * * *
       warmKeepMax: "3"
     proxy:
-      replicas: 3
+      replicas: 1
       scheduleRuleWhenUnsatisfiable: ScheduleAnyway
-    replicas: 3
+    replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     storageSize: 8Gi
     timeoutClient: 300
@@ -44,10 +44,10 @@ spec:
   memcached:
     connections: 1024
     memory: 512
-    replicas: 3
+    replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   messageQueue:
-    replicas: 3
+    replicas: 1
     resources:
       rabbitmq:
         limits:
@@ -68,14 +68,14 @@ spec:
         schedule: 0 * * * *
         warmKeepMax: "3"
       proxy:
-        replicas: 3
+        replicas: 1
         scheduleRuleWhenUnsatisfiable: ScheduleAnyway
-      replicas: 3
+      replicas: 1
       scheduleRuleWhenUnsatisfiable: ScheduleAnyway
       storageSize: 8Gi
       timeoutClient: 300
       tolerateNodeDown: false
-    replicas: 3
+    replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     subnetCidr: 10.244.0.0/16
   region:

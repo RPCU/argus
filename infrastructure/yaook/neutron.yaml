@@ -34,6 +34,7 @@ spec:
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   neutronConfig:
     DEFAULT:
+      dnsmasq_local_resolv: True
       dnsmasq_dns_servers:
         - 172.16.0.254
       debug: false

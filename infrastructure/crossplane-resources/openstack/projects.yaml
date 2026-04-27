@@ -2,7 +2,7 @@ apiVersion: identity.openstack.m.crossplane.io/v1alpha1
 kind: ProjectV3
 metadata:
   annotations:
-    crossplane.io/external-name: "3c1e9678f76b440da67e6a3bca8313a0"
+    crossplane.io/external-name: "3925036867fb4274bf59754dfae9027c"
   name: admin
 spec:
   forProvider:

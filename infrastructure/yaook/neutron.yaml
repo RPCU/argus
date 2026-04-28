@@ -34,13 +34,12 @@ spec:
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   neutronConfig:
     DEFAULT:
-      dnsmasq_local_resolv: True
-      dnsmasq_dns_servers:
-        - 172.16.0.254
       debug: false
       global_physnet_mtu: 9000
       advertise_mtu: True
       enable_tcp_mss_clamping: True
+      dnsmasq_dns_servers:
+        - 172.16.0.254
   neutronML2Config:
     ml2:
       path_mtu: 9000

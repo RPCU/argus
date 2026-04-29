@@ -43,6 +43,7 @@ spec:
     ovn:
       dns_servers:
         - 172.16.0.254
+      ovn_emit_need_to_frag: True
   neutronML2Config:
     ml2:
       path_mtu: 9000

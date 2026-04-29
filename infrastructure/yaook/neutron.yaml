@@ -40,6 +40,9 @@ spec:
       enable_tcp_mss_clamping: True
       dnsmasq_dns_servers:
         - 172.16.0.254
+    ovn:
+      dns_servers:
+        - 172.16.0.254
   neutronML2Config:
     ml2:
       path_mtu: 9000

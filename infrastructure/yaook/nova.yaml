@@ -19,6 +19,11 @@ spec:
         novaComputeConfig:
           DEFAULT:
             debug: false
+            max_concurrent_builds:
+            block_device_allocate_retries: 180
+            block_device_allocate_retries_interval: 10
+          cinder:
+            timeout: 600
           keystone_authtoken:
             os_region_name: hetzner
           libvirt:
@@ -141,11 +146,6 @@ spec:
   novaConfig:
     DEFAULT:
       debug: false
-      max_concurrent_builds: 1
-      block_device_allocate_retries: 180
-      block_device_allocate_retries_interval: 10
-    cinder:
-      timeout: 600
   placement:
     ingress:
       createIngress: false

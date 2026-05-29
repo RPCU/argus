@@ -32,6 +32,7 @@ spec:
   cinderConfig:
     DEFAULT:
       debug: false
+      image_volume_cache_enabled: True
     database:
       connection_recycle_time: 280
   database:

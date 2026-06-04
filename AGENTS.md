@@ -58,7 +58,7 @@ Whenever you modify the codebase:
 ### nix/ - Custom Nix Packages & Sources
 
 - `default.nix` - Imports and exposes all custom packages
-- `sveltosctl.nix` - Sveltos CLI tool package definition (v1.4.0)
+- `sveltosctl.nix` - Sveltos CLI tool package definition (v1.9.0)
 
 ### npins/ - Pinned Dependencies
 
@@ -293,7 +293,7 @@ _fluxcd/instances/_ - Instance configuration
 - `kubernetes-helm` - Helm CLI
 - `kube-capacity` - Kubernetes resource analyzer
 - `openstackclient` - OpenStack CLI
-- `sveltosctl` - Sveltos multi-cluster management CLI (v1.4.0)
+- `sveltosctl` - Sveltos multi-cluster management CLI (v1.9.0)
 
 ---
 
@@ -602,7 +602,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: April 2026
+**Last Updated**: June 2026
 **Repository**: https://github.com/RPCU/argus.git
 **Main Branch**: main
 **Cluster**: OpenStack

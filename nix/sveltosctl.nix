@@ -8,12 +8,13 @@ pkgs.buildGoModule rec {
 
   src = sources.sveltosctl;
 
-  vendorHash = "sha256-QXk0SFCXvOPp4U4Li6HfbrbPxX4ELgRGHkcbA1J86d4=";
+  vendorHash = "sha256-fnhqlhMEDkAsho6118PrksMNkQT1ox3ENzjpW+pTIqY=";
   subPackages = [ "cmd/sveltosctl" ];
   ldflags = [
     "-s"
     "-w"
-    "-X github.com/projectsveltos/sveltosctl/internal/commands/version.version=${version}"
+    "-X github.com/projectsveltos/sveltosctl/internal/commands.gitVersion=${version}"
+    "-X github.com/projectsveltos/sveltosctl/internal/commands.gitCommit=${src.revision}"
   ];
   meta = with pkgs.lib; {
     homepage = "https://github.com/projectsveltos/sveltosctl";

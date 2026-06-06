@@ -8,3 +8,8 @@ spec:
   replicated:
     size: 2
   deviceClass: nvme
+  parameters:
+    pg_autoscale_mode: "on"
+    # Hint to the autoscaler that this pool holds the bulk of cluster data
+    # so it provisions enough PGs up front instead of starting tiny.
+    target_size_ratio: "0.8"

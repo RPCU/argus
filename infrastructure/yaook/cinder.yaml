@@ -11,14 +11,24 @@ spec:
       ingressClassName: nginx
       port: 443
     publishEndpoint: true
-    replicas: 1
+    replicas: 3
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+    resources:
+      api:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: 2000m
+          memory: 2Gi
   backends:
     rook-ceph-rbd:
       rbd:
         backendConfig:
           backend_availability_zone: nova
-          backend_host: ceph-rbd
+          # backend_host removed for cluster mode (Stage 2).
+          # In cluster:true mode, cinder uses the cluster name as the host
+          # identifier; setting backend_host with replicas>1 is unsupported.
           rbd_pool: rdb-pool
           rbd_secret_uuid: b3ab713d-912b-49ed-adaf-bd74368e567a
         cephConfig:
@@ -26,15 +36,35 @@ spec:
         keyringReference: rook-ceph-client-cinder
         keyringUsername: cinder
       volume:
-        cluster: false
-        replicas: 1
+        # STAGE 2 (final): active-active cluster with 3 replicas.
+        # PREREQUISITE: Stage 1 must have completed first — verify the
+        # cinder-volume pod logs showed volume migration messages, OR
+        # manually migrated volumes via:
+        #   yaookctl shell cinder api
+        #   cinder-manage volume update_host --current <old> --new <new>
+        #   cinder-manage volume update_service
+        # Then clean up the orphaned single-host service entry via:
+        #   cinder-manage service list / remove
+        cluster: true
+        replicas: 3
         scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+        resources:
+          volume:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
   cinderConfig:
     DEFAULT:
       debug: false
       image_volume_cache_enabled: True
+      osapi_volume_workers: 4
     database:
       connection_recycle_time: 280
+      max_pool_size: 20
+      max_overflow: 30
   database:
     backup:
       mysqldump: false
@@ -59,15 +89,18 @@ spec:
   memcached:
     connections: 1024
     memory: 512
-    replicas: 1
+    replicas: 3
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   messageQueue:
     replicas: 1
     resources:
       rabbitmq:
-        limits:
+        requests:
           cpu: 1000m
           memory: 1G
+        limits:
+          cpu: 2000m
+          memory: 2G
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     storageSize: 8Gi
     tolerateNodeDown: false
@@ -76,6 +109,14 @@ spec:
   region:
     name: hetzner
   scheduler:
-    replicas: 1
+    replicas: 3
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+    resources:
+      scheduler:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
   targetRelease: "2025.1"

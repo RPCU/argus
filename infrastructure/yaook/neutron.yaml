@@ -8,7 +8,15 @@ spec:
       createIngress: false
       fqdn: "neutron.rpcu.vpn"
       port: 443
-    replicas: 1
+    replicas: 3
+    resources:
+      api:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: 2000m
+          memory: 2Gi
   database:
     proxy:
       replicas: 1
@@ -24,13 +32,16 @@ spec:
     replicas: 1
     resources:
       rabbitmq:
-        limits:
+        requests:
           memory: 1G
           cpu: 1000m
+        limits:
+          memory: 2G
+          cpu: 2000m
   memcached:
     connections: 1024
     memory: 512
-    replicas: 1
+    replicas: 3
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   neutronConfig:
     DEFAULT:
@@ -60,7 +71,7 @@ spec:
   setup:
     ovn:
       northboundOVSDB:
-        replicas: 1
+        replicas: 3
         backup:
           schedule: 0 12 * * *
       northd:
@@ -74,8 +85,8 @@ spec:
           # in large scale deployments, tune probe intervals separately for the ovsdb relays
           inactivityProbeMs: 120000
           remoteInactivityProbeMs: 60000
-          replicas: 1
-        replicas: 1
+          replicas: 3
+        replicas: 3
         backup:
           schedule: 0 12 * * *
       controller:

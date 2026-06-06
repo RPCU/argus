@@ -18,11 +18,19 @@ spec:
     replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   api:
-    replicas: 1
+    replicas: 3
     ingress:
       createIngress: false
       fqdn: "glance.rpcu.vpn"
       port: 443
+    resources:
+      api:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: 2000m
+          memory: 4Gi
   glanceConfig:
     glance_store:
       default_store: "rbd"

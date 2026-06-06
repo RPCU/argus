@@ -10,8 +10,16 @@ spec:
       ingressClassName: nginx
       port: 443
     publishEndpoint: true
-    replicas: 1
+    replicas: 3
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+    resources:
+      api:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: 2000m
+          memory: 2Gi
   compute:
     configTemplates:
       - nodeSelectors:
@@ -42,8 +50,16 @@ spec:
             user: cinder
             uuid: b3ab713d-912b-49ed-adaf-bd74368e567a
   conductor:
-    replicas: 1
+    replicas: 3
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+    resources:
+      conductor:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: 2000m
+          memory: 2Gi
   database:
     api:
       backup:
@@ -133,25 +149,45 @@ spec:
   memcached:
     connections: 1024
     memory: 512
-    replicas: 1
+    replicas: 3
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   messageQueue:
     cell1:
       replicas: 1
       resources:
         rabbitmq:
-          limits:
+          requests:
             cpu: 1000m
             memory: 1G
+          limits:
+            cpu: 2000m
+            memory: 2G
       scheduleRuleWhenUnsatisfiable: ScheduleAnyway
       storageSize: 8Gi
       tolerateNodeDown: false
   metadata:
-    replicas: 1
+    replicas: 3
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+    resources:
+      metadata:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
   novaConfig:
     DEFAULT:
       debug: false
+      osapi_compute_workers: 4
+      metadata_workers: 4
+    conductor:
+      workers: 4
+    scheduler:
+      workers: 4
+    database:
+      max_pool_size: 20
+      max_overflow: 30
   placement:
     ingress:
       createIngress: false
@@ -159,8 +195,16 @@ spec:
       ingressClassName: nginx
       port: 443
     publishEndpoint: true
-    replicas: 1
+    replicas: 3
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+    resources:
+      api:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
   placementCleanup:
     schedule: 0 0 1 * *
   policy:
@@ -168,8 +212,16 @@ spec:
   region:
     name: hetzner
   scheduler:
-    replicas: 1
+    replicas: 3
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+    resources:
+      scheduler:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
   targetRelease: "2025.1"
   vnc:
     ingress:
@@ -180,3 +232,11 @@ spec:
     publishEndpoint: true
     replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+    resources:
+      vnc:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi

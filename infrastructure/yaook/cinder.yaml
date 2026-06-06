@@ -14,7 +14,7 @@ spec:
     replicas: 3
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     resources:
-      api:
+      cinder-api:
         requests:
           cpu: 200m
           memory: 512Mi
@@ -49,7 +49,7 @@ spec:
         replicas: 3
         scheduleRuleWhenUnsatisfiable: ScheduleAnyway
         resources:
-          volume:
+          cinder-volume:
             requests:
               cpu: 500m
               memory: 1Gi
@@ -112,7 +112,7 @@ spec:
     replicas: 3
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     resources:
-      scheduler:
+      cinder-scheduler:
         requests:
           cpu: 200m
           memory: 512Mi

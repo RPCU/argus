@@ -13,7 +13,7 @@ spec:
     replicas: 3
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     resources:
-      api:
+      nova-api:
         requests:
           cpu: 200m
           memory: 512Mi
@@ -53,7 +53,7 @@ spec:
     replicas: 3
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     resources:
-      conductor:
+      nova-conductor:
         requests:
           cpu: 200m
           memory: 512Mi
@@ -169,7 +169,7 @@ spec:
     replicas: 3
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     resources:
-      metadata:
+      nova-metadata:
         requests:
           cpu: 100m
           memory: 256Mi
@@ -198,7 +198,7 @@ spec:
     replicas: 3
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     resources:
-      api:
+      placement:
         requests:
           cpu: 200m
           memory: 512Mi
@@ -215,7 +215,7 @@ spec:
     replicas: 3
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     resources:
-      scheduler:
+      nova-scheduler:
         requests:
           cpu: 200m
           memory: 512Mi
@@ -233,7 +233,7 @@ spec:
     replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     resources:
-      vnc:
+      nova-novncproxy:
         requests:
           cpu: 100m
           memory: 256Mi

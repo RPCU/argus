@@ -13,7 +13,9 @@ spec:
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     wsgiProcesses: 10
     resources:
-      api:
+      # The container inside the keystone-api Deployment is named "keystone",
+      # not "keystone-api" — yaook source confirms this naming.
+      keystone:
         requests:
           cpu: 200m
           memory: 512Mi

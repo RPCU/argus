@@ -15,7 +15,6 @@ spec:
           cpu: 200m
           memory: 512Mi
         limits:
-          cpu: 2000m
           memory: 2Gi
   database:
     proxy:
@@ -37,7 +36,6 @@ spec:
           cpu: 1000m
         limits:
           memory: 2G
-          cpu: 2000m
   memcached:
     connections: 1024
     memory: 512

@@ -19,7 +19,6 @@ spec:
           cpu: 200m
           memory: 512Mi
         limits:
-          cpu: 2000m
           memory: 2Gi
   backends:
     rook-ceph-rbd:
@@ -54,7 +53,6 @@ spec:
               cpu: 500m
               memory: 1Gi
             limits:
-              cpu: 2000m
               memory: 2Gi
   cinderConfig:
     DEFAULT:
@@ -99,7 +97,6 @@ spec:
           cpu: 1000m
           memory: 1G
         limits:
-          cpu: 2000m
           memory: 2G
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     storageSize: 8Gi
@@ -117,6 +114,5 @@ spec:
           cpu: 200m
           memory: 512Mi
         limits:
-          cpu: 1000m
           memory: 1Gi
   targetRelease: "2025.1"

@@ -22,12 +22,18 @@ spec:
             max_concurrent_builds: 5
             block_device_allocate_retries: 180
             block_device_allocate_retries_interval: 10
+            cpu_allocation_ratio: 4.0
+            ram_allocation_ratio: 1.0
+            disk_allocation_ratio: 1.5
+            reserved_host_memory_mb: 8192
+            reserved_host_cpus: 2
           cinder:
             timeout: 600
           keystone_authtoken:
             os_region_name: hetzner
           libvirt:
-            virt_type: qemu
+            virt_type: kvm
+            cpu_mode: host-passthrough
         volumeBackends:
           ceph:
             cephConfig: {}

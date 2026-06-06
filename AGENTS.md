@@ -197,7 +197,7 @@ _rook/configs/_ - Ceph cluster configuration
 - `values.yaml` - Custom Helm values
 - `kustomization.yaml` - Kustomization manifest
 
-**yaook-operator/** - Yaook OpenStack Operators (v2.0.3)
+**yaook-operator/** - Yaook OpenStack Operators (v2.2.0)
 
 - `namespace.yaml` - Kubernetes namespace (yaook)
 - `helmrepo.yaml` - Repository reference (charts.yaook.cloud)
@@ -259,7 +259,7 @@ _fluxcd/instances/_ - Instance configuration
 
 ### OpenStack Operators
 
-- **Yaook Operators** - v2.0.3 (charts.yaook.cloud)
+- **Yaook Operators** - v2.2.0 (charts.yaook.cloud)
 - **Operators**: infra, keystone, keystone-resources, glance, nova, nova-compute, neutron, neutron-ovn, horizon
 
 ### Certificate Management
@@ -367,8 +367,8 @@ _fluxcd/instances/_ - Instance configuration
 | rook             | v1.19.0 | rook-release/rook-ceph                    | 5m            |
 | crossplane       | 2.2.0   | charts.crossplane.io/stable               | 5m            |
 | external-secrets | 2.3.0   | charts.external-secrets.io                | 5m            |
-| yaook-crds       | 2.0.3   | yaook.cloud/crds                          | 5m            |
-| yaook-ops        | 2.0.3   | yaook.cloud/operators                     | 5m            |
+| yaook-crds       | 2.2.0   | yaook.cloud/crds                          | 5m            |
+| yaook-ops        | 2.2.0   | yaook.cloud/operators                     | 5m            |
 
 ---
 

@@ -10,7 +10,7 @@ spec:
       port: 443
     replicas: 3
     resources:
-      api:
+      neutron-api:
         requests:
           cpu: 200m
           memory: 512Mi

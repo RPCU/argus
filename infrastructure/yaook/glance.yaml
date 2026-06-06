@@ -24,7 +24,7 @@ spec:
       fqdn: "glance.rpcu.vpn"
       port: 443
     resources:
-      api:
+      glance-api:
         requests:
           cpu: 200m
           memory: 512Mi

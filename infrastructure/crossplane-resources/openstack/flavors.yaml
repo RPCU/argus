@@ -25,6 +25,18 @@ spec:
 apiVersion: compute.openstack.m.crossplane.io/v1alpha1
 kind: FlavorV2
 metadata:
+  name: xmedium
+spec:
+  forProvider:
+    name: xmedium
+    vcpus: 4
+    ram: 4096
+    disk: 40
+    isPublic: true
+---
+apiVersion: compute.openstack.m.crossplane.io/v1alpha1
+kind: FlavorV2
+metadata:
   name: large
 spec:
   forProvider:

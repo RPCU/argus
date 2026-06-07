@@ -100,7 +100,7 @@ mgmt cluster runs the CAPI providers that manage itself.
 Key files:
 
 - `kustomization.yaml` - Master orchestration file
-- `cilium.yaml` - Cilium networking (shared infrastructure/cilium with mgmt-specific patches: auto-detect API endpoint, L2 interface enp3s0, LB IP pool 10.0.0.224-10.0.0.239)
+- `cilium.yaml` - Cilium networking (shared infrastructure/cilium with mgmt-specific patches: k8sServiceHost 172.16.255.212:6443, L2 interface enp3s0, LB IP pool 192.168.1.2-192.168.1.10; uses the base `socketLB.hostNamespaceOnly: false` default — see note below)
 - `cert-manager.yaml` - Certificate management (prerequisite for CAPI operator)
 - `external-secrets.yaml` - External Secrets Operator (sources CAPO credentials)
 - `cluster-api-operator.yaml` - Cluster API Operator (dependsOn cert-manager)
@@ -249,10 +249,9 @@ the manually bootstrapped kind management cluster.
 **cluster-api-templates/** - Cluster API ClusterClass & Templates
 
 - `clusterclass.yaml` - ClusterClass `openstack-mgmt` with variables: identityRef, externalNetworkId, managedSubnetCIDR, managedSubnetAllocationPools, imageName, controlPlaneFlavor, workerFlavor, sshKeyName, apiServerFloatingIP
-- `templates.yaml` - KubeadmControlPlaneTemplate, KubeadmConfigTemplate, OpenStackClusterTemplate, OpenStackMachineTemplate
-- `mgmt-cluster.yaml` - Cluster `mgmt` using `openstack-mgmt` class (3 CP, 3 workers)
+- `templates.yaml` - KubeadmControlPlaneTemplate, KubeadmConfigTemplate, OpenStackClusterTemplate, OpenStackMachineTemplate. The `OpenStackClusterTemplate.managedSecurityGroups` sets `allowAllInClusterTraffic: true` plus explicit Cilium data-plane rules (VXLAN UDP 8472, health TCP 4240, Hubble TCP 4244, ICMP via `remoteManagedGroups: [controlplane, worker]`) — required because CAPO's default managed SGs only open API/etcd/kubelet/node-port and would otherwise drop Cilium's cross-node overlay (see note in Cluster Safety).
 - `namespaces.yaml` - Namespace `mgmt`
-- `kustomization.yaml` - Kustomization manifest
+- `kustomization.yaml` - Kustomization manifest (the `Cluster` CR `mgmt-cluster.yaml` is commented out here; the actual Cluster lives at `clusters/mgmt/clusters/mgmt.yaml`)
 
 **yaook-operator/** - Yaook OpenStack Operators (v2.2.0)
 
@@ -645,6 +644,48 @@ When making changes:
 - Health checks must pass before considering deployment ready
 - Verify Flux reconciliation succeeds: `fluxcd reconcile kustomization -n flux-system`
 - Never force-delete critical resources (cert-manager, cilium, rook)
+
+#### Cilium `socketLB.hostNamespaceOnly` (per-cluster divergence)
+
+The shared base `infrastructure/cilium/values.yaml` sets
+`socketLB.hostNamespaceOnly: false` (the safe default): socket-LB runs inside
+pod network namespaces, which ordinary clusters (e.g. mgmt) need for
+kube-proxy-free ClusterIP resolution.
+
+The **baremetal openstack cluster overrides this to `true`** in
+`clusters/openstack/cilium.yaml`, because its nodes host nested KVM/QEMU
+OpenStack VMs — limiting socket-LB to the host namespace prevents the host's
+eBPF socket load-balancer from interfering with connections made inside the
+guest VMs. If you ever move the base default, re-evaluate both clusters'
+patches.
+
+#### CAPO managed security groups must open the Cilium overlay (mgmt cluster)
+
+CAPO's `managedSecurityGroups` only opens the baseline kube API / etcd /
+kubelet / node-port rules. It does **not** open the CNI's overlay traffic (see
+CAPO docs, "CNI security group rules"). On the mgmt cluster, Cilium runs in
+tunnel/VXLAN mode, so cross-node pod traffic is encapsulated in **UDP 8472**.
+Without an explicit rule, Neutron silently drops it: same-node pods work, but
+**pod-to-pod and pod-to-Service across nodes fail entirely** (can't even ping
+another node's pod), and CoreDNS can't reach the apiserver/endpoints so DNS
+never becomes ready (`plugin/ready: Plugins not ready: "kubernetes"`).
+
+Fix lives in `infrastructure/cluster-api-templates/templates.yaml`
+(`OpenStackClusterTemplate.spec.template.spec.managedSecurityGroups`):
+`allowAllInClusterTraffic: true` (covers all node-to-node traffic and future
+Cilium features) plus explicit documented rules for VXLAN 8472 / health 4240 /
+Hubble 4244 / ICMP scoped via `remoteManagedGroups: [controlplane, worker]`.
+If Cilium is switched to Geneve, open UDP 6081 instead of 8472; if Cilium
+encryption is enabled, also open WireGuard/ESP. After changing this, verify the
+rules actually landed on the managed SGs:
+`openstack security group rule list k8s-cluster-mgmt-mgmt-secgroup-controlplane`.
+
+Note: MTU is a separate, secondary concern. Double encapsulation (Cilium VXLAN
+over Neutron VXLAN/Geneve) shrinks the usable pod MTU; large packets (DNS/TCP,
+big API LISTs, TLS) can black-hole if MTUs are inconsistent. Do NOT apply jumbo
+frames piecemeal — an MTU mismatch on any hop is worse than a consistent small
+MTU. Confirm overlay connectivity first, then size Cilium `MTU` to the OpenStack
+tenant-network MTU if needed.
 
 ### Code Quality
 

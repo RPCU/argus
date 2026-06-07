@@ -2,4 +2,3 @@ resources:
   - namespaces.yaml
   - clusterclass.yaml
   - templates.yaml
-  # - mgmt-cluster.yaml

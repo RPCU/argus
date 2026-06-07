@@ -24,6 +24,13 @@ spec:
             extraArgs:
               - --devices=eno1.4000
               - --direct-routing-device=eno1.4000
+            # This baremetal cluster hosts nested KVM/QEMU OpenStack VMs.
+            # Restrict socket-LB to the host namespace so the host's eBPF socket
+            # load-balancer does not interfere with connections made inside the
+            # guest VMs. Ordinary clusters (e.g. mgmt) keep the base default
+            # (false) so socket-LB works inside pod netns.
+            socketLB:
+              hostNamespaceOnly: true
       target:
         kind: HelmRelease
         name: cilium
@@ -39,7 +46,7 @@ spec:
         kind: CiliumL2AnnouncementPolicy
         name: internal
     - patch: |
-        apiVersion: cilium.io/Vv2
+        apiVersion: cilium.io/v2
         kind: CiliumLoadBalancerIPPool
         metadata:
           name: internal

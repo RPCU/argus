@@ -1,7 +1,12 @@
 l2announcements:
   enabled: true
 socketLB:
-  hostNamespaceOnly: true
+  # Default false: socket-LB runs inside pod netns, required for kube-proxy-free
+  # ClusterIP resolution on ordinary clusters (e.g. mgmt). The baremetal
+  # openstack cluster overrides this to true (it hosts nested KVM/QEMU VMs and
+  # must not let host socket-LB interfere with guest connections) — see
+  # clusters/openstack/cilium.yaml.
+  hostNamespaceOnly: false
 kubeProxyReplacement: true
 envoy:
   enabled: false

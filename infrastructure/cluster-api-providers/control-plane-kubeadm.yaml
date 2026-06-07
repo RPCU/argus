@@ -1,0 +1,8 @@
+# Kubeadm control-plane provider — manages KubeadmControlPlane resources.
+apiVersion: operator.cluster.x-k8s.io/v1alpha2
+kind: ControlPlaneProvider
+metadata:
+  name: kubeadm
+  namespace: capi-kubeadm-control-plane-system
+spec:
+  version: v1.13.2

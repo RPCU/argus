@@ -1,0 +1,39 @@
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: Cluster
+metadata:
+  name: mgmt
+  namespace: mgmt
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+        - 10.244.0.0/16
+    serviceDomain: mgmt.local
+  topology:
+    classRef:
+      name: openstack-mgmt
+    version: v1.35.4
+    controlPlane:
+      replicas: 3
+    workers:
+      machineDeployments:
+        - class: default-worker
+          name: md-0
+          replicas: 3
+    variables:
+      - name: identityRef
+        value:
+          name: mgmt-cloud-config
+          cloudName: openstack
+      - name: externalNetworkId
+        value: 1cfd69da-057c-4748-a0d4-de5b0ca77db2
+      - name: managedSubnetCIDR
+        value: 192.168.1.0/24
+      - name: imageName
+        value: hephaestus-kaas-25.11-v1.35.4
+      - name: controlPlaneFlavor
+        value: xmedium
+      - name: workerFlavor
+        value: xlarge
+      - name: apiServerFloatingIP
+        value: 172.16.255.212

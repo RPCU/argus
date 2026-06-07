@@ -1,0 +1,274 @@
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: ClusterClass
+metadata:
+  name: openstack-mgmt
+  namespace: mgmt
+spec:
+  # ---------------------------------------------------------------------------
+  # Control plane
+  # ---------------------------------------------------------------------------
+  controlPlane:
+    templateRef:
+      apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+      kind: KubeadmControlPlaneTemplate
+      name: openstack-mgmt-control-plane
+    machineInfrastructure:
+      templateRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+        kind: OpenStackMachineTemplate
+        name: openstack-mgmt-control-plane
+
+  # ---------------------------------------------------------------------------
+  # Cluster infrastructure
+  # ---------------------------------------------------------------------------
+  infrastructure:
+    templateRef:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+      kind: OpenStackClusterTemplate
+      name: openstack-mgmt-cluster
+
+  # ---------------------------------------------------------------------------
+  # Worker topology
+  # ---------------------------------------------------------------------------
+  workers:
+    machineDeployments:
+      - class: default-worker
+        bootstrap:
+          templateRef:
+            apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
+            kind: KubeadmConfigTemplate
+            name: openstack-mgmt-md-0
+        infrastructure:
+          templateRef:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            kind: OpenStackMachineTemplate
+            name: openstack-mgmt-md-0
+
+  # ---------------------------------------------------------------------------
+  # Variables
+  # ---------------------------------------------------------------------------
+  variables:
+    - name: identityRef
+      required: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: Reference to the secret holding the OpenStack clouds.yaml.
+          properties:
+            name:
+              type: string
+            cloudName:
+              type: string
+              default: openstack
+          required:
+            - name
+
+    - name: externalNetworkId
+      required: true
+      schema:
+        openAPIV3Schema:
+          type: string
+          description: ID of the external/floating-IP network.
+
+    - name: managedSubnetCIDR
+      required: false
+      schema:
+        openAPIV3Schema:
+          type: string
+          default: 192.168.1.0/24
+          description: CIDR for the managed node subnet.
+
+    - name: managedSubnetAllocationPools
+      required: false
+      schema:
+        openAPIV3Schema:
+          type: array
+          description: >-
+            IP ranges OpenStack will allocate from for machines. IPs outside
+            these pools (e.g. .2-.10) can still be used for manual ports.
+            If omitted, the full CIDR range is allocated.
+          default:
+            - start: 192.168.1.11
+              end: 192.168.1.254
+          items:
+            type: object
+            properties:
+              start:
+                type: string
+                description: First IP in the allocation pool (inclusive).
+              end:
+                type: string
+                description: Last IP in the allocation pool (inclusive).
+            required:
+              - start
+              - end
+
+    - name: imageName
+      required: true
+      schema:
+        openAPIV3Schema:
+          type: string
+          description: Glance image name used for all machines.
+
+    - name: controlPlaneFlavor
+      required: false
+      schema:
+        openAPIV3Schema:
+          type: string
+          default: large
+          description: OpenStack flavor for control plane machines.
+
+    - name: workerFlavor
+      required: false
+      schema:
+        openAPIV3Schema:
+          type: string
+          default: xlarge
+          description: OpenStack flavor for worker machines.
+
+    - name: sshKeyName
+      required: false
+      schema:
+        openAPIV3Schema:
+          type: string
+          default: ""
+          description: Name of an existing OpenStack SSH key pair to inject.
+
+    - name: apiServerFloatingIP
+      required: false
+      schema:
+        openAPIV3Schema:
+          type: string
+          description: >-
+            Floating IP to pin to the API server load balancer. If omitted,
+            OpenStack allocates one automatically.
+          pattern: '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
+
+  # ---------------------------------------------------------------------------
+  # Patches
+  # ---------------------------------------------------------------------------
+  patches:
+    - name: identityRef
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            kind: OpenStackClusterTemplate
+            matchResources:
+              infrastructureCluster: true
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/identityRef
+              valueFrom:
+                variable: identityRef
+
+    - name: externalNetwork
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            kind: OpenStackClusterTemplate
+            matchResources:
+              infrastructureCluster: true
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/externalNetwork
+              valueFrom:
+                template: |
+                  id: '{{ .externalNetworkId }}'
+
+    - name: managedSubnet
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            kind: OpenStackClusterTemplate
+            matchResources:
+              infrastructureCluster: true
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/managedSubnets
+              valueFrom:
+                template: |
+                  - cidr: '{{ .managedSubnetCIDR }}'
+                    {{- if .managedSubnetAllocationPools }}
+                    allocationPools:
+                    {{- range .managedSubnetAllocationPools }}
+                      - start: '{{ .start }}'
+                        end: '{{ .end }}'
+                    {{- end }}
+                    {{- end }}
+
+    - name: imageName
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            kind: OpenStackMachineTemplate
+            matchResources:
+              controlPlane: true
+              machineDeploymentClass:
+                names:
+                  - default-worker
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/image/filter/name
+              valueFrom:
+                variable: imageName
+
+    - name: controlPlaneFlavor
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            kind: OpenStackMachineTemplate
+            matchResources:
+              controlPlane: true
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/flavor
+              valueFrom:
+                variable: controlPlaneFlavor
+
+    - name: workerFlavor
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            kind: OpenStackMachineTemplate
+            matchResources:
+              machineDeploymentClass:
+                names:
+                  - default-worker
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/flavor
+              valueFrom:
+                variable: workerFlavor
+
+    - name: sshKeyName
+      enabledIf: "{{ if .sshKeyName }}true{{ end }}"
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            kind: OpenStackMachineTemplate
+            matchResources:
+              controlPlane: true
+              machineDeploymentClass:
+                names:
+                  - default-worker
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/sshKeyName
+              valueFrom:
+                variable: sshKeyName
+
+    - name: apiServerFloatingIP
+      enabledIf: "{{ if .apiServerFloatingIP }}true{{ end }}"
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            kind: OpenStackClusterTemplate
+            matchResources:
+              infrastructureCluster: true
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/apiServerFloatingIP
+              valueFrom:
+                variable: apiServerFloatingIP
+---
+

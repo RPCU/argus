@@ -1,0 +1,9 @@
+# Core Cluster API provider. Must be installed before any other provider;
+# the operator requeues the others until this exists.
+apiVersion: operator.cluster.x-k8s.io/v1alpha2
+kind: CoreProvider
+metadata:
+  name: cluster-api
+  namespace: capi-system
+spec:
+  version: v1.13.2

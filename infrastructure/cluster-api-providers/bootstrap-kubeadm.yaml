@@ -1,0 +1,8 @@
+# Kubeadm bootstrap provider — generates cloud-init/bootstrap data for nodes.
+apiVersion: operator.cluster.x-k8s.io/v1alpha2
+kind: BootstrapProvider
+metadata:
+  name: kubeadm
+  namespace: capi-kubeadm-bootstrap-system
+spec:
+  version: v1.13.2

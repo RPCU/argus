@@ -1,0 +1,9 @@
+resources:
+  - cilium.yaml
+  - cert-manager.yaml
+  - external-secrets.yaml
+  - cluster-api-operator.yaml
+  - cluster-api-providers.yaml
+  - cluster-api-templates.yaml
+  - flux-operator.yaml
+  - fluxcd/

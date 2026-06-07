@@ -91,6 +91,25 @@ Key files:
   - `flux-instance-patch.yaml` - Flux instance patches
   - `kustomization.yaml` - Flux component references
 
+**Management cluster**: `clusters/mgmt/`
+
+Cluster API (CAPI) management cluster. Bootstrapped manually with kind +
+`clusterctl` today; intended to self-manage after `clusterctl move` so the
+mgmt cluster runs the CAPI providers that manage itself.
+
+Key files:
+
+- `kustomization.yaml` - Master orchestration file
+- `cilium.yaml` - Cilium networking (shared infrastructure/cilium with mgmt-specific patches: auto-detect API endpoint, L2 interface enp3s0, LB IP pool 10.0.0.224-10.0.0.239)
+- `cert-manager.yaml` - Certificate management (prerequisite for CAPI operator)
+- `external-secrets.yaml` - External Secrets Operator (sources CAPO credentials)
+- `cluster-api-operator.yaml` - Cluster API Operator (dependsOn cert-manager)
+- `cluster-api-providers.yaml` - CAPI provider CRs (dependsOn cluster-api-operator + external-secrets)
+- `flux-operator.yaml` - Flux operator deployment
+- `fluxcd/` - Flux CD configuration
+  - `flux-instance-patch.yaml` - Flux instance patch (sync path ./clusters/mgmt, domain mgmt.local)
+  - `kustomization.yaml` - Flux component references
+
 ### infrastructure/ - Reusable Components
 
 **cert-manager/** - SSL/TLS Certificate Management (v1.19.2)
@@ -197,6 +216,44 @@ _rook/configs/_ - Ceph cluster configuration
 - `values.yaml` - Custom Helm values
 - `kustomization.yaml` - Kustomization manifest
 
+**cluster-api-operator/** - Cluster API Operator (v0.27.0)
+
+Declarative lifecycle manager for Cluster API providers (GitOps-friendly,
+compatible with `clusterctl move`). Requires cert-manager.
+
+- `namespace.yaml` - Kubernetes namespace (capi-operator-system)
+- `helmrepo.yaml` - Helm repository (kubernetes-sigs.github.io/cluster-api-operator)
+- `helmrelease.yaml` - Cluster API Operator Helm chart (v0.27.0)
+- `values.yaml` - Custom values (chart-managed cert-manager disabled; providers managed separately)
+- `kustomization.yaml` - Kustomization manifest
+
+**cluster-api-providers/** - Cluster API Providers (declarative CRs)
+
+Provider CRs reconciled by the Cluster API Operator. Versions pinned to match
+the manually bootstrapped kind management cluster.
+
+- `namespaces.yaml` - Namespaces (capi-system, capi-kubeadm-bootstrap-system, capi-kubeadm-control-plane-system, capo-system)
+- `core.yaml` - CoreProvider cluster-api (v1.13.2)
+- `bootstrap-kubeadm.yaml` - BootstrapProvider kubeadm (v1.13.2)
+- `control-plane-kubeadm.yaml` - ControlPlaneProvider kubeadm (v1.13.2)
+- `infrastructure-openstack.yaml` - InfrastructureProvider openstack / CAPO (v0.14.4), configSecret capo-variables
+- `README.md` - How to create the `capo-variables` (clouds.yaml) secret manually on the mgmt cluster
+- `kustomization.yaml` - Kustomization manifest (multi-namespace, no top-level namespace)
+
+> The CAPO `capo-variables` secret is now created **manually** on the mgmt
+> cluster (see `cluster-api-providers/README.md`). The previous External
+> Secrets approach (`secretstore.yaml`, `secretstore-rbac.yaml`,
+> `externalsecret-capo.yaml`) was removed because the mgmt cluster has no local
+> `yaook` namespace to read `keystone-admin` from.
+
+**cluster-api-templates/** - Cluster API ClusterClass & Templates
+
+- `clusterclass.yaml` - ClusterClass `openstack-mgmt` with variables: identityRef, externalNetworkId, managedSubnetCIDR, managedSubnetAllocationPools, imageName, controlPlaneFlavor, workerFlavor, sshKeyName, apiServerFloatingIP
+- `templates.yaml` - KubeadmControlPlaneTemplate, KubeadmConfigTemplate, OpenStackClusterTemplate, OpenStackMachineTemplate
+- `mgmt-cluster.yaml` - Cluster `mgmt` using `openstack-mgmt` class (3 CP, 3 workers)
+- `namespaces.yaml` - Namespace `mgmt`
+- `kustomization.yaml` - Kustomization manifest
+
 **yaook-operator/** - Yaook OpenStack Operators (v2.2.0)
 
 - `namespace.yaml` - Kubernetes namespace (yaook)
@@ -211,6 +268,10 @@ _rook/configs/_ - Ceph cluster configuration
 - `helmrelease-neutron-operator.yaml` - Neutron operator
 - `helmrelease-neutron-ovn-operator.yaml` - Neutron OVN operator
 - `helmrelease-horizon-operator.yaml` - Horizon operator
+- `helmrelease-octavia-operator.yaml` - Octavia operator
+- `helmrelease-designate-operator.yaml` - Designate operator
+- `helmrelease-cds-operator.yaml` - CDS operator
+- `helmrelease-barbican-operator.yaml` - Barbican operator (v2.2.0, key manager)
 - `secretstore.yaml` - SecretStore for Kubernetes secrets provider
 - `secretstore-rbac.yaml` - ServiceAccount for SecretStore
 - `secretstore-cluster-rbac.yaml` - ClusterRole permissions for SecretStore to read across namespaces
@@ -221,6 +282,26 @@ _rook/configs/_ - Ceph cluster configuration
   - `httproute-*.yaml` - HTTPRoutes + BackendTLSPolicies for all OpenStack services (TLS termination at gateway, re-encryption to backends using RPCU bundle CA)
   - `kustomization.yaml` - Kustomization manifest
 - `kustomization.yaml` - Kustomization manifest
+
+**yaook/** - Yaook OpenStack Service Deployments (CRs)
+
+Actual OpenStack service deployment CRs (`*Deployment` of `yaook.cloud/v1`),
+reconciled by the operators above. Deployed by the `yaook` Flux Kustomization
+(dependsOn yaook-operator + external-secrets).
+
+- `keystone.yaml` - KeystoneDeployment (identity)
+- `glance.yaml` - GlanceDeployment (images)
+- `neutron.yaml` - NeutronDeployment (networking)
+- `nova.yaml` - NovaDeployment (compute)
+- `cinder.yaml` - CinderDeployment (block storage, rook-ceph RBD backend)
+- `horizon.yaml` - HorizonDeployment (dashboard)
+- `octavia.yaml` - OctaviaDeployment (load balancing)
+- `designate.yaml` - DesignateDeployment (DNS)
+- `barbican.yaml` - BarbicanDeployment (key manager, simple_crypto plugin, KEK auto-generated)
+- `ca-cert.yaml` - CA certificate resources
+- `secretstore*.yaml` / `externalsecret-*.yaml` - SecretStores + ExternalSecrets (crossplane creds, OIDC, rook-ceph client keys)
+- `gateway/` - HTTPRoutes + BackendTLSPolicies per service (includes `httproute-barbican.yaml` → `barbican.rpcu.vpn`, backend `barbican-api:9311`)
+- `kustomization.yaml` - Kustomization manifest (namespace: yaook)
 
 **fluxcd/** - GitOps Operator
 
@@ -260,7 +341,7 @@ _fluxcd/instances/_ - Instance configuration
 ### OpenStack Operators
 
 - **Yaook Operators** - v2.2.0 (charts.yaook.cloud)
-- **Operators**: infra, keystone, keystone-resources, glance, nova, nova-compute, neutron, neutron-ovn, horizon
+- **Operators**: infra, keystone, keystone-resources, glance, nova, nova-compute, neutron, neutron-ovn, horizon, octavia, designate, cds, barbican
 
 ### Certificate Management
 
@@ -270,6 +351,15 @@ _fluxcd/instances/_ - Instance configuration
 ### Infrastructure Abstraction
 
 - **Crossplane** - v2.2.0 (universal control plane)
+
+### Cluster Lifecycle (Cluster API)
+
+- **Cluster API Operator** - v0.27.0 (declarative provider lifecycle)
+- **CAPI Core** - v1.13.2 (cluster-api)
+- **Kubeadm Bootstrap Provider** - v1.13.2
+- **Kubeadm Control Plane Provider** - v1.13.2
+- **OpenStack Infrastructure Provider (CAPO)** - v0.14.4
+- **clusterctl** - v1.12.x (used for initial bootstrap; `clusterctl move` planned for self-management)
 
 ### Development Tools
 
@@ -359,16 +449,17 @@ _fluxcd/instances/_ - Instance configuration
 
 ### Helm Chart Versions
 
-| Component        | Version | Repository                                | Sync Interval |
-| ---------------- | ------- | ----------------------------------------- | ------------- |
-| cert-manager     | v1.19.2 | jetstack/cert-manager                     | 5m            |
-| cilium           | v1.18.6 | cilium/cilium                             | 5m            |
-| kgateway         | v2.2.2  | oci://cr.kgateway.dev/kgateway-dev/charts | 5m            |
-| rook             | v1.19.0 | rook-release/rook-ceph                    | 5m            |
-| crossplane       | 2.2.0   | charts.crossplane.io/stable               | 5m            |
-| external-secrets | 2.3.0   | charts.external-secrets.io                | 5m            |
-| yaook-crds       | 2.2.0   | yaook.cloud/crds                          | 5m            |
-| yaook-ops        | 2.2.0   | yaook.cloud/operators                     | 5m            |
+| Component        | Version | Repository                                     | Sync Interval |
+| ---------------- | ------- | ---------------------------------------------- | ------------- |
+| cert-manager     | v1.19.2 | jetstack/cert-manager                          | 5m            |
+| cilium           | v1.18.6 | cilium/cilium                                  | 5m            |
+| kgateway         | v2.2.2  | oci://cr.kgateway.dev/kgateway-dev/charts      | 5m            |
+| rook             | v1.19.0 | rook-release/rook-ceph                         | 5m            |
+| crossplane       | 2.2.0   | charts.crossplane.io/stable                    | 5m            |
+| external-secrets | 2.3.0   | charts.external-secrets.io                     | 5m            |
+| yaook-crds       | 2.2.0   | yaook.cloud/crds                               | 5m            |
+| yaook-ops        | 2.2.0   | yaook.cloud/operators                          | 5m            |
+| capi-operator    | 0.27.0  | kubernetes-sigs.github.io/cluster-api-operator | 5m            |
 
 ---
 
@@ -396,6 +487,21 @@ _fluxcd/instances/_ - Instance configuration
    - ceph-adapter-rook
    - rook (setup → configs with health checks)
    - yaook-operator (CRDs first, then operators via dependsOn)
+
+### Kustomization Dependencies (from clusters/mgmt/)
+
+CAPI management cluster (self-management target via `clusterctl move`):
+
+1. **flux-operator** (no dependencies) → Flux operator
+2. **fluxcd** → Flux CD instance (sync ./clusters/mgmt)
+3. **cilium** (no dependencies) → eBPF-based networking (CNI / kube-proxy replacement), L2 announcements on enp3s0, LoadBalancer IP pool 10.0.0.224-10.0.0.239
+4. **cert-manager** (no dependencies) → prerequisite for CAPI operator
+5. **external-secrets** (no dependencies) → sources CAPO credentials
+6. **cluster-api-operator** (dependsOn cert-manager)
+7. **cluster-api-providers** (dependsOn cluster-api-operator + external-secrets)
+   - CoreProvider installed first; operator requeues the others until it exists
+   - kubeadm bootstrap + control-plane providers
+   - openstack (CAPO) infrastructure provider with capo-variables configSecret
 
 ### Health Checks
 
@@ -602,7 +708,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: June 2026
+**Last Updated**: June 2026 (added mgmt Cluster resource, cluster-api-templates docs, apiServerFloatingIP + managedSubnetAllocationPools ClusterClass variables)
 **Repository**: https://github.com/RPCU/argus.git
 **Main Branch**: main
-**Cluster**: OpenStack
+**Clusters**: OpenStack, mgmt (Cluster API management)

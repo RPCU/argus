@@ -1,0 +1,11 @@
+# Cluster API providers, installed declaratively via the Cluster API Operator.
+# Resources span multiple namespaces, so no top-level namespace is set.
+#
+# NOTE: the CAPO `capo-variables` secret (clouds.yaml) is created manually on
+# the mgmt cluster — see README.md. It is intentionally NOT managed here.
+resources:
+  - namespaces.yaml
+  - core.yaml
+  - bootstrap-kubeadm.yaml
+  - control-plane-kubeadm.yaml
+  - infrastructure-openstack.yaml

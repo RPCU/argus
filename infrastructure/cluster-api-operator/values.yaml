@@ -1,0 +1,9 @@
+# Only install the Cluster API Operator itself.
+# Providers (core, kubeadm bootstrap/control-plane, openstack) are managed
+# declaratively via the cluster-api-providers component so they can be
+# version-pinned and handled with GitOps + clusterctl move.
+#
+# cert-manager is a prerequisite and is installed separately by the repo's
+# cert-manager component, so we tell the chart not to manage it.
+cert-manager:
+  enabled: false

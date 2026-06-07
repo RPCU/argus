@@ -1,0 +1,109 @@
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+kind: KubeadmControlPlaneTemplate
+metadata:
+  name: openstack-mgmt-control-plane
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      kubeadmConfigSpec:
+        clusterConfiguration:
+          apiServer:
+            extraArgs:
+              - name: kubelet-preferred-address-types
+                value: "InternalIP,Hostname,ExternalIP"
+        initConfiguration:
+          skipPhases:
+            - addon/kube-proxy
+          nodeRegistration:
+            kubeletExtraArgs:
+              - name: provider-id
+                value: openstack:///'{{ instance_id }}'
+            name: "{{ local_hostname }}"
+        joinConfiguration:
+          nodeRegistration:
+            kubeletExtraArgs:
+              - name: provider-id
+                value: openstack:///'{{ instance_id }}'
+            name: "{{ local_hostname }}"
+---
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
+kind: KubeadmConfigTemplate
+metadata:
+  name: openstack-mgmt-md-0
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      joinConfiguration:
+        nodeRegistration:
+          kubeletExtraArgs:
+            - name: provider-id
+              value: openstack:///'{{ instance_id }}'
+          name: "{{ local_hostname }}"
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: OpenStackClusterTemplate
+metadata:
+  name: openstack-mgmt-cluster
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      apiServerLoadBalancer:
+        enabled: true
+      identityRef:
+        cloudName: openstack
+        name: mgmt-cloud-config
+      managedSecurityGroups:
+        allNodesSecurityGroupRules:
+          - description: Allow SSH ingress from anywhere
+            direction: ingress
+            etherType: IPv4
+            name: SSH ingress
+            portRangeMax: 22
+            portRangeMin: 22
+            protocol: tcp
+            remoteIPPrefix: 0.0.0.0/0
+          - description: Allow DNS egress (UDP) to anywhere
+            direction: egress
+            etherType: IPv4
+            name: DNS egress (UDP)
+            portRangeMax: 53
+            portRangeMin: 53
+            protocol: udp
+            remoteIPPrefix: 0.0.0.0/0
+          - description: Allow DNS egress (TCP) to anywhere
+            direction: egress
+            etherType: IPv4
+            name: DNS egress (TCP)
+            portRangeMax: 53
+            portRangeMin: 53
+            protocol: tcp
+            remoteIPPrefix: 0.0.0.0/0
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: OpenStackMachineTemplate
+metadata:
+  name: openstack-mgmt-control-plane
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      flavor: dummy
+      image:
+        filter:
+          name: dummy
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: OpenStackMachineTemplate
+metadata:
+  name: openstack-mgmt-md-0
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      flavor: dummy
+      image:
+        filter:
+          name: dummy

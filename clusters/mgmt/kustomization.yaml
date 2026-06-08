@@ -8,3 +8,4 @@ resources:
   - orc.yaml
   - flux-operator.yaml
   - fluxcd/
+  - clusters/

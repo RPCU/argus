@@ -1,0 +1,80 @@
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: ProjectV3
+metadata:
+  name: production
+spec:
+  forProvider:
+    name: production
+---
+apiVersion: compute.openstack.m.crossplane.io/v1alpha1
+kind: QuotasetV2
+metadata:
+  name: production
+spec:
+  forProvider:
+    cores: -1
+    fixedIps: -1
+    floatingIps: -1
+    injectedFileContentBytes: -1
+    injectedFilePathBytes: -1
+    injectedFiles: -1
+    instances: -1
+    keyPairs: -1
+    metadataItems: -1
+    projectIdRef:
+      name: production
+    ram: -1
+    securityGroupRules: -1
+    securityGroups: -1
+    serverGroupMembers: -1
+    serverGroups: -1
+---
+apiVersion: blockstorage.openstack.m.crossplane.io/v1alpha1
+kind: QuotasetV3
+metadata:
+  name: production
+spec:
+  forProvider:
+    backupGigabytes: -1
+    backups: -1
+    gigabytes: -1
+    groups: -1
+    perVolumeGigabytes: -1
+    projectIdRef:
+      name: production
+    snapshots: -1
+    # volumeTypeQuota:
+    #   gigabytes_ssd: -1
+    #   snapshots_ssd: -1
+    #   volumes_ssd: -1
+    volumes: -1
+---
+apiVersion: networking.openstack.m.crossplane.io/v1alpha1
+kind: QuotaV2
+metadata:
+  name: production
+spec:
+  forProvider:
+    floatingip: -1
+    network: -1
+    port: -1
+    projectIdRef:
+      name: production
+    rbacPolicy: -1
+    router: -1
+    securityGroup: -1
+    securityGroupRule: -1
+    subnet: -1
+    subnetpool: -1
+---
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: RoleAssignmentV3
+metadata:
+  name: production
+spec:
+  forProvider:
+    roleIdRef:
+      name: admin
+    groupId: "af82fcf0d55844169a997becabca887c"
+    projectIdRef:
+      name: production

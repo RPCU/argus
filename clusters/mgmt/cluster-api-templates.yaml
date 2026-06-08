@@ -1,7 +1,7 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: cluster-api-providers
+  name: cluster-api-templates
   namespace: flux-system
 spec:
   interval: 10m0s
@@ -14,5 +14,5 @@ spec:
   wait: true
   timeout: 10m
   dependsOn:
-    - name: cluster-api-operator
+    - name: cluster-api-templates
     - name: external-secrets

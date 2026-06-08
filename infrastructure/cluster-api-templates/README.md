@@ -12,15 +12,16 @@ into the (immutable) base templates by _patches_.
 
 ```
 cluster-api-templates/
-├── kustomization.yaml          # ties everything together
-├── namespace.yaml              # mgmt namespace
-├── clusterclass.yaml           # ClusterClass "openstack-default": variables + patches
-├── README.md                   # this file
+├── kustomization.yaml            # ties everything together
+├── namespace.yaml                # mgmt namespace
+├── clusterclass.yaml             # ClusterClass "openstack-default": variables + patches
+├── README.md                     # this file
 └── templates/
-    ├── controlplane.yaml       # KubeadmControlPlaneTemplate   openstack-default-control-plane-v1
-    ├── bootstrap.yaml          # KubeadmConfigTemplate         openstack-default-worker-v1
-    ├── infracluster.yaml       # OpenStackClusterTemplate      openstack-default-cluster-v1
-    └── machines.yaml           # OpenStackMachineTemplate x2   openstack-default-{control-plane,worker}-v1
+    ├── controlplane.yaml         # KubeadmControlPlaneTemplate   openstack-default-control-plane-v1
+    ├── bootstrap.yaml            # KubeadmConfigTemplate         openstack-default-worker-v1
+    ├── infracluster.yaml         # OpenStackClusterTemplate      openstack-default-cluster-v1  (kept for live clusters)
+    ├── infracluster-v2.yaml      # OpenStackClusterTemplate      openstack-default-cluster-v2  (identityRef not hardcoded)
+    └── machines.yaml             # OpenStackMachineTemplate x2   openstack-default-{control-plane,worker}-v1
 ```
 
 The OpenStack credentials secret (`mgmt-cloud-config`) that the hardcoded
@@ -37,41 +38,56 @@ template).
 
 Set these in a `Cluster` `spec.topology.variables`:
 
-| Variable                       | Required | Default          | Purpose                                                        |
-| ------------------------------ | -------- | ---------------- | -------------------------------------------------------------- |
-| `externalNetworkId`            | yes      | —                | ID of the external / floating-IP network                       |
-| `imageName`                    | yes      | —                | Glance image name used for all machines                        |
-| `managedSubnetCIDR`            | no       | `192.168.1.0/24` | CIDR for the managed node subnet                               |
-| `managedSubnetAllocationPools` | no       | `.11`–`.254`     | DHCP allocation ranges (leaves low IPs free for manual ports)  |
-| `controlPlaneFlavor`           | no       | `large`          | OpenStack flavor for control-plane machines                    |
-| `workerFlavor`                 | no       | `xlarge`         | OpenStack flavor for worker machines                           |
-| `sshKeyName`                   | no       | `""` (off)       | Existing OpenStack keypair to inject (patch disabled if empty) |
-| `apiServerFloatingIP`          | no       | auto-allocated   | Pin a specific floating IP to the API server LB                |
+| Variable                       | Required | Default          | Purpose                                                         |
+| ------------------------------ | -------- | ---------------- | --------------------------------------------------------------- |
+| `identityRef`                  | yes      | —                | Secret (`name` + `cloudName`) holding the OpenStack clouds.yaml |
+| `externalNetworkId`            | yes      | —                | ID of the external / floating-IP network                        |
+| `imageName`                    | yes      | —                | Glance image name used for all machines                         |
+| `managedSubnetCIDR`            | no       | `192.168.1.0/24` | CIDR for the managed node subnet                                |
+| `managedSubnetAllocationPools` | no       | `.11`–`.254`     | DHCP allocation ranges (leaves low IPs free for manual ports)   |
+| `controlPlaneFlavor`           | no       | `large`          | OpenStack flavor for control-plane machines                     |
+| `workerFlavor`                 | no       | `xlarge`         | OpenStack flavor for worker machines                            |
+| `sshKeyName`                   | no       | `""` (off)       | Existing OpenStack keypair to inject (patch disabled if empty)  |
+| `apiServerFloatingIP`          | no       | auto-allocated   | Pin a specific floating IP to the API server LB                 |
 
 Topology-level knobs that are _not_ class variables (set them directly under
 `spec.topology`): Kubernetes `version`, control-plane `replicas`, and each
 `machineDeployments[].replicas`.
 
-### OpenStack credentials (`identityRef`) — not a variable
+### OpenStack credentials (`identityRef`)
 
-The `OpenStackCluster.identityRef` is **hardcoded** in `templates/infracluster.yaml`
-to the secret `mgmt-cloud-config` (cloud `openstack`). That secret is **not** kept
-in Git: it is synced into the `mgmt` namespace by the ExternalSecret in
-`infrastructure/capo-identity/` (its own Flux Kustomization) from the
-manually-placed `capo-variables` secret in `capo-system`, so clouds.yaml has a
-single source of truth (see `infrastructure/cluster-api-providers/README.md`).
+The `identityRef` variable is injected into the `OpenStackCluster` by a
+ClusterClass patch. Each `Cluster` points it at a Kubernetes secret containing a
+`clouds.yaml`; the `clouds.openstack.auth.project_name` in that file determines
+which OpenStack project the cluster's resources are created in — so different
+clusters can target different projects.
 
-To use different credentials per cluster you'd bump the infracluster template to
-`-v2` with a different `identityRef`, or reintroduce it as a variable.
+The `mgmt` cluster ships with `infrastructure/capo-identity/` (its own Flux
+Kustomization), which syncs the manually-placed `capo-variables` secret from
+`capo-system` into `mgmt-cloud-config` in the `mgmt` namespace. The default
+`Cluster` CR at `clusters/mgmt/clusters/mgmt.yaml` references this secret.
+To create clusters in a different OpenStack project, place a separate
+`clouds.yaml` secret in `mgmt` (manually or via another ESO sync) and point
+your `Cluster`'s `identityRef` at it.
+
+### Template versions (`-v1` vs `-v2`)
+
+The `infracluster.yaml` (`-v1`) is the original template with `identityRef`
+**hardcoded** — it is kept for backward compatibility with any live clusters
+that still reference it. The current ClusterClass uses `infracluster-v2.yaml`
+(`-v2`), which has `identityRef` removed from the base and injected by the
+variable patch instead. This enables per-cluster project targeting.
+
+Once all live clusters have migrated to the `openstack-default` class (and no
+Cluster CR references `identityRef` via the old hardcoded path), the `-v1`
+resource can be deleted and `-v2` renamed to `infracluster.yaml`.
 
 ## Creating a new cluster
 
 1. Write a `Cluster` CR referencing `classRef.name: openstack-default`.
-2. Set the required variables (`externalNetworkId`, `imageName`) plus any
-   optional overrides.
-3. Ensure the `mgmt-cloud-config` secret exists in the cluster namespace (synced
-   automatically by the ExternalSecret once `capo-variables` is placed in
-   `capo-system`).
+2. Set the required variables (`identityRef`, `externalNetworkId`, `imageName`)
+   plus any optional overrides.
+3. Ensure the referenced identity secret exists in the cluster's namespace.
 
 A minimal example (see `clusters/mgmt/clusters/mgmt.yaml` for a real one):
 
@@ -98,6 +114,8 @@ spec:
           name: md-0
           replicas: 3
     variables:
+      - name: identityRef
+        value: { name: my-cloud-config, cloudName: openstack }
       - name: externalNetworkId
         value: <external-network-uuid>
       - name: imageName

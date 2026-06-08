@@ -4,4 +4,5 @@ resources:
   - templates/controlplane.yaml
   - templates/bootstrap.yaml
   - templates/infracluster.yaml
+  - templates/infracluster-v2.yaml
   - templates/machines.yaml

@@ -1,0 +1,6 @@
+# ORC (openstack-resource-controller) — standalone manifest bundle.
+# CAPO v0.14.x depends on ORC for image resolution; ORC is NOT a CAPI
+# provider and is NOT installed via the Cluster API Operator.
+# Version-pinned upstream URL (v2.5.0).
+resources:
+  - https://github.com/k-orc/openstack-resource-controller/releases/download/v2.5.0/install.yaml

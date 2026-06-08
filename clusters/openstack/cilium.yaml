@@ -22,7 +22,7 @@ spec:
             k8sServiceHost: "10.0.0.5"
             k8sServicePort: 6443
             extraArgs:
-              - --devices=eno1.4000
+              - --devices=eno1.4000,br-ex,br-int
               - --direct-routing-device=eno1.4000
             # This baremetal cluster hosts nested KVM/QEMU OpenStack VMs.
             # Restrict socket-LB to the host namespace so the host's eBPF socket

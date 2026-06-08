@@ -245,6 +245,24 @@ the manually bootstrapped kind management cluster.
 > Secrets approach (`secretstore.yaml`, `secretstore-rbac.yaml`,
 > `externalsecret-capo.yaml`) was removed because the mgmt cluster has no local
 > `yaook` namespace to read `keystone-admin` from.
+>
+> ORC (openstack-resource-controller) is a **hard dependency of CAPO v0.14.x**
+> (OpenStackMachine images resolve through ORC `Image` resources), but it is
+> **not** a Cluster API provider and is **not** managed in this kustomization.
+> On the mgmt cluster it is installed as a plain Flux Kustomization
+> (`clusters/mgmt/orc.yaml` → `infrastructure/orc/`) using ORC's upstream
+> `install.yaml` pinned at v2.5.0. Do **not** add it as an
+> `InfrastructureProvider` CR — the Cluster API Operator has no fetch source
+> for it and would fight the standalone install.
+
+**orc/** - OpenStack Resource Controller (v2.5.0)
+
+Standalone ORC deployment, fetched from upstream via URL. CAPO v0.14.x depends on
+ORC for image resolution (OpenStackMachine images are resolved through ORC
+`Image` resources). ORC is NOT a Cluster API provider — it does not implement
+the CAPI infrastructure contract and is not managed by the Cluster API Operator.
+
+- `kustomization.yaml` - Kustomization manifest pointing at the pinned upstream release URL (v2.5.0)
 
 **cluster-api-templates/** - Cluster API ClusterClass & Templates
 
@@ -358,6 +376,7 @@ _fluxcd/instances/_ - Instance configuration
 - **Kubeadm Bootstrap Provider** - v1.13.2
 - **Kubeadm Control Plane Provider** - v1.13.2
 - **OpenStack Infrastructure Provider (CAPO)** - v0.14.4
+- **OpenStack Resource Controller (ORC)** - v2.5.0 (image resolution dependency for CAPO v0.14.x)
 - **clusterctl** - v1.12.x (used for initial bootstrap; `clusterctl move` planned for self-management)
 
 ### Development Tools
@@ -497,10 +516,14 @@ CAPI management cluster (self-management target via `clusterctl move`):
 4. **cert-manager** (no dependencies) → prerequisite for CAPI operator
 5. **external-secrets** (no dependencies) → sources CAPO credentials
 6. **cluster-api-operator** (dependsOn cert-manager)
-7. **cluster-api-providers** (dependsOn cluster-api-operator + external-secrets)
+7. **orc** (no dependencies) → ORC v2.5.0, image resolution for CAPO
+8. **cluster-api-providers** (dependsOn cluster-api-operator + external-secrets + orc)
    - CoreProvider installed first; operator requeues the others until it exists
    - kubeadm bootstrap + control-plane providers
    - openstack (CAPO) infrastructure provider with capo-variables configSecret
+   - ORC (openstack-resource-controller) is a CAPO image-resolution dependency but
+     is installed out-of-band (kubectl apply of upstream kustomize), NOT as a
+     provider CR — see cluster-api-providers note
 
 ### Health Checks
 

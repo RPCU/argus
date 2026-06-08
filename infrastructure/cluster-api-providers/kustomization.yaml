@@ -9,3 +9,12 @@ resources:
   - bootstrap-kubeadm.yaml
   - control-plane-kubeadm.yaml
   - infrastructure-openstack.yaml
+#
+# NOTE: ORC (openstack-resource-controller) is a hard dependency of CAPO
+# v0.14.x (OpenStackMachine images resolve through ORC Image resources), but it
+# is NOT a Cluster API provider and is NOT managed here. On this cluster ORC was
+# installed out-of-band via `kubectl apply` of its upstream kustomize manifest
+# (quay.io/orc/openstack-resource-controller:v2.5.0 in namespace orc-system,
+# labels app.kubernetes.io/name=orc). Do not add it as an InfrastructureProvider
+# CR — that would make the Cluster API Operator fight the standalone install.
+# See README.md.

@@ -1,5 +1,6 @@
 # Core Cluster API provider. Must be installed before any other provider;
 # the operator requeues the others until this exists.
+# ClusterTopology must be enabled for ClusterClass/Topology support.
 apiVersion: operator.cluster.x-k8s.io/v1alpha2
 kind: CoreProvider
 metadata:
@@ -7,3 +8,6 @@ metadata:
   namespace: capi-system
 spec:
   version: v1.13.2
+  manager:
+    featureGates:
+      ClusterTopology: true

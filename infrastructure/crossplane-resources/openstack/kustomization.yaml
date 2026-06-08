@@ -5,6 +5,7 @@ resources:
   - externalnetwork.yaml
   - flavors.yaml
   - groups.yaml
-  - projects.yaml
+  - project-admin.yaml
+  - project-production.yaml
   - securityGroups.yaml
   - zonedns.yaml

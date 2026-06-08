@@ -687,6 +687,35 @@ frames piecemeal — an MTU mismatch on any hop is worse than a consistent small
 MTU. Confirm overlay connectivity first, then size Cilium `MTU` to the OpenStack
 tenant-network MTU if needed.
 
+#### Tenant network MTU is pinned to 1400 (no jumbo frames)
+
+`infrastructure/yaook/neutron.yaml` pins the tenant/provider network MTU to
+**1400** (`DEFAULT.global_physnet_mtu: 1400`, `ml2.path_mtu: 1400`,
+`ml2.physical_network_mtus: enp3s0:1400`). Combined with `advertise_mtu: True`,
+Neutron advertises the derived overlay MTU (OVN geneve = 38B overhead →
+~**1362**) to tenant VMs over DHCP.
+
+Why 1400 and not jumbo (9000): the underlay is not jumbo-clean end to end. On
+the hephaestus hosts the Hetzner vSwitch VLAN `eno1.4000` is capped at 1400 and
+`br-ex`/`eno1` default to 1500. A previous attempt set `enp3s0` and Neutron to
+9000; VMs then emitted oversized frames that black-holed at the first 1500/1400
+hop. Symptoms (on the CAPI mgmt cluster running as tenant VMs): flaky etcd
+(`addrConn.createTransport failed ... 127.0.0.1:2379 ... operation was
+canceled`) and intermittent `TLS handshake timeout` pulling images from
+ghcr.io — both "works after a retry," the classic MTU black-hole signature.
+
+The host side of this change lives in the hephaestus repo: `enp3s0` was reverted
+from MTU 9000 back to the default 1500 in
+`nixosModules/rpcuIaaSCP/osconfig.nix`. Keep the two repos in sync — if you
+change the Neutron MTU here, update `enp3s0`/host MTUs there (and vice versa).
+
+Rollout caveat: Neutron sets port MTU at port-creation time. Existing running
+VMs (current mgmt nodes) keep their old MTU until their ports are recreated —
+rolling-replace the mgmt machines via CAPI to pick up 1362, or set the VM NIC
+MTU manually (`ip link set dev <iface> mtu 1362`) as a stopgap to verify the
+fix. Cilium auto-detects MTU from the device, so its inner overlay sizes itself
+below the corrected VM MTU automatically.
+
 ### Code Quality
 
 - Always format code before committing (prettier, nixfmt)

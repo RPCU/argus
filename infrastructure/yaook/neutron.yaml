@@ -44,7 +44,7 @@ spec:
   neutronConfig:
     DEFAULT:
       debug: false
-      global_physnet_mtu: 9000
+      global_physnet_mtu: 1400
       advertise_mtu: True
       enable_tcp_mss_clamping: True
       dnsmasq_dns_servers:
@@ -55,8 +55,8 @@ spec:
       ovn_emit_need_to_frag: True
   neutronML2Config:
     ml2:
-      path_mtu: 9000
-      physical_network_mtus: enp3s0:9000
+      path_mtu: 1400
+      physical_network_mtus: enp3s0:1400
     ml2_type_flat:
       flat_networks:
         - public

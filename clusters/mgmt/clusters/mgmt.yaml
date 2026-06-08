@@ -21,6 +21,10 @@ spec:
           name: md-0
           replicas: 3
     variables:
+      - name: identityRef
+        value:
+          name: mgmt-cloud-config
+          cloudName: openstack
       - name: externalNetworkId
         value: 1cfd69da-057c-4748-a0d4-de5b0ca77db2
       - name: managedSubnetCIDR

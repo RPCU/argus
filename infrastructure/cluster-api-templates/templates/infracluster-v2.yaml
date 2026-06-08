@@ -1,23 +1,23 @@
 # -----------------------------------------------------------------------------
-# Infrastructure cluster template (OpenStackCluster).
+# Infrastructure cluster template (OpenStackCluster) — v2.
 #
-# Tenant/cluster-specific networking (externalNetwork, managedSubnets,
-# apiServerFloatingIP) is injected by ClusterClass patches from per-Cluster
-# variables, so this base stays generic and reusable.
+# Identical to -v1 except: identityRef is NOT hardcoded in the base. Instead it
+# is injected dynamically by the ClusterClass identityRef patch, so different
+# clusters can target different OpenStack projects (different clouds.yaml
+# secrets) without rotating the template.
 #
-# Tenant/cluster-specific networking (externalNetwork, managedSubnets,
-# apiServerFloatingIP) and credentials (identityRef) are injected by ClusterClass
-# patches from per-Cluster variables, so this base stays generic and reusable.
+# This replaces -v1 as the ClusterClass infrastructure.templateRef. The -v1
+# resource remains in Git until every live ClusterClass referencing it has been
+# migrated; once clean, delete this file and rename this to infracluster.yaml.
 #
 # IMMUTABILITY: OpenStackClusterTemplate.spec.template.spec is immutable once
-# referenced. The managedSecurityGroups block below is intentionally part of the
-# base (not a patch) because it is the same for every Cilium cluster. To change
-# the SG rules (or identityRef), bump to -v2 and repoint infrastructure.templateRef.
+# referenced. To change anything here (e.g. managedSecurityGroups rules),
+# create a -v3 and repoint.
 # -----------------------------------------------------------------------------
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: OpenStackClusterTemplate
 metadata:
-  name: openstack-default-cluster-v1
+  name: openstack-default-cluster-v2
   namespace: mgmt
 spec:
   template:

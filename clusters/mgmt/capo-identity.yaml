@@ -1,0 +1,23 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: capo-identity
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  path: ./infrastructure/capo-identity
+  prune: true
+  # wait:false on purpose: the ExternalSecret only becomes Ready once the
+  # manually-placed capo-variables secret exists in capo-system. We do not want
+  # to block this Kustomization (or anything depending on it) on that manual
+  # step — the SecretStore/ExternalSecret are applied and sync on their own once
+  # the source secret appears.
+  wait: false
+  timeout: 5m
+  dependsOn:
+    - name: external-secrets
+    - name: cluster-api-providers

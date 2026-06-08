@@ -6,9 +6,10 @@
 # variables, so this base stays generic and reusable.
 #
 # identityRef is hardcoded here (not a variable): the credentials secret
-# `mgmt-cloud-config` is synced into the mgmt namespace by an ExternalSecret
-# (see externalsecret-identity.yaml) from the manually-placed `capo-variables`
-# secret in capo-system, so there is a single source of truth for clouds.yaml.
+# `mgmt-cloud-config` is synced into the mgmt namespace by the ExternalSecret
+# in `infrastructure/capo-identity/` (its own Flux Kustomization) from the
+# manually-placed `capo-variables` secret in capo-system, so there is a single
+# source of truth for clouds.yaml.
 #
 # IMMUTABILITY: OpenStackClusterTemplate.spec.template.spec is immutable once
 # referenced. The managedSecurityGroups block below is intentionally part of the

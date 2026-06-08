@@ -1,8 +1,6 @@
 resources:
   - namespace.yaml
   - clusterclass.yaml
-  - identity-secretstore.yaml
-  - externalsecret-identity.yaml
   - templates/controlplane.yaml
   - templates/bootstrap.yaml
   - templates/infracluster.yaml

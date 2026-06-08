@@ -5,6 +5,7 @@ resources:
   - cluster-api-operator.yaml
   - cluster-api-providers.yaml
   - cluster-api-templates.yaml
+  - capo-identity.yaml
   - orc.yaml
   - flux-operator.yaml
   - fluxcd/

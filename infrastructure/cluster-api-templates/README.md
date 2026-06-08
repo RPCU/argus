@@ -12,16 +12,15 @@ into the (immutable) base templates by _patches_.
 
 ```
 cluster-api-templates/
-├── kustomization.yaml            # ties everything together
-├── namespace.yaml                # mgmt namespace
-├── clusterclass.yaml             # ClusterClass "openstack-default": variables + patches
-├── README.md                     # this file
+├── kustomization.yaml          # ties everything together
+├── namespace.yaml              # mgmt namespace
+├── clusterclass.yaml           # ClusterClass "openstack-default": variables + patches
+├── README.md                   # this file
 └── templates/
-    ├── controlplane.yaml         # KubeadmControlPlaneTemplate   openstack-default-control-plane-v1
-    ├── bootstrap.yaml            # KubeadmConfigTemplate         openstack-default-worker-v1
-    ├── infracluster.yaml         # OpenStackClusterTemplate      openstack-default-cluster-v1  (kept for live clusters)
-    ├── infracluster-v2.yaml      # OpenStackClusterTemplate      openstack-default-cluster-v2  (identityRef not hardcoded)
-    └── machines.yaml             # OpenStackMachineTemplate x2   openstack-default-{control-plane,worker}-v1
+    ├── controlplane.yaml       # KubeadmControlPlaneTemplate   openstack-default-control-plane-v1
+    ├── bootstrap.yaml          # KubeadmConfigTemplate         openstack-default-worker-v1
+    ├── infracluster.yaml       # OpenStackClusterTemplate      openstack-default-cluster-v1
+    └── machines.yaml           # OpenStackMachineTemplate x2   openstack-default-{control-plane,worker}-v1
 ```
 
 The OpenStack credentials secret (`mgmt-cloud-config`) that the hardcoded
@@ -56,11 +55,15 @@ Topology-level knobs that are _not_ class variables (set them directly under
 
 ### OpenStack credentials (`identityRef`)
 
-The `identityRef` variable is injected into the `OpenStackCluster` by a
-ClusterClass patch. Each `Cluster` points it at a Kubernetes secret containing a
-`clouds.yaml`; the `clouds.openstack.auth.project_name` in that file determines
-which OpenStack project the cluster's resources are created in — so different
-clusters can target different projects.
+CAPO validates `identityRef` as **required** at admission time, so it must be
+present in the base template — it cannot be added purely by a patch. The base
+template carries a hardcoded default (`mgmt-cloud-config`, cloud `openstack`).
+
+The ClusterClass `identityRef` variable/patch **overrides** this default when
+the topology controller synthesizes the concrete `OpenStackCluster` per-cluster.
+So different clusters can still target different OpenStack projects: set
+`identityRef` in your `Cluster` CR to point at a different `clouds.yaml`
+secret.
 
 The `mgmt` cluster ships with `infrastructure/capo-identity/` (its own Flux
 Kustomization), which syncs the manually-placed `capo-variables` secret from
@@ -69,18 +72,6 @@ Kustomization), which syncs the manually-placed `capo-variables` secret from
 To create clusters in a different OpenStack project, place a separate
 `clouds.yaml` secret in `mgmt` (manually or via another ESO sync) and point
 your `Cluster`'s `identityRef` at it.
-
-### Template versions (`-v1` vs `-v2`)
-
-The `infracluster.yaml` (`-v1`) is the original template with `identityRef`
-**hardcoded** — it is kept for backward compatibility with any live clusters
-that still reference it. The current ClusterClass uses `infracluster-v2.yaml`
-(`-v2`), which has `identityRef` removed from the base and injected by the
-variable patch instead. This enables per-cluster project targeting.
-
-Once all live clusters have migrated to the `openstack-default` class (and no
-Cluster CR references `identityRef` via the old hardcoded path), the `-v1`
-resource can be deleted and `-v2` renamed to `infracluster.yaml`.
 
 ## Creating a new cluster
 

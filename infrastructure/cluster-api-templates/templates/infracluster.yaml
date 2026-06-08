@@ -1,13 +1,17 @@
 # -----------------------------------------------------------------------------
 # Infrastructure cluster template (OpenStackCluster).
 #
+# Infrastructure cluster template (OpenStackCluster).
+#
+# CAPO validates identityRef as required at admission time, so it MUST be
+# present in the base template. The ClusterClass identityRef variable/patch
+# overrides this hardcoded default when the topology controller synthesizes
+# the concrete OpenStackCluster per-cluster — so different clusters CAN still
+# target different OpenStack projects.
+#
 # Tenant/cluster-specific networking (externalNetwork, managedSubnets,
 # apiServerFloatingIP) is injected by ClusterClass patches from per-Cluster
 # variables, so this base stays generic and reusable.
-#
-# Tenant/cluster-specific networking (externalNetwork, managedSubnets,
-# apiServerFloatingIP) and credentials (identityRef) are injected by ClusterClass
-# patches from per-Cluster variables, so this base stays generic and reusable.
 #
 # IMMUTABILITY: OpenStackClusterTemplate.spec.template.spec is immutable once
 # referenced. The managedSecurityGroups block below is intentionally part of the
@@ -24,6 +28,9 @@ spec:
     spec:
       apiServerLoadBalancer:
         enabled: true
+      identityRef:
+        name: mgmt-cloud-config
+        cloudName: openstack
       managedSecurityGroups:
         # Permit ALL traffic between cluster nodes on every port/protocol. This
         # is the robust setting for a Cilium cluster: it covers the overlay and

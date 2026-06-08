@@ -267,10 +267,32 @@ the CAPI infrastructure contract and is not managed by the Cluster API Operator.
 
 **cluster-api-templates/** - Cluster API ClusterClass & Templates
 
-- `clusterclass.yaml` - ClusterClass `openstack-mgmt` with variables: identityRef, externalNetworkId, managedSubnetCIDR, managedSubnetAllocationPools, imageName, controlPlaneFlavor, workerFlavor, sshKeyName, apiServerFloatingIP
-- `templates.yaml` - KubeadmControlPlaneTemplate, KubeadmConfigTemplate, OpenStackClusterTemplate, OpenStackMachineTemplate. The `OpenStackClusterTemplate.managedSecurityGroups` sets `allowAllInClusterTraffic: true` plus explicit Cilium data-plane rules (VXLAN UDP 8472, health TCP 4240, Hubble TCP 4244, ICMP via `remoteManagedGroups: [controlplane, worker]`) — required because CAPO's default managed SGs only open API/etcd/kubelet/node-port and would otherwise drop Cilium's cross-node overlay (see note in Cluster Safety).
-- `namespaces.yaml` - Namespace `mgmt`
-- `kustomization.yaml` - Kustomization manifest (the `Cluster` CR `mgmt-cluster.yaml` is commented out here; the actual Cluster lives at `clusters/mgmt/clusters/mgmt.yaml`)
+Generic, reusable OpenStack ClusterClass. Restructured so the base templates are
+split per-component and carry a `-v1` version suffix; everything cluster-specific
+is a ClusterClass variable injected via patches, so creating a new cluster is a
+small `Cluster` CR (no template forking). See `README.md` for the variable table
+and the `-vN` immutability/rotation workflow.
+
+- `clusterclass.yaml` - ClusterClass `openstack-default` (renamed from `openstack-mgmt`) with variables: externalNetworkId, managedSubnetCIDR, managedSubnetAllocationPools, imageName, controlPlaneFlavor, workerFlavor, sshKeyName, apiServerFloatingIP. Template refs use the versioned `openstack-default-*-v1` names. (`identityRef` was removed as a variable — see below.)
+- `templates/controlplane.yaml` - KubeadmControlPlaneTemplate `openstack-default-control-plane-v1`
+- `templates/bootstrap.yaml` - KubeadmConfigTemplate `openstack-default-worker-v1`
+- `templates/infracluster.yaml` - OpenStackClusterTemplate `openstack-default-cluster-v1`. The `managedSecurityGroups` sets `allowAllInClusterTraffic: true` plus explicit Cilium data-plane rules (VXLAN UDP 8472, health TCP 4240, Hubble TCP 4244, ICMP via `remoteManagedGroups: [controlplane, worker]`) — required because CAPO's default managed SGs only open API/etcd/kubelet/node-port and would otherwise drop Cilium's cross-node overlay (see note in Cluster Safety). `identityRef` is now **hardcoded** here to secret `mgmt-cloud-config` (cloud `openstack`), no longer a ClusterClass variable.
+- `templates/machines.yaml` - OpenStackMachineTemplate `openstack-default-control-plane-v1` and `openstack-default-worker-v1` (flavor/image are `dummy` placeholders overwritten by patches)
+- `identity-secretstore.yaml` - ServiceAccount `capo-identity-reader` (mgmt) + Role/RoleBinding `capo-variables-reader` (capo-system) + ESO `SecretStore` `capo-system-secrets` (mgmt, Kubernetes provider, `remoteNamespace: capo-system`). Lets External Secrets read the manually-placed `capo-variables` secret cross-namespace within the mgmt cluster.
+- `externalsecret-identity.yaml` - ESO `ExternalSecret` syncing `capo-variables` `clouds.yaml` (capo-system) → secret `mgmt-cloud-config` (mgmt). Single source of truth: clouds.yaml is placed once in `capo-variables`; CAPO's provider config and every cluster's `identityRef` both derive from it.
+- `namespace.yaml` - Namespace `mgmt`
+- `README.md` - Structure, variable table, credentials/ESO note, new-cluster recipe, and immutability/`-vN` rotation workflow
+- `kustomization.yaml` - Kustomization manifest (references namespace, clusterclass, the two ESO files, and all four `templates/*` files). The actual `Cluster` CR lives at `clusters/mgmt/clusters/mgmt.yaml` and now references `classRef.name: openstack-default` (and no longer sets an `identityRef` variable).
+
+> Depends on `cluster-api-providers` (creates the `capo-system` namespace where the
+> ESO Role/RoleBinding live and `capo-variables` is placed) and `external-secrets`
+> (ESO CRDs). The Flux Kustomization `clusters/mgmt/cluster-api-templates.yaml` was
+> also fixed from a self-dependency to `dependsOn: cluster-api-providers`.
+
+> The Flux Kustomization `clusters/mgmt/cluster-api-templates.yaml` previously had a
+> self-dependency (`dependsOn: cluster-api-templates`); this was fixed to
+> `dependsOn: cluster-api-providers` so the ClusterClass/templates only reconcile
+> after the CAPO/kubeadm provider CRDs exist.
 
 **yaook-operator/** - Yaook OpenStack Operators (v2.2.0)
 

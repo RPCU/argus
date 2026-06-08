@@ -1,0 +1,22 @@
+# -----------------------------------------------------------------------------
+# Worker bootstrap template (KubeadmConfig).
+#
+# IMMUTABILITY: like the control-plane template, the spec is immutable once a
+# ClusterClass references it. To change it, create a new -v2 and repoint the
+# matching machineDeployment class in clusterclass.yaml. The topology controller
+# will roll the affected MachineDeployment.
+# -----------------------------------------------------------------------------
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
+kind: KubeadmConfigTemplate
+metadata:
+  name: openstack-default-worker-v1
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      joinConfiguration:
+        nodeRegistration:
+          kubeletExtraArgs:
+            - name: provider-id
+              value: openstack:///'{{ instance_id }}'
+          name: "{{ local_hostname }}"

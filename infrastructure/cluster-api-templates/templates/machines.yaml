@@ -1,0 +1,38 @@
+# -----------------------------------------------------------------------------
+# Machine templates (OpenStackMachine) for control-plane and worker pools.
+#
+# The flavor and image name are placeholders ("dummy") on purpose — they are
+# overwritten per-Cluster by ClusterClass patches (controlPlaneFlavor /
+# workerFlavor / imageName variables). Keeping them as dummies makes it obvious
+# they are never used directly.
+#
+# IMMUTABILITY: OpenStackMachineTemplate.spec.template.spec is immutable once
+# referenced by a running ClusterClass. To change a field that is NOT already
+# driven by a patch variable, create a -v2 template and repoint the relevant
+# templateRef in clusterclass.yaml; the topology controller rolls the machines.
+# -----------------------------------------------------------------------------
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: OpenStackMachineTemplate
+metadata:
+  name: openstack-default-control-plane-v1
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      flavor: dummy
+      image:
+        filter:
+          name: dummy
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: OpenStackMachineTemplate
+metadata:
+  name: openstack-default-worker-v1
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      flavor: dummy
+      image:
+        filter:
+          name: dummy

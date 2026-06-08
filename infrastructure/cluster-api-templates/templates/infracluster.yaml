@@ -1,51 +1,24 @@
-apiVersion: controlplane.cluster.x-k8s.io/v1beta2
-kind: KubeadmControlPlaneTemplate
-metadata:
-  name: openstack-mgmt-control-plane
-  namespace: mgmt
-spec:
-  template:
-    spec:
-      kubeadmConfigSpec:
-        clusterConfiguration:
-          apiServer:
-            extraArgs:
-              - name: kubelet-preferred-address-types
-                value: "InternalIP,Hostname,ExternalIP"
-        initConfiguration:
-          skipPhases:
-            - addon/kube-proxy
-          nodeRegistration:
-            kubeletExtraArgs:
-              - name: provider-id
-                value: openstack:///'{{ instance_id }}'
-            name: "{{ local_hostname }}"
-        joinConfiguration:
-          nodeRegistration:
-            kubeletExtraArgs:
-              - name: provider-id
-                value: openstack:///'{{ instance_id }}'
-            name: "{{ local_hostname }}"
----
-apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
-kind: KubeadmConfigTemplate
-metadata:
-  name: openstack-mgmt-md-0
-  namespace: mgmt
-spec:
-  template:
-    spec:
-      joinConfiguration:
-        nodeRegistration:
-          kubeletExtraArgs:
-            - name: provider-id
-              value: openstack:///'{{ instance_id }}'
-          name: "{{ local_hostname }}"
----
+# -----------------------------------------------------------------------------
+# Infrastructure cluster template (OpenStackCluster).
+#
+# Tenant/cluster-specific networking (externalNetwork, managedSubnets,
+# apiServerFloatingIP) is injected by ClusterClass patches from per-Cluster
+# variables, so this base stays generic and reusable.
+#
+# identityRef is hardcoded here (not a variable): the credentials secret
+# `mgmt-cloud-config` is synced into the mgmt namespace by an ExternalSecret
+# (see externalsecret-identity.yaml) from the manually-placed `capo-variables`
+# secret in capo-system, so there is a single source of truth for clouds.yaml.
+#
+# IMMUTABILITY: OpenStackClusterTemplate.spec.template.spec is immutable once
+# referenced. The managedSecurityGroups block below is intentionally part of the
+# base (not a patch) because it is the same for every Cilium cluster. To change
+# the SG rules (or identityRef), bump to -v2 and repoint infrastructure.templateRef.
+# -----------------------------------------------------------------------------
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: OpenStackClusterTemplate
 metadata:
-  name: openstack-mgmt-cluster
+  name: openstack-default-cluster-v1
   namespace: mgmt
 spec:
   template:
@@ -53,8 +26,8 @@ spec:
       apiServerLoadBalancer:
         enabled: true
       identityRef:
-        cloudName: openstack
         name: mgmt-cloud-config
+        cloudName: openstack
       managedSecurityGroups:
         # Permit ALL traffic between cluster nodes on every port/protocol. This
         # is the robust setting for a Cilium cluster: it covers the overlay and
@@ -143,29 +116,3 @@ spec:
             remoteManagedGroups:
               - controlplane
               - worker
----
-apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
-kind: OpenStackMachineTemplate
-metadata:
-  name: openstack-mgmt-control-plane
-  namespace: mgmt
-spec:
-  template:
-    spec:
-      flavor: dummy
-      image:
-        filter:
-          name: dummy
----
-apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
-kind: OpenStackMachineTemplate
-metadata:
-  name: openstack-mgmt-md-0
-  namespace: mgmt
-spec:
-  template:
-    spec:
-      flavor: dummy
-      image:
-        filter:
-          name: dummy

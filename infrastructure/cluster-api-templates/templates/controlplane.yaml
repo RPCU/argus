@@ -1,0 +1,37 @@
+# -----------------------------------------------------------------------------
+# Control plane template (KubeadmControlPlane).
+#
+# IMMUTABILITY: KubeadmControlPlaneTemplate.spec.template.spec is effectively
+# immutable once referenced by a running ClusterClass. To change anything here,
+# create a NEW template with a bumped version suffix (e.g. -v2), point the
+# ClusterClass controlPlane.templateRef at it, and let the topology controller
+# roll the control-plane machines. Never edit -v1 in place on a live cluster.
+# -----------------------------------------------------------------------------
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+kind: KubeadmControlPlaneTemplate
+metadata:
+  name: openstack-default-control-plane-v1
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      kubeadmConfigSpec:
+        clusterConfiguration:
+          apiServer:
+            extraArgs:
+              - name: kubelet-preferred-address-types
+                value: "InternalIP,Hostname,ExternalIP"
+        initConfiguration:
+          skipPhases:
+            - addon/kube-proxy
+          nodeRegistration:
+            kubeletExtraArgs:
+              - name: provider-id
+                value: openstack:///'{{ instance_id }}'
+            name: "{{ local_hostname }}"
+        joinConfiguration:
+          nodeRegistration:
+            kubeletExtraArgs:
+              - name: provider-id
+                value: openstack:///'{{ instance_id }}'
+            name: "{{ local_hostname }}"

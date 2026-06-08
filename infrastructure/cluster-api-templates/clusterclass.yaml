@@ -1,7 +1,19 @@
+# =============================================================================
+# ClusterClass: openstack-default
+#
+# A generic, reusable OpenStack ClusterClass. Everything tenant- or
+# cluster-specific is expressed as a variable (see the variables section) and
+# wired into the immutable base templates via patches, so a new cluster is
+# created by writing a small Cluster CR that sets a handful of variables — no
+# need to copy/fork the templates.
+#
+# Template references use versioned names (…-v1). To evolve an immutable
+# template, add a -v2 alongside it and bump the templateRef here (see README).
+# =============================================================================
 apiVersion: cluster.x-k8s.io/v1beta2
 kind: ClusterClass
 metadata:
-  name: openstack-mgmt
+  name: openstack-default
   namespace: mgmt
 spec:
   # ---------------------------------------------------------------------------
@@ -11,12 +23,12 @@ spec:
     templateRef:
       apiVersion: controlplane.cluster.x-k8s.io/v1beta2
       kind: KubeadmControlPlaneTemplate
-      name: openstack-mgmt-control-plane
+      name: openstack-default-control-plane-v1
     machineInfrastructure:
       templateRef:
         apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
         kind: OpenStackMachineTemplate
-        name: openstack-mgmt-control-plane
+        name: openstack-default-control-plane-v1
 
   # ---------------------------------------------------------------------------
   # Cluster infrastructure
@@ -25,7 +37,7 @@ spec:
     templateRef:
       apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
       kind: OpenStackClusterTemplate
-      name: openstack-mgmt-cluster
+      name: openstack-default-cluster-v1
 
   # ---------------------------------------------------------------------------
   # Worker topology
@@ -37,32 +49,17 @@ spec:
           templateRef:
             apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
             kind: KubeadmConfigTemplate
-            name: openstack-mgmt-md-0
+            name: openstack-default-worker-v1
         infrastructure:
           templateRef:
             apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
             kind: OpenStackMachineTemplate
-            name: openstack-mgmt-md-0
+            name: openstack-default-worker-v1
 
   # ---------------------------------------------------------------------------
-  # Variables
+  # Variables — the knobs a Cluster CR sets to customise a deployment.
   # ---------------------------------------------------------------------------
   variables:
-    - name: identityRef
-      required: true
-      schema:
-        openAPIV3Schema:
-          type: object
-          description: Reference to the secret holding the OpenStack clouds.yaml.
-          properties:
-            name:
-              type: string
-            cloudName:
-              type: string
-              default: openstack
-          required:
-            - name
-
     - name: externalNetworkId
       required: true
       schema:
@@ -145,22 +142,9 @@ spec:
           pattern: '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
 
   # ---------------------------------------------------------------------------
-  # Patches
+  # Patches — inject the variables above into the immutable base templates.
   # ---------------------------------------------------------------------------
   patches:
-    - name: identityRef
-      definitions:
-        - selector:
-            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
-            kind: OpenStackClusterTemplate
-            matchResources:
-              infrastructureCluster: true
-          jsonPatches:
-            - op: add
-              path: /spec/template/spec/identityRef
-              valueFrom:
-                variable: identityRef
-
     - name: externalNetwork
       definitions:
         - selector:
@@ -270,5 +254,3 @@ spec:
               path: /spec/template/spec/apiServerFloatingIP
               valueFrom:
                 variable: apiServerFloatingIP
----
-

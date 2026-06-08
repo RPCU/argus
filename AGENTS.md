@@ -233,10 +233,11 @@ Provider CRs reconciled by the Cluster API Operator. Versions pinned to match
 the manually bootstrapped kind management cluster.
 
 - `namespaces.yaml` - Namespaces (capi-system, capi-kubeadm-bootstrap-system, capi-kubeadm-control-plane-system, capo-system)
-- `core.yaml` - CoreProvider cluster-api (v1.13.2)
-- `bootstrap-kubeadm.yaml` - BootstrapProvider kubeadm (v1.13.2)
-- `control-plane-kubeadm.yaml` - ControlPlaneProvider kubeadm (v1.13.2)
-- `infrastructure-openstack.yaml` - InfrastructureProvider openstack / CAPO (v0.14.4), configSecret capo-variables
+- `core.yaml` - CoreProvider cluster-api (v1.13.2) — operator.cluster.x-k8s.io/v1alpha2
+- `bootstrap-kubeadm.yaml` - BootstrapProvider kubeadm (v1.13.2) — operator.cluster.x-k8s.io/v1alpha2
+- `control-plane-kubeadm.yaml` - ControlPlaneProvider kubeadm (v1.13.2) — operator.cluster.x-k8s.io/v1alpha2
+- `infrastructure-openstack.yaml` - InfrastructureProvider openstack / CAPO (v0.14.4), configSecret capo-variables — operator.cluster.x-k8s.io/v1alpha2
+- `clusterctl-providers.yaml` - clusterctl.cluster.x-k8s.io/v1alpha3 Provider inventory CRs required by `clusterctl move` (the Cluster API Operator does NOT create these)
 - `README.md` - How to create the `capo-variables` (clouds.yaml) secret manually on the mgmt cluster
 - `kustomization.yaml` - Kustomization manifest (multi-namespace, no top-level namespace)
 
@@ -801,7 +802,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: June 2026 (added mgmt Cluster resource, cluster-api-templates docs, apiServerFloatingIP + managedSubnetAllocationPools ClusterClass variables)
+**Last Updated**: June 2026 (added ClusterTopology feature gate for CoreProvider + ControlPlaneProvider, clusterctl Provider inventory CRs, mgmt Cluster resource, cluster-api-templates docs, apiServerFloatingIP + managedSubnetAllocationPools ClusterClass variables)
 **Repository**: https://github.com/RPCU/argus.git
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

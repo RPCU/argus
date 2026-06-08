@@ -278,16 +278,35 @@ and the `-vN` immutability/rotation workflow.
 - `templates/bootstrap.yaml` - KubeadmConfigTemplate `openstack-default-worker-v1`
 - `templates/infracluster.yaml` - OpenStackClusterTemplate `openstack-default-cluster-v1`. The `managedSecurityGroups` sets `allowAllInClusterTraffic: true` plus explicit Cilium data-plane rules (VXLAN UDP 8472, health TCP 4240, Hubble TCP 4244, ICMP via `remoteManagedGroups: [controlplane, worker]`) — required because CAPO's default managed SGs only open API/etcd/kubelet/node-port and would otherwise drop Cilium's cross-node overlay (see note in Cluster Safety). `identityRef` is now **hardcoded** here to secret `mgmt-cloud-config` (cloud `openstack`), no longer a ClusterClass variable.
 - `templates/machines.yaml` - OpenStackMachineTemplate `openstack-default-control-plane-v1` and `openstack-default-worker-v1` (flavor/image are `dummy` placeholders overwritten by patches)
-- `identity-secretstore.yaml` - ServiceAccount `capo-identity-reader` (mgmt) + Role/RoleBinding `capo-variables-reader` (capo-system) + ESO `SecretStore` `capo-system-secrets` (mgmt, Kubernetes provider, `remoteNamespace: capo-system`). Lets External Secrets read the manually-placed `capo-variables` secret cross-namespace within the mgmt cluster.
-- `externalsecret-identity.yaml` - ESO `ExternalSecret` syncing `capo-variables` `clouds.yaml` (capo-system) → secret `mgmt-cloud-config` (mgmt). Single source of truth: clouds.yaml is placed once in `capo-variables`; CAPO's provider config and every cluster's `identityRef` both derive from it.
 - `namespace.yaml` - Namespace `mgmt`
 - `README.md` - Structure, variable table, credentials/ESO note, new-cluster recipe, and immutability/`-vN` rotation workflow
-- `kustomization.yaml` - Kustomization manifest (references namespace, clusterclass, the two ESO files, and all four `templates/*` files). The actual `Cluster` CR lives at `clusters/mgmt/clusters/mgmt.yaml` and now references `classRef.name: openstack-default` (and no longer sets an `identityRef` variable).
+- `kustomization.yaml` - Kustomization manifest (references namespace, clusterclass, and all four `templates/*` files). The actual `Cluster` CR lives at `clusters/mgmt/clusters/mgmt.yaml` and now references `classRef.name: openstack-default` (and no longer sets an `identityRef` variable).
 
-> Depends on `cluster-api-providers` (creates the `capo-system` namespace where the
-> ESO Role/RoleBinding live and `capo-variables` is placed) and `external-secrets`
-> (ESO CRDs). The Flux Kustomization `clusters/mgmt/cluster-api-templates.yaml` was
-> also fixed from a self-dependency to `dependsOn: cluster-api-providers`.
+> The OpenStack credentials secret (`mgmt-cloud-config`) consumed by the hardcoded
+> `identityRef` is **not** created here — it lives in `infrastructure/capo-identity/`
+> (its own Flux Kustomization), so a credential-plumbing failure cannot abort the
+> apply that creates the ClusterClass templates. `cluster-api-templates` now
+> `dependsOn: cluster-api-providers` only (the `external-secrets` dependency moved
+> to `capo-identity`). It was previously fixed from a self-dependency.
+
+**capo-identity/** - OpenStack credentials sync for the mgmt CAPI cluster
+
+ESO plumbing that projects the manually-placed `capo-variables` (capo-system)
+`clouds.yaml` into the `mgmt` namespace as `mgmt-cloud-config`, the secret the
+`openstack-default` ClusterClass references via its hardcoded `identityRef`.
+Split out of `cluster-api-templates` so an ESO failure (admission, missing
+`capo-variables`, backend not ready) can't break the ClusterClass apply.
+
+- `namespace.yaml` - Namespace `mgmt`
+- `secretstore.yaml` - ServiceAccount `capo-identity-reader` (mgmt) + Role/RoleBinding `capo-variables-reader` (capo-system, scoped to the `capo-variables` secret) + ESO `SecretStore` `capo-system-secrets` (mgmt, Kubernetes provider, `remoteNamespace: capo-system`). Note: `caProvider.namespace` must be empty on a namespaced SecretStore (admission rejects it) — `kube-root-ca.crt` is read from the store's own namespace.
+- `externalsecret.yaml` - ESO `ExternalSecret` syncing `capo-variables` `clouds.yaml` (capo-system) → secret `mgmt-cloud-config` (mgmt).
+- `README.md` - Rationale (blast-radius isolation), contents, Flux wiring, caveats.
+- `kustomization.yaml` - Kustomization manifest.
+
+> Deployed by `clusters/mgmt/capo-identity.yaml` with `dependsOn: external-secrets`
+>
+> - `cluster-api-providers` and `wait: false` (the ExternalSecret cannot be Ready
+>   until the manual `capo-variables` secret exists; we don't block on it).
 
 > The Flux Kustomization `clusters/mgmt/cluster-api-templates.yaml` previously had a
 > self-dependency (`dependsOn: cluster-api-templates`); this was fixed to
@@ -547,6 +566,13 @@ CAPI management cluster (self-management target via `clusterctl move`):
    - ORC (openstack-resource-controller) is a CAPO image-resolution dependency but
      is installed out-of-band (kubectl apply of upstream kustomize), NOT as a
      provider CR — see cluster-api-providers note
+9. **cluster-api-templates** (dependsOn cluster-api-providers) → ClusterClass
+   `openstack-default` + versioned templates
+10. **capo-identity** (dependsOn external-secrets + cluster-api-providers,
+    `wait: false`) → SecretStore + ExternalSecret syncing capo-variables
+    clouds.yaml (capo-system) → mgmt/mgmt-cloud-config for CAPO's identityRef.
+    Split from cluster-api-templates so an ESO failure can't abort the
+    ClusterClass apply.
 
 ### Health Checks
 

@@ -15,4 +15,3 @@ spec:
   timeout: 10m
   dependsOn:
     - name: cluster-api-providers
-    - name: external-secrets

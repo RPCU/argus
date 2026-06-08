@@ -15,8 +15,6 @@ cluster-api-templates/
 ├── kustomization.yaml          # ties everything together
 ├── namespace.yaml              # mgmt namespace
 ├── clusterclass.yaml           # ClusterClass "openstack-default": variables + patches
-├── identity-secretstore.yaml   # SA + RBAC + SecretStore to read capo-system/capo-variables
-├── externalsecret-identity.yaml # ExternalSecret -> mgmt/mgmt-cloud-config (clouds.yaml)
 ├── README.md                   # this file
 └── templates/
     ├── controlplane.yaml       # KubeadmControlPlaneTemplate   openstack-default-control-plane-v1
@@ -24,6 +22,12 @@ cluster-api-templates/
     ├── infracluster.yaml       # OpenStackClusterTemplate      openstack-default-cluster-v1
     └── machines.yaml           # OpenStackMachineTemplate x2   openstack-default-{control-plane,worker}-v1
 ```
+
+The OpenStack credentials secret (`mgmt-cloud-config`) that the hardcoded
+`identityRef` consumes is **not** created here. It is synced by a separate Flux
+Kustomization, `infrastructure/capo-identity/` (SecretStore + ExternalSecret),
+so a credential-plumbing failure cannot abort the apply that creates the
+ClusterClass templates. See that directory and the section below.
 
 The live `Cluster` CR that consumes this class lives separately at
 `clusters/mgmt/clusters/mgmt.yaml` (it is environment state, not a reusable
@@ -52,8 +56,8 @@ Topology-level knobs that are _not_ class variables (set them directly under
 
 The `OpenStackCluster.identityRef` is **hardcoded** in `templates/infracluster.yaml`
 to the secret `mgmt-cloud-config` (cloud `openstack`). That secret is **not** kept
-in Git: it is synced into the `mgmt` namespace by an ExternalSecret
-(`externalsecret-identity.yaml` + `identity-secretstore.yaml`) from the
+in Git: it is synced into the `mgmt` namespace by the ExternalSecret in
+`infrastructure/capo-identity/` (its own Flux Kustomization) from the
 manually-placed `capo-variables` secret in `capo-system`, so clouds.yaml has a
 single source of truth (see `infrastructure/cluster-api-providers/README.md`).
 

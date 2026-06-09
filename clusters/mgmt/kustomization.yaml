@@ -7,6 +7,8 @@ resources:
   - cluster-api-templates.yaml
   - capo-identity.yaml
   - orc.yaml
+  - openstack-ccm-identity.yaml
+  - openstack-ccm.yaml
   - flux-operator.yaml
   - fluxcd/
   - clusters/

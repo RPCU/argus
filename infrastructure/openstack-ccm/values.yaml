@@ -1,0 +1,40 @@
+# OpenStack Cloud Controller Manager (OCCM) values.
+#
+# Purpose on this cluster: provide Service type=LoadBalancer via OpenStack
+# Octavia (replacing Cilium's L2-announcement LoadBalancer implementation) and
+# initialise Nodes (remove the cloud-provider "uninitialized" taint that the
+# kubelet carries when started with --cloud-provider=external, which CAPO sets).
+
+# Pin the image to the chart's appVersion (v1.35.0) to align with the cluster's
+# Kubernetes minor (v1.35.x). The chart default tag already matches appVersion,
+# but pin explicitly so the deployed version is auditable from Git.
+image:
+  repository: registry.k8s.io/provider-os/openstack-cloud-controller-manager
+  tag: "v1.35.0"
+
+# Controllers to run:
+#   - cloud-node / cloud-node-lifecycle: required so Nodes are initialised and
+#     the node.cloudprovider.kubernetes.io/uninitialized taint is removed.
+#   - service: the LoadBalancer (Octavia) integration — the whole point here.
+# The "route" controller is intentionally NOT enabled: Cilium owns pod
+# networking/overlay on this cluster, so OpenStack-managed Neutron routes would
+# conflict with the CNI.
+enabledControllers:
+  - cloud-node
+  - cloud-node-lifecycle
+  - service
+
+# Use an externally-managed cloud-config secret (rendered by External Secrets
+# from the OpenStack clouds.yaml — see infrastructure/openstack-ccm-identity).
+# The chart must NOT create or template the secret itself.
+secret:
+  enabled: true
+  create: false
+  name: cloud-config
+
+# The OCCM only needs the OpenStack credentials file; it does not use the
+# kube-proxy flexvolume/PKI host mounts that the chart adds by default for the
+# (here unused) route controller volumes. Drop them to keep the DaemonSet
+# minimal and avoid mounting host PKI into a LB-only controller.
+extraVolumes: []
+extraVolumeMounts: []

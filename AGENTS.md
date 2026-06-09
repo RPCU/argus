@@ -100,11 +100,13 @@ mgmt cluster runs the CAPI providers that manage itself.
 Key files:
 
 - `kustomization.yaml` - Master orchestration file
-- `cilium.yaml` - Cilium networking (shared infrastructure/cilium with mgmt-specific patches: k8sServiceHost 172.16.255.212:6443, L2 interface enp3s0, LB IP pool 192.168.1.2-192.168.1.10; uses the base `socketLB.hostNamespaceOnly: false` default — see note below)
+- `cilium.yaml` - Cilium networking (shared infrastructure/cilium with mgmt-specific patches: k8sServiceHost 172.16.255.212:6443; uses the base `socketLB.hostNamespaceOnly: false` default — see note below). **Cilium's LoadBalancer implementation is disabled on mgmt**: the patch sets `l2announcements.enabled: false` and `$patch: delete`s the base `CiliumLoadBalancerIPPool` and `CiliumL2AnnouncementPolicy`. `Service` type `LoadBalancer` is instead handled by the OpenStack CCM via Octavia (see `openstack-ccm.yaml`).
 - `cert-manager.yaml` - Certificate management (prerequisite for CAPI operator)
 - `external-secrets.yaml` - External Secrets Operator (sources CAPO credentials)
 - `cluster-api-operator.yaml` - Cluster API Operator (dependsOn cert-manager)
 - `cluster-api-providers.yaml` - CAPI provider CRs (dependsOn cluster-api-operator + external-secrets)
+- `openstack-ccm-identity.yaml` - SecretStore + ExternalSecret rendering the OCCM `cloud-config` secret from `capo-variables` clouds.yaml (dependsOn external-secrets + cluster-api-providers, `wait: false`)
+- `openstack-ccm.yaml` - OpenStack Cloud Controller Manager HelmRelease, provides `Service` type `LoadBalancer` via Octavia + Node initialisation (dependsOn openstack-ccm-identity)
 - `flux-operator.yaml` - Flux operator deployment
 - `fluxcd/` - Flux CD configuration
   - `flux-instance-patch.yaml` - Flux instance patch (sync path ./clusters/mgmt, domain mgmt.local)
@@ -215,6 +217,47 @@ _rook/configs/_ - Ceph cluster configuration
 - `namespace.yaml` - Kubernetes namespace (external-secrets)
 - `values.yaml` - Custom Helm values
 - `kustomization.yaml` - Kustomization manifest
+
+**openstack-ccm/** - OpenStack Cloud Controller Manager (chart v2.35.0, app v1.35.0)
+
+Provides `Service` type `LoadBalancer` via OpenStack Octavia and initialises
+Nodes (removes the `node.cloudprovider.kubernetes.io/uninitialized` taint that
+the kubelet carries when CAPO sets `--cloud-provider=external`). Deployed onto
+the self-managing mgmt cluster (which runs as CAPO-provisioned OpenStack VMs).
+This **replaces Cilium's L2-announcement LoadBalancer implementation** on mgmt.
+
+- `helmrepo.yaml` - Helm repository (`https://kubernetes.github.io/cloud-provider-openstack`)
+- `helmrelease.yaml` - OCCM Helm chart (v2.35.0, namespace kube-system)
+- `namespace.yaml` - kube-system (declared for ordering)
+- `values.yaml` - Custom values: image pinned to `v1.35.0`; `enabledControllers`
+  = cloud-node, cloud-node-lifecycle, service (the `route` controller is
+  intentionally NOT enabled — Cilium owns pod networking); `secret.create: false`
+  (consumes the ESO-rendered `cloud-config` secret); flexvolume/PKI `extraVolumes`
+  dropped (LB-only controller).
+- `kustomization.yaml` - Kustomization manifest (configMapGenerator `openstack-ccm-values`)
+
+**openstack-ccm-identity/** - OCCM cloud-config sync
+
+ESO plumbing that renders the OCCM `cloud-config` secret (`kube-system`) from the
+manually-placed `capo-variables` clouds.yaml (`capo-system`) — the same single
+credential source CAPO's `identityRef` uses. Split out so an ESO failure cannot
+abort the CCM HelmRelease apply (same blast-radius rationale as `capo-identity`).
+
+- `secretstore.yaml` - ServiceAccount `openstack-ccm-reader` (kube-system) +
+  Role/RoleBinding `openstack-ccm-capo-variables-reader` (capo-system, scoped to
+  the `capo-variables` secret) + ESO `SecretStore capo-system-secrets`
+  (kube-system, Kubernetes provider, `remoteNamespace: capo-system`).
+- `externalsecret.yaml` - ESO `ExternalSecret` rendering `kube-system/cloud-config`
+  with two keys: `clouds.yaml` (verbatim from `capo-variables`) and `cloud.conf`
+  (`[Global] use-clouds=true` delegating auth to clouds.yaml; `[LoadBalancer]`
+  Octavia config with `floating-network-id` = the Cluster's `externalNetworkId`).
+- `README.md` - Rationale, contents, Flux wiring, caveats.
+- `kustomization.yaml` - Kustomization manifest.
+
+> Deployed by `clusters/mgmt/openstack-ccm-identity.yaml` with
+> `dependsOn: external-secrets` + `cluster-api-providers` and `wait: false` (the
+> ExternalSecret cannot be Ready until the manual `capo-variables` secret exists;
+> the CCM Pods wait/CrashLoop until it appears).
 
 **cluster-api-operator/** - Cluster API Operator (v0.27.0)
 
@@ -421,6 +464,12 @@ _fluxcd/instances/_ - Instance configuration
 - **OpenStack Resource Controller (ORC)** - v2.5.0 (image resolution dependency for CAPO v0.14.x)
 - **clusterctl** - v1.12.x (used for initial bootstrap; `clusterctl move` planned for self-management)
 
+### Cloud Provider Integration
+
+- **OpenStack Cloud Controller Manager (OCCM)** - chart v2.35.0 / app v1.35.0
+  (`Service` type `LoadBalancer` via Octavia + Node initialisation on the mgmt
+  cluster; replaces Cilium's L2-announcement LoadBalancer)
+
 ### Development Tools
 
 - **Nix/NixOS** - Flakes for reproducible builds
@@ -520,6 +569,7 @@ _fluxcd/instances/_ - Instance configuration
 | yaook-crds       | 2.2.0   | yaook.cloud/crds                               | 5m            |
 | yaook-ops        | 2.2.0   | yaook.cloud/operators                          | 5m            |
 | capi-operator    | 0.27.0  | kubernetes-sigs.github.io/cluster-api-operator | 5m            |
+| openstack-ccm    | 2.35.0  | kubernetes.github.io/cloud-provider-openstack  | 5m            |
 
 ---
 
@@ -554,7 +604,7 @@ CAPI management cluster (self-management target via `clusterctl move`):
 
 1. **flux-operator** (no dependencies) → Flux operator
 2. **fluxcd** → Flux CD instance (sync ./clusters/mgmt)
-3. **cilium** (no dependencies) → eBPF-based networking (CNI / kube-proxy replacement), L2 announcements on enp3s0, LoadBalancer IP pool 10.0.0.224-10.0.0.239
+3. **cilium** (no dependencies) → eBPF-based networking (CNI / kube-proxy replacement). **Cilium's LoadBalancer is disabled on mgmt**: L2 announcements and LB IP pool are `$patch: delete`d; `Service` type `LoadBalancer` is provided by the OpenStack CCM via Octavia instead.
 4. **cert-manager** (no dependencies) → prerequisite for CAPI operator
 5. **external-secrets** (no dependencies) → sources CAPO credentials
 6. **cluster-api-operator** (dependsOn cert-manager)
@@ -573,6 +623,15 @@ CAPI management cluster (self-management target via `clusterctl move`):
     clouds.yaml (capo-system) → mgmt/mgmt-cloud-config for CAPO's identityRef.
     Split from cluster-api-templates so an ESO failure can't abort the
     ClusterClass apply.
+11. **openstack-ccm-identity** (dependsOn external-secrets + cluster-api-providers,
+    `wait: false`) → SecretStore + ExternalSecret rendering the OCCM
+    `cloud-config` secret (kube-system/cloud-config) from capo-variables
+    clouds.yaml (capo-system). Same ESO + credential plumbing as capo-identity,
+    targeting kube-system for the CCM.
+12. **openstack-ccm** (dependsOn openstack-ccm-identity) → OpenStack Cloud
+    Controller Manager HelmRelease. Provides `Service` type `LoadBalancer` via
+    Octavia and initialises Nodes (removes the CAPO cloud-provider taint).
+    Replaces Cilium's L2-announcement LoadBalancer on the mgmt cluster.
 
 ### Health Checks
 
@@ -731,6 +790,25 @@ eBPF socket load-balancer from interfering with connections made inside the
 guest VMs. If you ever move the base default, re-evaluate both clusters'
 patches.
 
+#### OpenStack CCM replaces Cilium L2-announcement LoadBalancer on mgmt
+
+On the mgmt cluster, `Service` type `LoadBalancer` is provided by the OpenStack
+Cloud Controller Manager (`infrastructure/openstack-ccm/`) via Octavia, NOT by
+Cilium. The mgmt cilium Flux wrapper (`clusters/mgmt/cilium.yaml`) disables
+Cilium's L2-announcement implementation:
+
+- `l2announcements.enabled: false` in the HelmRelease values
+- `$patch: delete` removes the base `CiliumLoadBalancerIPPool` and
+  `CiliumL2AnnouncementPolicy` CRs
+
+The shared base `infrastructure/cilium/` still contains these resources for the
+openstack cluster, which continues to use Cilium LB (its cilium wrapper patches
+them with cluster-specific IP pools and interface bindings).
+
+Node subnet for mgmt: `192.168.1.0/24` (managedSubnetCIDR), with allocation
+pool starting at `.11` (reserving `.2`–`.10` which were previously the Cilium
+LB range; those IPs are now available for the OpenStack DHCP pool).
+
 #### CAPO managed security groups must open the Cilium overlay (mgmt cluster)
 
 CAPO's `managedSecurityGroups` only opens the baseline kube API / etcd /
@@ -850,7 +928,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: June 2026 (added ClusterTopology feature gate for CoreProvider + ControlPlaneProvider, clusterctl Provider inventory CRs, mgmt Cluster resource, cluster-api-templates docs, apiServerFloatingIP + managedSubnetAllocationPools ClusterClass variables)
+**Last Updated**: June 2026 (added OpenStack CCM for mgmt cluster, OCCM cloud-config identity, removed Cilium LB from mgmt; added openstack-ccm + openstack-ccm-identity infrastructure components)
 **Repository**: https://github.com/RPCU/argus.git
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

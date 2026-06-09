@@ -9,6 +9,7 @@ resources:
   - orc.yaml
   - openstack-ccm-identity.yaml
   - openstack-ccm.yaml
+  - openstack-cinder-csi.yaml
   - flux-operator.yaml
   - fluxcd/
   - clusters/

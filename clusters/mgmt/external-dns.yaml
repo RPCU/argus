@@ -1,0 +1,20 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: external-dns
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  path: ./infrastructure/external-dns
+  prune: true
+  # The HelmRelease will report as not-ready until the ESO-rendered
+  # openstack-credentials secret exists (capo-variables must be placed
+  # manually first). Don't block other reconciliations on it.
+  wait: false
+  timeout: 5m
+  dependsOn:
+    - name: external-secrets

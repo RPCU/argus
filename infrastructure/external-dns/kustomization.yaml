@@ -1,0 +1,7 @@
+# No global namespace override — resources explicitly declare their namespaces.
+# The Namespace resource creates external-dns; the Role/RoleBinding live in
+# capo-system (to grant cross-namespace read access to capo-variables).
+resources:
+  - secret-credentials.yaml
+  - helmrepo.yaml
+  - helmrelease.yaml

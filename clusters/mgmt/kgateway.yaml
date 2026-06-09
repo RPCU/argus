@@ -1,0 +1,92 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kgateway
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  path: ./infrastructure/kgateway
+  prune: true
+  wait: true
+  timeout: 5m
+  dependsOn:
+    - name: gateway-api
+    - name: kgateway-crds
+    # The Gateway's HTTPS listener consumes the rpcu-lan-wildcard-tls secret
+    # produced by the mgmt cert-manager-issuer (root-mgmt CA, *.mgmt.rpcu.lan).
+    - name: cert-manager-issuer
+  patches:
+    # The shared base (infrastructure/kgateway/gateway.yaml) is written for the
+    # baremetal openstack cluster, where Cilium owns LoadBalancer IPs, the CA
+    # issuer is root-rpcu, and the public domain is *.rpcu.vpn. On mgmt all
+    # three differ:
+    #
+    #   * LoadBalancer services are provisioned by the OpenStack Cloud Controller
+    #     Manager via Octavia (see infrastructure/openstack-ccm), NOT Cilium —
+    #     Cilium's LB is disabled here (clusters/mgmt/cilium.yaml). The base's
+    #     `lbipam.cilium.io/ips` annotation is therefore meaningless on mgmt, so
+    #     drop it and let Octavia auto-assign the floating IP.
+    #   * mgmt is served under *.mgmt.rpcu.lan rather than *.rpcu.vpn, signed by
+    #     the mgmt-local root-mgmt CA (clusters/mgmt/cert-manager-issuer) rather
+    #     than root-rpcu. The leaf cert/secret is rpcu-lan-wildcard-tls.
+    #
+    # Remove the Cilium LBIPAM annotation from the GatewayParameters service.
+    # A strategic-merge of `extraAnnotations: {}` does NOT clear existing map
+    # entries, so use a JSON 6902 remove on the specific key (the `/` in the
+    # annotation name is escaped as `~1`). With it gone, Octavia auto-assigns the
+    # LoadBalancer floating IP.
+    - patch: |
+        - op: remove
+          path: /spec/kube/service/extraAnnotations/lbipam.cilium.io~1ips
+      target:
+        group: gateway.kgateway.dev
+        version: v1alpha1
+        kind: GatewayParameters
+        name: gwp-static-ip
+    # Repoint the Gateway's cert-manager cluster-issuer annotation to the
+    # mgmt-local CA (root-mgmt).
+    - patch: |
+        apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: https
+          namespace: kgateway-system
+          annotations:
+            cert-manager.io/cluster-issuer: root-mgmt
+      target:
+        kind: Gateway
+        name: https
+    # Point both listeners at the mgmt domain and the mgmt wildcard cert.
+    - patch: |
+        apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: https
+          namespace: kgateway-system
+        spec:
+          listeners:
+            - name: http
+              protocol: HTTP
+              port: 80
+              hostname: "*.mgmt.rpcu.lan"
+              allowedRoutes:
+                namespaces:
+                  from: All
+            - name: https
+              protocol: HTTPS
+              port: 443
+              hostname: "*.mgmt.rpcu.lan"
+              allowedRoutes:
+                namespaces:
+                  from: All
+              tls:
+                mode: Terminate
+                certificateRefs:
+                  - name: rpcu-lan-wildcard-tls
+      target:
+        kind: Gateway
+        name: https

@@ -1,0 +1,3 @@
+resources:
+  - internal-issuer.yaml
+  - wildcard-cert.yaml

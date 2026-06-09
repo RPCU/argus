@@ -1,0 +1,5 @@
+# external-snapshotter snapshot-controller (cluster-wide control loop for CSI
+# volume snapshots) + its RBAC. Deploys into kube-system (upstream default),
+# the same namespace as the Cinder CSI on the mgmt cluster. Pinned to v8.6.0.
+resources:
+  - https://github.com/kubernetes-csi/external-snapshotter//deploy/kubernetes/snapshot-controller?ref=v8.6.0

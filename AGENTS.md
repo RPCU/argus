@@ -258,7 +258,9 @@ abort the CCM HelmRelease apply (same blast-radius rationale as `capo-identity`)
 - `externalsecret.yaml` - ESO `ExternalSecret` rendering `kube-system/cloud-config`
   with two keys: `clouds.yaml` (verbatim from `capo-variables`) and `cloud.conf`
   (`[Global] use-clouds=true` delegating auth to clouds.yaml; `[LoadBalancer]`
-  Octavia config with `floating-network-id` = the Cluster's `externalNetworkId`).
+  Octavia config with `floating-network-id` = the Cluster's `externalNetworkId`;
+  `lb-provider=ovn` — the mgmt cluster's OpenStack uses the OVN backend, NOT
+  Amphora).
 - `README.md` - Rationale, contents, Flux wiring, caveats.
 - `kustomization.yaml` - Kustomization manifest.
 
@@ -1041,7 +1043,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: June 2026 (added external-dns with Designate provider for mgmt cluster — syncs Service/Gateway DNS records into rpcu.lan zone via designate.rpcu.vpn, ESO credentials from capo-variables with gateway auth_url override; previously: added mgmt cert-manager-issuer chain — independent `root-mgmt` CA + `rpcu-lan-wildcard-tls` `*.mgmt.rpcu.lan` wildcard, repointed mgmt kgateway Gateway to it; added external-snapshotter v8.6.0 — VolumeSnapshot CRDs + snapshot-controller remote bases for the mgmt Cinder CSI)
+**Last Updated**: June 2026 (fixed OCCM lb-provider to ovn for mgmt Octavia backend; switched external-dns to inovex Designate webhook provider; previously: added external-dns with Designate provider for mgmt cluster — syncs Service/Gateway DNS records into rpcu.lan zone via designate.rpcu.vpn, ESO credentials from capo-variables with gateway auth_url override; added mgmt cert-manager-issuer chain — independent `root-mgmt` CA + `rpcu-lan-wildcard-tls` `*.mgmt.rpcu.lan` wildcard, repointed mgmt kgateway Gateway to it; added external-snapshotter v8.6.0 — VolumeSnapshot CRDs + snapshot-controller remote bases for the mgmt Cinder CSI)
 **Repository**: https://github.com/RPCU/argus.git
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

@@ -6,7 +6,7 @@ spec:
   forProvider:
     adminStateUp: true
     shared: true
-    mtu: 8942
+    mtu: 1342
     name: default
 ---
 apiVersion: networking.openstack.m.crossplane.io/v1alpha1

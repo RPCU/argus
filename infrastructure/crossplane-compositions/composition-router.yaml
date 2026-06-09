@@ -24,7 +24,7 @@ spec:
                   adminStateUp: true
                   external: true
                   mtu: 9000
-                  # shared: true
+                  shared: true
                   segments:
                     - networkType: flat
                       physicalNetwork: public

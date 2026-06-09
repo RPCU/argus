@@ -260,7 +260,8 @@ abort the CCM HelmRelease apply (same blast-radius rationale as `capo-identity`)
   (`[Global] use-clouds=true` delegating auth to clouds.yaml; `[LoadBalancer]`
   Octavia config with `floating-network-id` = the Cluster's `externalNetworkId`;
   `lb-provider=ovn` — the mgmt cluster's OpenStack uses the OVN backend, NOT
-  Amphora; `lb-method=SOURCE_IP` — OVN does not support ROUND_ROBIN).
+  Amphora; `lb-method=SOURCE_IP_PORT` — OVN does not support ROUND_ROBIN or
+  SOURCE_IP).
 - `README.md` - Rationale, contents, Flux wiring, caveats.
 - `kustomization.yaml` - Kustomization manifest.
 

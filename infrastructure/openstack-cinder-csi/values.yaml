@@ -1,0 +1,39 @@
+# OpenStack Cinder CSI Plugin values.
+#
+# Provides dynamic Cinder volume provisioning (StorageClass) on the mgmt
+# cluster via the cinder.csi.openstack.org CSI driver.
+
+# Pin the cinder-csi-plugin image to the chart's appVersion (v1.35.0) to align
+# with the cluster's Kubernetes minor (v1.35.x). CSI sidecar images (attacher,
+# provisioner, etc.) are left at the chart defaults — they are already pinned
+# to versions compatible with k8s 1.35.
+csi:
+  plugin:
+    image:
+      repository: registry.k8s.io/provider-os/cinder-csi-plugin
+      tag: "v1.35.0"
+
+# Share the cloud-config secret rendered by openstack-ccm-identity — same
+# /etc/config/cloud.conf + /etc/config/clouds.yaml layout, same OpenStack
+# credentials and use-clouds=true INI config.
+secret:
+  enabled: true
+  hostMount: false
+  create: false
+  name: cloud-config
+  filename: cloud.conf
+
+# Tag volumes with this cluster identifier in Cinder metadata.
+clusterID: "mgmt"
+
+# Create a default StorageClass (cinder-delete) with volume expansion enabled.
+# Set isDefault: true if you want PVCs without a storageClassName to land on
+# Cinder. The retain class (cinder-rwx) is always created by the chart.
+storageClass:
+  enabled: true
+  delete:
+    isDefault: false
+    allowVolumeExpansion: true
+  retain:
+    isDefault: false
+    allowVolumeExpansion: true

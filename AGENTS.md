@@ -107,6 +107,7 @@ Key files:
 - `cluster-api-providers.yaml` - CAPI provider CRs (dependsOn cluster-api-operator + external-secrets)
 - `openstack-ccm-identity.yaml` - SecretStore + ExternalSecret rendering the OCCM `cloud-config` secret from `capo-variables` clouds.yaml (dependsOn external-secrets + cluster-api-providers, `wait: false`)
 - `openstack-ccm.yaml` - OpenStack Cloud Controller Manager HelmRelease, provides `Service` type `LoadBalancer` via Octavia + Node initialisation (dependsOn openstack-ccm-identity)
+- `openstack-cinder-csi.yaml` - Cinder CSI Driver (DaemonSet + Deployment), provides `StorageClass` for Cinder PVCs (dependsOn openstack-ccm-identity)
 - `flux-operator.yaml` - Flux operator deployment
 - `fluxcd/` - Flux CD configuration
   - `flux-instance-patch.yaml` - Flux instance patch (sync path ./clusters/mgmt, domain mgmt.local)
@@ -258,6 +259,24 @@ abort the CCM HelmRelease apply (same blast-radius rationale as `capo-identity`)
 > `dependsOn: external-secrets` + `cluster-api-providers` and `wait: false` (the
 > ExternalSecret cannot be Ready until the manual `capo-variables` secret exists;
 > the CCM Pods wait/CrashLoop until it appears).
+
+**openstack-cinder-csi/** - OpenStack Cinder CSI Driver (chart v2.35.0, app v1.35.0)
+
+Dynamic Cinder volume provisioning via the `cinder.csi.openstack.org` CSI
+driver. Provides `StorageClass` resources (`cinder-delete`, `cinder-rwx`) so
+PVCs can request OpenStack Cinder block storage. Runs as a DaemonSet (node
+plugin) + Deployment (controller plugin) on the mgmt cluster.
+
+Shares the `cloud-config` secret rendered by `openstack-ccm-identity` (same
+OpenStack credentials, same `use-clouds=true` INI, same `/etc/config/cloud.conf`
+mount path). No additional credential plumbing required.
+
+- `helmrepo.yaml` - Helm repository (`https://kubernetes.github.io/cloud-provider-openstack`, name `cloud-provider-openstack-cinder` to avoid conflicting with the OCCM's repo in kube-system)
+- `helmrelease.yaml` - Cinder CSI Helm chart (v2.35.0, namespace kube-system)
+- `values.yaml` - Custom values: cinder-csi-plugin image pinned to `v1.35.0`;
+  `secret.enabled: true`, `secret.create: false`, `secret.name: cloud-config`
+  (shares the ESO-rendered secret); `clusterID: "mgmt"`.
+- `kustomization.yaml` - Kustomization manifest (configMapGenerator `openstack-cinder-csi-values`)
 
 **cluster-api-operator/** - Cluster API Operator (v0.27.0)
 
@@ -558,18 +577,19 @@ _fluxcd/instances/_ - Instance configuration
 
 ### Helm Chart Versions
 
-| Component        | Version | Repository                                     | Sync Interval |
-| ---------------- | ------- | ---------------------------------------------- | ------------- |
-| cert-manager     | v1.19.2 | jetstack/cert-manager                          | 5m            |
-| cilium           | v1.18.6 | cilium/cilium                                  | 5m            |
-| kgateway         | v2.2.2  | oci://cr.kgateway.dev/kgateway-dev/charts      | 5m            |
-| rook             | v1.19.0 | rook-release/rook-ceph                         | 5m            |
-| crossplane       | 2.2.0   | charts.crossplane.io/stable                    | 5m            |
-| external-secrets | 2.3.0   | charts.external-secrets.io                     | 5m            |
-| yaook-crds       | 2.2.0   | yaook.cloud/crds                               | 5m            |
-| yaook-ops        | 2.2.0   | yaook.cloud/operators                          | 5m            |
-| capi-operator    | 0.27.0  | kubernetes-sigs.github.io/cluster-api-operator | 5m            |
-| openstack-ccm    | 2.35.0  | kubernetes.github.io/cloud-provider-openstack  | 5m            |
+| Component            | Version | Repository                                     | Sync Interval |
+| -------------------- | ------- | ---------------------------------------------- | ------------- |
+| cert-manager         | v1.19.2 | jetstack/cert-manager                          | 5m            |
+| cilium               | v1.18.6 | cilium/cilium                                  | 5m            |
+| kgateway             | v2.2.2  | oci://cr.kgateway.dev/kgateway-dev/charts      | 5m            |
+| rook                 | v1.19.0 | rook-release/rook-ceph                         | 5m            |
+| crossplane           | 2.2.0   | charts.crossplane.io/stable                    | 5m            |
+| external-secrets     | 2.3.0   | charts.external-secrets.io                     | 5m            |
+| yaook-crds           | 2.2.0   | yaook.cloud/crds                               | 5m            |
+| yaook-ops            | 2.2.0   | yaook.cloud/operators                          | 5m            |
+| capi-operator        | 0.27.0  | kubernetes-sigs.github.io/cluster-api-operator | 5m            |
+| openstack-ccm        | 2.35.0  | kubernetes.github.io/cloud-provider-openstack  | 5m            |
+| openstack-cinder-csi | 2.35.0  | kubernetes.github.io/cloud-provider-openstack  | 5m            |
 
 ---
 
@@ -632,6 +652,9 @@ CAPI management cluster (self-management target via `clusterctl move`):
     Controller Manager HelmRelease. Provides `Service` type `LoadBalancer` via
     Octavia and initialises Nodes (removes the CAPO cloud-provider taint).
     Replaces Cilium's L2-announcement LoadBalancer on the mgmt cluster.
+13. **openstack-cinder-csi** (dependsOn openstack-ccm-identity) → Cinder CSI
+    Driver (DaemonSet + Deployment). Provides `StorageClass` for Cinder PVCs.
+    Shares the cloud-config secret from openstack-ccm-identity.
 
 ### Health Checks
 
@@ -928,7 +951,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: June 2026 (added OpenStack CCM for mgmt cluster, OCCM cloud-config identity, removed Cilium LB from mgmt; added openstack-ccm + openstack-ccm-identity infrastructure components)
+**Last Updated**: June 2026 (added OpenStack CCM + Cinder CSI for mgmt cluster, OCCM cloud-config identity, removed Cilium LB from mgmt; added openstack-ccm + openstack-ccm-identity + openstack-cinder-csi infrastructure components)
 **Repository**: https://github.com/RPCU/argus.git
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

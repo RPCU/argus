@@ -318,11 +318,16 @@ Designate DNS zone (`rpcu.lan.`). Deployed on the mgmt cluster only (the
 openstack cluster doesn't use ExternalDNS — its services are already in
 Designate via yaook operators).
 
+The in-tree Designate provider was removed from external-dns (PR #5126). This
+setup uses the inovex webhook provider
+(`github.com/inovex/external-dns-openstack-webhook`) as a sidecar container.
+The webhook authenticates with OpenStack via a `clouds.yaml` file (NOT OS\_\*
+env vars, which it does not support for auth).
+
 Credentials follow the established ESO pattern: `capo-variables` (capo-system)
 `clouds.yaml` is synced into the `external-dns` namespace as `openstack-credentials`.
-The `OS_AUTH_URL` env var overrides the in-cluster Keystone URL to the gateway
-endpoint (`https://keystone.rpcu.vpn`) — openstacksdk env vars take precedence
-over `clouds.yaml` values.
+IMPORTANT: the `auth_url` in `capo-variables` must point at the gateway endpoint
+(`https://keystone.rpcu.vpn`) — the in-cluster Keystone is unreachable from mgmt.
 
 - `secret-credentials.yaml` - Namespace `external-dns` + ServiceAccount `external-dns`
   (created before the Helm chart so ESO's SecretStore can reference it) +
@@ -331,12 +336,12 @@ over `clouds.yaml` values.
   capo-system) + `ExternalSecret` `openstack-credentials` copying the raw
   `clouds.yaml` from `capo-variables`.
 - `helmrepo.yaml` - HelmRepository (`https://kubernetes-sigs.github.io/external-dns/`)
-- `helmrelease.yaml` - HelmRelease: `provider.name: designate`, `sources:
+- `helmrelease.yaml` - HelmRelease: `provider.name: webhook` with inovex
+  `external-dns-openstack-webhook:2.2.0` sidecar; `sources:
 [service, ingress, gateway-httproute]`, `policy: upsert-only`, `registry: txt`,
   `txtOwnerId: mgmt`; `serviceAccount.create: false` (uses the pre-created SA);
-  `env`: `OS_CLOUD=openstack`, `OS_AUTH_URL=https://keystone.rpcu.vpn`,
-  `OS_CLIENT_CONFIG_FILE=/etc/openstack/clouds.yaml`; `extraVolumes` mounts the
-  `openstack-credentials` secret at `/etc/openstack`.
+  `env`: `OS_CLOUD=openstack`; `extraVolumes` mounts the `openstack-credentials`
+  secret at `/etc/openstack` for both the main container and the webhook sidecar.
 - `kustomization.yaml` - Kustomization manifest (no global namespace override —
   Role/RoleBinding live in `capo-system`, everything else in `external-dns`).
 
@@ -734,11 +739,12 @@ CAPI management cluster (self-management target via `clusterctl move`):
     openstack-ccm-identity; its csi-snapshotter sidecar needs the VolumeSnapshot
     CRDs.
 16. **external-dns** (dependsOn external-secrets, `wait: false`) → ExternalDNS
-    with Designate provider. Syncs Service/Gateway HTTPRoute DNS records into the
-    `rpcu.lan.` zone via `https://designate.rpcu.vpn`. Credentials follow the
-    ESO pattern (capo-variables clouds.yaml → openstack-credentials in
-    external-dns namespace); `OS_AUTH_URL` overrides the auth_url to the gateway
-    endpoint.
+    with inovex Designate webhook provider. Syncs Service/Gateway HTTPRoute DNS
+    records into the `rpcu.lan.` zone via `https://designate.rpcu.vpn`.
+    Credentials follow the ESO pattern (capo-variables clouds.yaml →
+    openstack-credentials in external-dns namespace); `OS_CLOUD` env var selects
+    the cloud entry. IMPORTANT: `auth_url` in `capo-variables` must be the
+    gateway endpoint (`https://keystone.rpcu.vpn`), not the in-cluster Keystone.
 
 ### Health Checks
 

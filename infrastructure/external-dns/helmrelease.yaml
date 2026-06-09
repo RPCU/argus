@@ -1,11 +1,18 @@
-# ExternalDNS with the Designate provider, syncing Service/Gateway DNS records
-# into the OpenStack Designate zone (rpcu.lan).
+# ExternalDNS with the inovex OpenStack Designate webhook provider, syncing
+# Service/Gateway HTTPRoute DNS records into the OpenStack Designate zone
+# (rpcu.lan).
 #
-# The Designate provider authenticates via an OpenStack clouds.yaml file
-# (mounted from the openstack-credentials Secret, synced from capo-variables
-# by ESO). The OS_AUTH_URL env var overrides the auth_url in clouds.yaml to
-# point at the gateway endpoint (keystone.rpcu.vpn), since the in-cluster
-# Keystone (keystone.yaook.svc) is unreachable from the mgmt cluster.
+# The in-tree Designate provider was removed from external-dns (PR #5126).
+# The inovex webhook (github.com/inovex/external-dns-openstack-webhook) is the
+# official replacement. It runs as a sidecar container in the external-dns pod
+# and authenticates with OpenStack via a clouds.yaml file.
+#
+# The clouds.yaml is synced from capo-variables (capo-system) by ESO into the
+# external-dns namespace. IMPORTANT: the auth_url in capo-variables must point
+# at the gateway endpoint (https://keystone.rpcu.vpn) — the in-cluster Keystone
+# (keystone.yaook.svc) is unreachable from the mgmt cluster. The webhook does
+# NOT support OS_* env vars for auth (only OS_CLOUD), so the clouds.yaml must
+# contain the correct auth_url.
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -35,8 +42,27 @@ spec:
       - ingress
       - gateway-httproute
 
+    # The in-tree Designate provider was removed from external-dns. Use the
+    # inovex webhook (github.com/inovex/external-dns-openstack-webhook) as a
+    # sidecar container instead.
     provider:
-      name: designate
+      name: webhook
+      webhook:
+        image:
+          repository: ghcr.io/inovex/external-dns-openstack-webhook
+          tag: "2.2.0"
+        # Mount the clouds.yaml into the webhook sidecar (same path as the
+        # main container).
+        extraVolumeMounts:
+          - name: openstack-credentials
+            mountPath: /etc/openstack
+            readOnly: true
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            memory: 128Mi
 
     # The rpcu.lan zone is the only Designate zone; no domain filter needed.
     domainFilters: []
@@ -46,18 +72,12 @@ spec:
     txtOwnerId: mgmt
 
     env:
-      # OS_CLOUD tells openstacksdk which cloud entry to use in clouds.yaml.
+      # OS_CLOUD tells the webhook which cloud entry to use in clouds.yaml.
+      # This is the ONLY OS_* env var the webhook supports for auth.
       - name: OS_CLOUD
         value: openstack
-      # Override the auth_url from clouds.yaml — the in-cluster Keystone
-      # (keystone.yaook.svc:5000) is unreachable from the mgmt cluster.
-      # openstacksdk env vars take precedence over clouds.yaml values.
-      - name: OS_AUTH_URL
-        value: https://keystone.rpcu.vpn
-      # Mount the clouds.yaml as a file for the Designate provider.
-      - name: OS_CLIENT_CONFIG_FILE
-        value: /etc/openstack/clouds.yaml
 
+    # Mount the clouds.yaml for the main external-dns container too.
     extraVolumeMounts:
       - name: openstack-credentials
         mountPath: /etc/openstack

@@ -1,0 +1,7 @@
+# The OpenStack Cloud Controller Manager runs in kube-system (it is a core
+# cluster controller, scheduled on control-plane nodes). The namespace already
+# exists on every cluster; this is declared for completeness/ordering.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kube-system

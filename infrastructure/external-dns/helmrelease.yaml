@@ -1,0 +1,82 @@
+# ExternalDNS with the Designate provider, syncing Service/Gateway DNS records
+# into the OpenStack Designate zone (rpcu.lan).
+#
+# The Designate provider authenticates via an OpenStack clouds.yaml file
+# (mounted from the openstack-credentials Secret, synced from capo-variables
+# by ESO). The OS_AUTH_URL env var overrides the auth_url in clouds.yaml to
+# point at the gateway endpoint (keystone.rpcu.vpn), since the in-cluster
+# Keystone (keystone.yaook.svc) is unreachable from the mgmt cluster.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: external-dns
+  namespace: external-dns
+spec:
+  interval: 5m
+  chart:
+    spec:
+      chart: external-dns
+      version: 1.21.1
+      interval: 5m
+      sourceRef:
+        kind: HelmRepository
+        name: external-dns
+        namespace: external-dns
+  values:
+    # Don't create a ServiceAccount — the one in secret-credentials.yaml is
+    # created first so ESO's SecretStore can reference it before the chart
+    # applies.
+    serviceAccount:
+      create: false
+      name: external-dns
+
+    sources:
+      - service
+      - ingress
+      - gateway-httproute
+
+    provider:
+      name: designate
+
+    # The rpcu.lan zone is the only Designate zone; no domain filter needed.
+    domainFilters: []
+
+    policy: upsert-only
+    registry: txt
+    txtOwnerId: mgmt
+
+    env:
+      # OS_CLOUD tells openstacksdk which cloud entry to use in clouds.yaml.
+      - name: OS_CLOUD
+        value: openstack
+      # Override the auth_url from clouds.yaml — the in-cluster Keystone
+      # (keystone.yaook.svc:5000) is unreachable from the mgmt cluster.
+      # openstacksdk env vars take precedence over clouds.yaml values.
+      - name: OS_AUTH_URL
+        value: https://keystone.rpcu.vpn
+      # Mount the clouds.yaml as a file for the Designate provider.
+      - name: OS_CLIENT_CONFIG_FILE
+        value: /etc/openstack/clouds.yaml
+
+    extraVolumeMounts:
+      - name: openstack-credentials
+        mountPath: /etc/openstack
+        readOnly: true
+
+    extraVolumes:
+      - name: openstack-credentials
+        secret:
+          secretName: openstack-credentials
+          items:
+            - key: clouds.yaml
+              path: clouds.yaml
+
+    logLevel: info
+    logFormat: text
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 128Mi

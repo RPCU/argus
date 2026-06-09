@@ -14,6 +14,8 @@ spec:
   wait: true
   timeout: 5m
   # The cinder-csi plugin mounts the cloud-config secret rendered by
-  # openstack-ccm-identity (same secret the OCCM uses).
+  # openstack-ccm-identity (same secret the OCCM uses). Its csi-snapshotter
+  # sidecar also needs the VolumeSnapshot CRDs registered.
   dependsOn:
     - name: openstack-ccm-identity
+    - name: external-snapshotter-crds

@@ -102,12 +102,19 @@ Key files:
 - `kustomization.yaml` - Master orchestration file
 - `cilium.yaml` - Cilium networking (shared infrastructure/cilium with mgmt-specific patches: k8sServiceHost 172.16.255.212:6443; uses the base `socketLB.hostNamespaceOnly: false` default — see note below). **Cilium's LoadBalancer implementation is disabled on mgmt**: the patch sets `l2announcements.enabled: false` and `$patch: delete`s the base `CiliumLoadBalancerIPPool` and `CiliumL2AnnouncementPolicy`. `Service` type `LoadBalancer` is instead handled by the OpenStack CCM via Octavia (see `openstack-ccm.yaml`).
 - `cert-manager.yaml` - Certificate management (prerequisite for CAPI operator)
+- `gateway-api.yaml` - Gateway API CRDs installation (shared `infrastructure/gateway-api`, identical to openstack)
+- `kgateway-crds.yaml` - kgateway CRDs installation (shared `infrastructure/kgateway/crds`, dependsOn gateway-api)
+- `kgateway.yaml` - kgateway controller + Gateway (shared `infrastructure/kgateway`, dependsOn gateway-api + kgateway-crds + cert-manager-issuer). **Patched for mgmt**: a JSON 6902 patch removes the base's Cilium `lbipam.cilium.io/ips` annotation from the `gwp-static-ip` GatewayParameters (Cilium LB is disabled on mgmt — Octavia/OCCM auto-assigns the LoadBalancer floating IP); strategic-merge patches rewrite both Gateway listener hostnames from `*.rpcu.vpn` to `*.mgmt.rpcu.lan`, repoint the `cert-manager.io/cluster-issuer` annotation to `root-mgmt`, and change `certificateRefs` to `rpcu-lan-wildcard-tls` (the mgmt-local cert from `cert-manager-issuer`).
+- `cert-manager-issuer.yaml` - mgmt-local cert-manager issuer chain (dependsOn cert-manager + kgateway-crds). Path `./clusters/mgmt/cert-manager-issuer`. Unlike openstack (which uses `root-rpcu`/`*.rpcu.vpn`), mgmt has its **own independent root CA** `root-mgmt` and a `*.mgmt.rpcu.lan` wildcard. `cert-manager-issuer/internal-issuer.yaml` = `selfsigned` ClusterIssuer → `root-mgmt` CA Certificate (ns cert-manager, isCA, RSA-4096, 87600h) → `root-mgmt` CA ClusterIssuer; `cert-manager-issuer/wildcard-cert.yaml` = leaf Certificate/secret `rpcu-lan-wildcard-tls` (ns kgateway-system, `*.mgmt.rpcu.lan`). The `root-mgmt` CA is unconstrained (can sign any `.rpcu.lan` name); only `*.mgmt.rpcu.lan` is issued on this cluster.
 - `external-secrets.yaml` - External Secrets Operator (sources CAPO credentials)
 - `cluster-api-operator.yaml` - Cluster API Operator (dependsOn cert-manager)
 - `cluster-api-providers.yaml` - CAPI provider CRs (dependsOn cluster-api-operator + external-secrets)
 - `openstack-ccm-identity.yaml` - SecretStore + ExternalSecret rendering the OCCM `cloud-config` secret from `capo-variables` clouds.yaml (dependsOn external-secrets + cluster-api-providers, `wait: false`)
 - `openstack-ccm.yaml` - OpenStack Cloud Controller Manager HelmRelease, provides `Service` type `LoadBalancer` via Octavia + Node initialisation (dependsOn openstack-ccm-identity)
-- `openstack-cinder-csi.yaml` - Cinder CSI Driver (DaemonSet + Deployment), provides `StorageClass` for Cinder PVCs (dependsOn openstack-ccm-identity)
+- `external-snapshotter-crds.yaml` - external-snapshotter VolumeSnapshot CRDs (shared `infrastructure/external-snapshotter/crds`, v8.6.0)
+- `external-snapshotter.yaml` - snapshot-controller Deployment + RBAC (shared `infrastructure/external-snapshotter/controller`, dependsOn external-snapshotter-crds)
+- `openstack-cinder-csi.yaml` - Cinder CSI Driver (DaemonSet + Deployment), provides `StorageClass` for Cinder PVCs (dependsOn openstack-ccm-identity + external-snapshotter-crds — its csi-snapshotter sidecar needs the VolumeSnapshot CRDs)
+- `external-dns.yaml` - ExternalDNS with Designate provider, syncs Service/Gateway DNS records into the rpcu.lan zone (dependsOn external-secrets; `wait: false` — ESO-rendered openstack-credentials secret requires the manual capo-variables secret first)
 - `flux-operator.yaml` - Flux operator deployment
 - `fluxcd/` - Flux CD configuration
   - `flux-instance-patch.yaml` - Flux instance patch (sync path ./clusters/mgmt, domain mgmt.local)
@@ -277,6 +284,61 @@ mount path). No additional credential plumbing required.
   `secret.enabled: true`, `secret.create: false`, `secret.name: cloud-config`
   (shares the ESO-rendered secret); `clusterID: "mgmt"`.
 - `kustomization.yaml` - Kustomization manifest (configMapGenerator `openstack-cinder-csi-values`)
+
+**external-snapshotter/** - CSI Volume Snapshot support (v8.6.0)
+
+Cluster-wide CSI snapshot machinery required by the Cinder CSI driver's
+`csi-snapshotter` sidecar. Without the `VolumeSnapshot*` CRDs and the
+snapshot-controller, the Cinder CSI controller plugin's snapshotter sidecar
+cannot register and snapshot APIs are unavailable. Both pieces are plain
+kustomize **remote bases** pinned to the upstream `v8.6.0` tag (same
+fetch-by-URL pattern as `gateway-api` and `orc`). Deployed on the mgmt cluster.
+
+- `crds/kustomization.yaml` - Remote base
+  `github.com/kubernetes-csi/external-snapshotter//client/config/crd?ref=v8.6.0`
+  → the 6 `snapshot.storage.k8s.io` + `groupsnapshot.storage.k8s.io` CRDs
+  (VolumeSnapshot, VolumeSnapshotContent, VolumeSnapshotClass, and the
+  VolumeGroupSnapshot trio, now GA/v1).
+- `controller/kustomization.yaml` - Remote base
+  `github.com/kubernetes-csi/external-snapshotter//deploy/kubernetes/snapshot-controller?ref=v8.6.0`
+  → the `snapshot-controller` Deployment (2 replicas, ns kube-system) + its
+  ServiceAccount/Role/RoleBinding/ClusterRole/ClusterRoleBinding. Upstream
+  default namespace `kube-system` (same as the Cinder CSI on mgmt).
+
+> Split into `crds/` and `controller/` so the CRDs reconcile first (the
+> controller won't report Ready until they exist, and the Cinder CSI
+> snapshotter sidecar needs them registered). On mgmt: `external-snapshotter`
+> (controller) dependsOn `external-snapshotter-crds`; `openstack-cinder-csi`
+> also dependsOn `external-snapshotter-crds`.
+
+**external-dns/** - DNS record synchronization via OpenStack Designate (Helm chart v1.21.1, app v0.21.0)
+
+Syncs Kubernetes `Service` and `Gateway HTTPRoute` resources into the OpenStack
+Designate DNS zone (`rpcu.lan.`). Deployed on the mgmt cluster only (the
+openstack cluster doesn't use ExternalDNS — its services are already in
+Designate via yaook operators).
+
+Credentials follow the established ESO pattern: `capo-variables` (capo-system)
+`clouds.yaml` is synced into the `external-dns` namespace as `openstack-credentials`.
+The `OS_AUTH_URL` env var overrides the in-cluster Keystone URL to the gateway
+endpoint (`https://keystone.rpcu.vpn`) — openstacksdk env vars take precedence
+over `clouds.yaml` values.
+
+- `secret-credentials.yaml` - Namespace `external-dns` + ServiceAccount `external-dns`
+  (created before the Helm chart so ESO's SecretStore can reference it) +
+  Role/RoleBinding in `capo-system` granting the SA read access to `capo-variables` +
+  ESO `SecretStore` `capo-system-secrets` (Kubernetes provider, remoteNamespace
+  capo-system) + `ExternalSecret` `openstack-credentials` copying the raw
+  `clouds.yaml` from `capo-variables`.
+- `helmrepo.yaml` - HelmRepository (`https://kubernetes-sigs.github.io/external-dns/`)
+- `helmrelease.yaml` - HelmRelease: `provider.name: designate`, `sources:
+[service, ingress, gateway-httproute]`, `policy: upsert-only`, `registry: txt`,
+  `txtOwnerId: mgmt`; `serviceAccount.create: false` (uses the pre-created SA);
+  `env`: `OS_CLOUD=openstack`, `OS_AUTH_URL=https://keystone.rpcu.vpn`,
+  `OS_CLIENT_CONFIG_FILE=/etc/openstack/clouds.yaml`; `extraVolumes` mounts the
+  `openstack-credentials` secret at `/etc/openstack`.
+- `kustomization.yaml` - Kustomization manifest (no global namespace override —
+  Role/RoleBinding live in `capo-system`, everything else in `external-dns`).
 
 **cluster-api-operator/** - Cluster API Operator (v0.27.0)
 
@@ -458,6 +520,7 @@ _fluxcd/instances/_ - Instance configuration
 - **Rook/Ceph** - v19.2.3
 - **Block Storage** - RBD
 - **Object Storage** - S3-compatible
+- **external-snapshotter** - v8.6.0 (CSI VolumeSnapshot CRDs + snapshot-controller, mgmt cluster)
 
 ### OpenStack Operators
 
@@ -468,6 +531,10 @@ _fluxcd/instances/_ - Instance configuration
 
 - **Cert-Manager** - v1.19.2
 - **Internal CA Issuer**
+
+### DNS
+
+- **ExternalDNS** - v0.21.0 (Helm chart v1.21.1, Designate provider, mgmt cluster)
 
 ### Infrastructure Abstraction
 
@@ -590,6 +657,7 @@ _fluxcd/instances/_ - Instance configuration
 | capi-operator        | 0.27.0  | kubernetes-sigs.github.io/cluster-api-operator | 5m            |
 | openstack-ccm        | 2.35.0  | kubernetes.github.io/cloud-provider-openstack  | 5m            |
 | openstack-cinder-csi | 2.35.0  | kubernetes.github.io/cloud-provider-openstack  | 5m            |
+| external-dns         | 1.21.1  | kubernetes-sigs.github.io/external-dns/        | 5m            |
 
 ---
 
@@ -626,6 +694,10 @@ CAPI management cluster (self-management target via `clusterctl move`):
 2. **fluxcd** → Flux CD instance (sync ./clusters/mgmt)
 3. **cilium** (no dependencies) → eBPF-based networking (CNI / kube-proxy replacement). **Cilium's LoadBalancer is disabled on mgmt**: L2 announcements and LB IP pool are `$patch: delete`d; `Service` type `LoadBalancer` is provided by the OpenStack CCM via Octavia instead.
 4. **cert-manager** (no dependencies) → prerequisite for CAPI operator
+   - **gateway-api** (no dependencies) → Gateway API v1.4.1 experimental CRDs
+   - **kgateway-crds** (dependsOn gateway-api) → kgateway CRDs HelmRelease
+   - **kgateway** (dependsOn gateway-api + kgateway-crds + cert-manager-issuer) → kgateway controller + `https` Gateway. Patched for mgmt: Cilium `lbipam.cilium.io/ips` annotation removed (Octavia/OCCM auto-assigns the LB floating IP); listener hostnames rewritten to `*.mgmt.rpcu.lan`; cluster-issuer repointed to `root-mgmt` and `certificateRefs` to `rpcu-lan-wildcard-tls`.
+   - **cert-manager-issuer** (dependsOn cert-manager + kgateway-crds) → mgmt-local `selfsigned` → `root-mgmt` CA chain + `rpcu-lan-wildcard-tls` leaf cert (`*.mgmt.rpcu.lan`, ns kgateway-system). Independent of openstack's `root-rpcu`.
 5. **external-secrets** (no dependencies) → sources CAPO credentials
 6. **cluster-api-operator** (dependsOn cert-manager)
 7. **orc** (no dependencies) → ORC v2.5.0, image resolution for CAPO
@@ -652,9 +724,21 @@ CAPI management cluster (self-management target via `clusterctl move`):
     Controller Manager HelmRelease. Provides `Service` type `LoadBalancer` via
     Octavia and initialises Nodes (removes the CAPO cloud-provider taint).
     Replaces Cilium's L2-announcement LoadBalancer on the mgmt cluster.
-13. **openstack-cinder-csi** (dependsOn openstack-ccm-identity) → Cinder CSI
-    Driver (DaemonSet + Deployment). Provides `StorageClass` for Cinder PVCs.
-    Shares the cloud-config secret from openstack-ccm-identity.
+13. **external-snapshotter-crds** (no dependencies) → VolumeSnapshot /
+    VolumeGroupSnapshot CRDs (external-snapshotter v8.6.0, remote base).
+14. **external-snapshotter** (dependsOn external-snapshotter-crds) →
+    snapshot-controller Deployment + RBAC (kube-system).
+15. **openstack-cinder-csi** (dependsOn openstack-ccm-identity +
+    external-snapshotter-crds) → Cinder CSI Driver (DaemonSet + Deployment).
+    Provides `StorageClass` for Cinder PVCs. Shares the cloud-config secret from
+    openstack-ccm-identity; its csi-snapshotter sidecar needs the VolumeSnapshot
+    CRDs.
+16. **external-dns** (dependsOn external-secrets, `wait: false`) → ExternalDNS
+    with Designate provider. Syncs Service/Gateway HTTPRoute DNS records into the
+    `rpcu.lan.` zone via `https://designate.rpcu.vpn`. Credentials follow the
+    ESO pattern (capo-variables clouds.yaml → openstack-credentials in
+    external-dns namespace); `OS_AUTH_URL` overrides the auth_url to the gateway
+    endpoint.
 
 ### Health Checks
 
@@ -951,7 +1035,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: June 2026 (added OpenStack CCM + Cinder CSI for mgmt cluster, OCCM cloud-config identity, removed Cilium LB from mgmt; added openstack-ccm + openstack-ccm-identity + openstack-cinder-csi infrastructure components)
+**Last Updated**: June 2026 (added external-dns with Designate provider for mgmt cluster — syncs Service/Gateway DNS records into rpcu.lan zone via designate.rpcu.vpn, ESO credentials from capo-variables with gateway auth_url override; previously: added mgmt cert-manager-issuer chain — independent `root-mgmt` CA + `rpcu-lan-wildcard-tls` `*.mgmt.rpcu.lan` wildcard, repointed mgmt kgateway Gateway to it; added external-snapshotter v8.6.0 — VolumeSnapshot CRDs + snapshot-controller remote bases for the mgmt Cinder CSI)
 **Repository**: https://github.com/RPCU/argus.git
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

@@ -1,6 +1,10 @@
 resources:
   - cilium.yaml
   - cert-manager.yaml
+  - gateway-api.yaml
+  - kgateway-crds.yaml
+  - kgateway.yaml
+  - cert-manager-issuer.yaml
   - external-secrets.yaml
   - cluster-api-operator.yaml
   - cluster-api-providers.yaml
@@ -9,7 +13,10 @@ resources:
   - orc.yaml
   - openstack-ccm-identity.yaml
   - openstack-ccm.yaml
+  - external-snapshotter-crds.yaml
+  - external-snapshotter.yaml
   - openstack-cinder-csi.yaml
+  - external-dns.yaml
   - flux-operator.yaml
   - fluxcd/
   - clusters/

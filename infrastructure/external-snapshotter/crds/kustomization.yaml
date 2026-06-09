@@ -1,0 +1,5 @@
+# external-snapshotter VolumeSnapshot CRDs (snapshot.storage.k8s.io +
+# groupsnapshot.storage.k8s.io). Required by the Cinder CSI csi-snapshotter
+# sidecar and the snapshot-controller. Pinned to the v8.6.0 release.
+resources:
+  - https://github.com/kubernetes-csi/external-snapshotter//client/config/crd?ref=v8.6.0

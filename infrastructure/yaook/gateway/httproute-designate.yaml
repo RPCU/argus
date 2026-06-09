@@ -17,7 +17,7 @@ spec:
             value: /
       backendRefs:
         - name: designate-api
-          port: 32443
+          port: 9002
 ---
 apiVersion: gateway.networking.k8s.io/v1alpha3
 kind: BackendTLSPolicy

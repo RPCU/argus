@@ -5,7 +5,7 @@ metadata:
 spec:
   forProvider:
     adminStateUp: true
-    shared: false
+    shared: true
     mtu: 8942
     name: default
 ---

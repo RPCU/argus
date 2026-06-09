@@ -70,7 +70,8 @@ spec:
     policy: upsert-only
     # Disable the TXT ownership registry — wildcard records (*.mgmt.rpcu.lan.)
     # produce invalid TXT names (a-*.mgmt.rpcu.lan.) that Designate rejects.
-    # Not needed for single-cluster setups.
+    # When more clusters are added, use separate zones per cluster or a
+    # centralized external-dns instance to avoid record conflicts.
     registry: noop
 
     env:

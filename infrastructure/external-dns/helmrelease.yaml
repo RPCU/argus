@@ -68,8 +68,10 @@ spec:
     domainFilters: []
 
     policy: upsert-only
-    registry: txt
-    txtOwnerId: mgmt
+    # Disable the TXT ownership registry — wildcard records (*.mgmt.rpcu.lan.)
+    # produce invalid TXT names (a-*.mgmt.rpcu.lan.) that Designate rejects.
+    # Not needed for single-cluster setups.
+    registry: noop
 
     env:
       # OS_CLOUD tells the webhook which cloud entry to use in clouds.yaml.

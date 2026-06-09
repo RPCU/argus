@@ -341,8 +341,8 @@ IMPORTANT: the `auth_url` in `capo-variables` must point at the gateway endpoint
 - `helmrepo.yaml` - HelmRepository (`https://kubernetes-sigs.github.io/external-dns/`)
 - `helmrelease.yaml` - HelmRelease: `provider.name: webhook` with inovex
   `external-dns-openstack-webhook:2.2.0` sidecar; `sources:
-[service, ingress, gateway-httproute]`, `policy: upsert-only`, `registry: txt`,
-  `txtOwnerId: mgmt`; `serviceAccount.create: false` (uses the pre-created SA);
+[service, ingress, gateway-httproute]`, `policy: upsert-only`, `registry: noop`
+  (wildcard TXT names `a-*.mgmt.rpcu.lan.` are invalid in Designate); `serviceAccount.create: false` (uses the pre-created SA);
   `env`: `OS_CLOUD=openstack`; `extraVolumes` mounts the `openstack-credentials`
   secret at `/etc/openstack` for both the main container and the webhook sidecar.
 - `kustomization.yaml` - Kustomization manifest (no global namespace override —

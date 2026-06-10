@@ -20,7 +20,8 @@ metadata:
   name: chihiro-session-key
   namespace: chihiro-system
 spec:
-  refreshInterval: 0
+  # Never regenerate: a new key would invalidate all active sessions.
+  refreshInterval: "0"
   target:
     name: chihiro-session-key
     creationPolicy: Owner

@@ -12,7 +12,7 @@ spec:
   topology:
     classRef:
       name: openstack-default
-    version: v1.35.4
+    version: v1.36.1
     controlPlane:
       replicas: 3
     workers:
@@ -30,7 +30,7 @@ spec:
       - name: managedSubnetCIDR
         value: 192.168.1.0/24
       - name: imageName
-        value: hephaestus-kaas-25.11-v1.35.4
+        value: hephaestus-kaas-26.05-v1.36.1
       - name: controlPlaneFlavor
         value: xmedium
       - name: workerFlavor

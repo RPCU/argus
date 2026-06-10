@@ -1,12 +1,36 @@
-apiVersion: rpcu.io/v1alpha1
-kind: XSessionKeyClaim
+# Generates the chihiro session signing key via the External Secrets Password
+# generator. chihiro requires CHIHIRO_SESSION_KEY to be >= 32 bytes; we generate
+# a 32-character (32-byte) alphanumeric+symbol password and publish it as the
+# `session_key` key of the `chihiro-session-key` secret consumed by deploy.yaml.
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
 metadata:
   name: chihiro-session-key
   namespace: chihiro-system
 spec:
-  compositionSelector:
-    matchLabels:
-      provider: random
-  writeConnectionSecretToRef:
+  length: 32
+  digits: 8
+  symbols: 0
+  noUpper: false
+  allowRepeat: true
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: chihiro-session-key
+  namespace: chihiro-system
+spec:
+  refreshInterval: 0
+  target:
     name: chihiro-session-key
-    namespace: chihiro-system
+    creationPolicy: Owner
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: chihiro-session-key
+      rewrite:
+        - regexp:
+            source: "password"
+            target: "session_key"

@@ -1,0 +1,11 @@
+namespace: chihiro-system
+resources:
+  - namespace.yaml
+  - cm.yaml
+  - deploy.yaml
+  - svc.yaml
+  - httproute.yaml
+  - rbacs.yaml
+  - dragonfly.yaml
+  - externalsecret.yaml
+  - session-key.yaml

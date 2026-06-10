@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chihiro
+  labels:
+    app.kubernetes.io/name: chihiro
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: chihiro
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: chihiro
+    spec:
+      serviceAccountName: chihiro
+      containers:
+        - name: chihiro
+          args:
+            - serve
+            - --config=/config.yaml
+          command:
+            - /chihiro
+          image: zot.bealv.io/public/chihiro:v0.1.1
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            # Server Configuration
+            - name: CHIHIRO_HOST
+              value: "0.0.0.0"
+            - name: CHIHIRO_PORT
+              value: "8080"
+            - name: CHIHIRO_DOCS_URL
+              value: "https://doc.bealv.io/doc/kubernetes-as-a-service-yfQ5uMwDio"
+            # OIDC Configuration
+            - name: CHIHIRO_OIDC_ISSUER_URL
+              value: "https://zitadel.bealv.io"
+            - name: CHIHIRO_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: chihiro-oidc
+                  key: clientId
+            - name: CHIHIRO_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: chihiro-oidc
+                  key: clientSecret
+            # Session Configuration
+            - name: CHIHIRO_SESSION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: chihiro-session-key
+                  key: session_key
+            - name: CHIHIRO_SESSION_TTL
+              value: "7200"
+            # Redis Configuration
+            - name: CHIHIRO_REDIS_ADDR
+              value: "chihiro-dragonfly:6379"
+            # Cluster Configuration
+            - name: CHIHIRO_CLUSTER_DOMAIN
+              value: "mgmt.rpcu.lan"
+            - name: CHIHIRO_CLUSTER_PORT
+              value: "443"
+            - name: CHIHIRO_ADMIN_GROUPS
+              value: "kube-admin"
+            - name: CHIHIRO_CREATOR_GROUPS
+              value: "kube-admin"
+            - name: CHIHIRO_AVAILABLE_VERSIONS
+              value: "v1.35.4"
+            - name: CHIHIRO_MAX_CLUSTERS
+              value: "5"
+            - name: CHIHIRO_MAX_TOTAL_NODES
+              value: "10"
+          volumeMounts:
+            - name: config
+              mountPath: /config.yaml
+              subPath: config.yaml
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: chihiro-config

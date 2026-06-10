@@ -1,0 +1,4 @@
+namespace: zitadel
+resources:
+  - providerConfig.yaml
+  - chihiro-oidc.yaml

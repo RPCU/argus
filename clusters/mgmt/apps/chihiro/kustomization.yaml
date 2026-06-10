@@ -7,5 +7,4 @@ resources:
   - httproute.yaml
   - rbacs.yaml
   - dragonfly.yaml
-  - externalsecret.yaml
   - session-key.yaml

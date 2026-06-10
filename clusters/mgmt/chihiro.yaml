@@ -17,4 +17,3 @@ spec:
     - name: kgateway
     - name: dragonfly-operator
     - name: external-secrets
-    - name: crossplane-zitadel-mgmt

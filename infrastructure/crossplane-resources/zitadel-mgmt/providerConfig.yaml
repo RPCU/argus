@@ -1,0 +1,11 @@
+apiVersion: zitadel.didactiklabs.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: default
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      name: crossplane-provider-zitadel
+      namespace: zitadel
+      key: credentials

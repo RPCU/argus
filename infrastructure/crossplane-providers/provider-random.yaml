@@ -1,0 +1,6 @@
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-random
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/provider-random:v0.3.0

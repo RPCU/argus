@@ -1,0 +1,12 @@
+apiVersion: rpcu.io/v1alpha1
+kind: XSessionKeyClaim
+metadata:
+  name: chihiro-session-key
+  namespace: chihiro-system
+spec:
+  compositionSelector:
+    matchLabels:
+      provider: random
+  writeConnectionSecretToRef:
+    name: chihiro-session-key
+    namespace: chihiro-system

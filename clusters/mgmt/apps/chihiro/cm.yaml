@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chihiro-config
+data:
+  config.yaml: |
+    # Most configuration is now handled via environment variables
+    # See deployment.yaml for CHIHIRO_* environment variables
+    cluster:
+      template: |
+        apiVersion: cluster.x-k8s.io/v1beta2
+        kind: Cluster
+        metadata:
+          name: PLACEHOLDER_NAME
+          namespace: mgmt
+          labels:
+            capsule: "true"
+            cert-manager: "true"
+            cert-manager-setup: "generic"
+            cni: cilium
+            external-dns: "true"
+            external-secret: "false"
+            external-snapshotter: "true"
+            fluxcd: "true"
+            ingress-controller: "true"
+            ingress-replication: "true"
+            monitoring: "false"
+            velero: "false"
+        spec:
+          clusterNetwork:
+            pods:
+              cidrBlocks:
+                - 172.16.0.0/16
+            serviceDomain: PLACEHOLDER_SERVICE_DOMAIN
+            services:
+              cidrBlocks:
+                - 172.17.0.0/16
+          topology:
+            classRef:
+              name: openstack-default
+            variables:
+              - name: identityRef
+                value:
+                  name: mgmt-cloud-config
+                  cloudName: openstack
+              - name: externalNetworkId
+                value: 1cfd69da-057c-4748-a0d4-de5b0ca77db2
+              - name: imageName
+                value: hephaestus-kaas-25.11-v1.35.4
+              - name: controlPlaneFlavor
+                value: xmedium
+              - name: workerFlavor
+                value: xmedium
+            controlPlane:
+              replicas: 3
+            version: PLACEHOLDER_VERSION
+            workers:
+              machineDeployments:
+                - class: default-worker
+                  name: worker
+                  replicas: PLACEHOLDER_NODES
+      # Field mapping: specify where to inject the node count
+      node_count_path: 'spec.topology.workers.machineDeployments[0].replicas'

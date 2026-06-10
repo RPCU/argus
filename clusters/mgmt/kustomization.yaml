@@ -17,6 +17,12 @@ resources:
   - external-snapshotter.yaml
   - openstack-cinder-csi.yaml
   - external-dns.yaml
+  - crossplane.yaml
+  - crossplane-zitadel.yaml
+  - crossplane-providers.yaml
+  - crossplane-zitadel-mgmt.yaml
+  - dragonfly-operator.yaml
+  - chihiro.yaml
   - flux-operator.yaml
   - fluxcd/
   - clusters/

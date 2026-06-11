@@ -486,10 +486,10 @@ is a ClusterClass variable injected via patches, so creating a new cluster is a
 small `Cluster` CR (no template forking). See `README.md` for the variable table
 and the `-vN` immutability/rotation workflow.
 
-- `clusterclass.yaml` - ClusterClass `openstack-default` (renamed from `openstack-mgmt`) with variables: identityRef, externalNetworkId, managedSubnetCIDR, managedSubnetAllocationPools, imageName, controlPlaneFlavor, workerFlavor, sshKeyName, apiServerFloatingIP. Template refs use the versioned `openstack-default-*-v1` names.
+- `clusterclass.yaml` - ClusterClass `openstack-default` (renamed from `openstack-mgmt`) with variables: identityRef, externalNetworkId, managedSubnetCIDR, managedSubnetAllocationPools, imageName, controlPlaneFlavor, workerFlavor, sshKeyName, apiServerFloatingIP. Template refs use the versioned `openstack-default-*-v1` names, except `infrastructure.templateRef` which now points at `openstack-default-cluster-v2` (NodePort SG rotation, see below).
 - `templates/controlplane.yaml` - KubeadmControlPlaneTemplate `openstack-default-control-plane-v1`
 - `templates/bootstrap.yaml` - KubeadmConfigTemplate `openstack-default-worker-v1`
-- `templates/infracluster.yaml` - OpenStackClusterTemplate `openstack-default-cluster-v1`. The `managedSecurityGroups` sets `allowAllInClusterTraffic: true` plus explicit Cilium data-plane rules (VXLAN UDP 8472, health TCP 4240, Hubble TCP 4244, ICMP via `remoteManagedGroups: [controlplane, worker]`) — required because CAPO's default managed SGs only open API/etcd/kubelet/node-port and would otherwise drop Cilium's cross-node overlay (see note in Cluster Safety). `identityRef` is hardcoded to `mgmt-cloud-config` (CAPO requires it at admission time); the ClusterClass `identityRef` variable/patch overrides this default per-cluster when the topology controller synthesizes the concrete `OpenStackCluster`.
+- `templates/infracluster.yaml` - OpenStackClusterTemplate `openstack-default-cluster-v1` **and** `-v2`. The `managedSecurityGroups` sets `allowAllInClusterTraffic: true` plus explicit Cilium data-plane rules (VXLAN UDP 8472, health TCP 4240, Hubble TCP 4244, ICMP via `remoteManagedGroups: [controlplane, worker]`) — required because CAPO's default managed SGs only open API/etcd/kubelet/node-port and would otherwise drop Cilium's cross-node overlay (see note in Cluster Safety). **`-v2` additionally opens the Kubernetes NodePort range (TCP 30000–32767 from `0.0.0.0/0`)** — REQUIRED for external `type: LoadBalancer` Services via the OpenStack CCM + Octavia (the Octavia/OVN VIP DNATs to `<node IP>:<nodePort>`; without this rule the managed SG drops it and the LB floating IP times out at the TCP layer despite correct VIP/floating-IP/DNS). The ClusterClass points `infrastructure.templateRef` at `-v2`; `-v1` is retained only until the rotation is confirmed, then deleted (per the README `-vN` workflow — an `OpenStackClusterTemplate` rotation reconciles the SGs onto the live `OpenStackCluster` without rolling machines). `identityRef` is hardcoded to `mgmt-cloud-config` (CAPO requires it at admission time); the ClusterClass `identityRef` variable/patch overrides this default per-cluster when the topology controller synthesizes the concrete `OpenStackCluster`.
 - `templates/machines.yaml` - OpenStackMachineTemplate `openstack-default-control-plane-v1` and `openstack-default-worker-v1` (flavor/image are `dummy` placeholders overwritten by patches)
 - `namespace.yaml` - Namespace `mgmt`
 - `README.md` - Structure, variable table, credentials/ESO note, new-cluster recipe, and immutability/`-vN` rotation workflow
@@ -1070,6 +1070,32 @@ If Cilium is switched to Geneve, open UDP 6081 instead of 8472; if Cilium
 encryption is enabled, also open WireGuard/ESP. After changing this, verify the
 rules actually landed on the managed SGs:
 `openstack security group rule list k8s-cluster-mgmt-mgmt-secgroup-controlplane`.
+
+#### CAPO managed security groups must open the NodePort range for Octavia LoadBalancer (mgmt cluster)
+
+A second, distinct gap in CAPO's default managed SGs: they do **not** open the
+Kubernetes Service **NodePort range (30000–32767)** from outside the cluster.
+On mgmt, external `type: LoadBalancer` Services are provisioned by the OpenStack
+CCM via Octavia (OVN provider). The Octavia VIP DNATs incoming traffic to a
+member = `<node IP>:<nodePort>`. Without a NodePort ingress rule the managed SG
+silently drops that, so the LoadBalancer **floating IP times out at the TCP
+layer** (`curl: (28) Failed to connect ... Connection timed out`) even though
+the Octavia VIP, the floating IP, and the DNS record are all correct. This is
+the failure that made the kgateway `https` Gateway (the cluster's only
+`type: LoadBalancer` service, floating IP `172.16.255.111`) unreachable while
+every other endpoint resolved fine.
+
+Fix: `openstack-default-cluster-v2` in
+`infrastructure/cluster-api-templates/templates/infracluster.yaml` adds an
+ingress rule opening **TCP 30000–32767 from `0.0.0.0/0`** (source can't be
+scoped — the OVN VIP may preserve the original client source IP with
+`lb-method=SOURCE_IP_PORT`). Because `OpenStackClusterTemplate.spec.template.spec`
+is immutable once referenced, this is a NEW `-v2` template with the ClusterClass
+`infrastructure.templateRef` repointed to it (the documented `-vN` rotation) —
+NOT an in-place edit of `-v1`. The rotation reconciles the SGs onto the live
+`OpenStackCluster` without rolling machines; delete `-v1` once confirmed. Verify
+with `openstack security group rule list k8s-cluster-mgmt-mgmt-secgroup-worker`
+(and `…-controlplane`).
 
 Note: MTU is a separate, secondary concern. Double encapsulation (Cilium VXLAN
 over Neutron VXLAN/Geneve) shrinks the usable pod MTU; large packets (DNS/TCP,

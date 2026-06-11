@@ -13,19 +13,6 @@ data:
         metadata:
           name: PLACEHOLDER_NAME
           namespace: mgmt
-          labels:
-            capsule: "true"
-            cert-manager: "true"
-            cert-manager-setup: "generic"
-            cni: cilium
-            external-dns: "true"
-            external-secret: "false"
-            external-snapshotter: "true"
-            fluxcd: "true"
-            ingress-controller: "true"
-            ingress-replication: "true"
-            monitoring: "false"
-            velero: "false"
         spec:
           clusterNetwork:
             pods:
@@ -46,7 +33,7 @@ data:
               - name: externalNetworkId
                 value: 1cfd69da-057c-4748-a0d4-de5b0ca77db2
               - name: imageName
-                value: hephaestus-kaas-25.11-v1.35.4
+                value: hephaestus-kaas-26.05-v1.36.1
               - name: controlPlaneFlavor
                 value: xmedium
               - name: workerFlavor

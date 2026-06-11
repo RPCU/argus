@@ -11,7 +11,17 @@ spec:
     namespace: flux-system
   path: ./infrastructure/cluster-api-templates
   prune: true
-  wait: true
+  # NOTE: wait is intentionally OMITTED (defaults to false). With wait: true,
+  # Flux health-gates on every object in this Kustomization via kstatus —
+  # including the ClusterClass. When the ClusterClass infrastructure.templateRef
+  # is rotated to a new -vN OpenStackClusterTemplate, the ClusterClass briefly
+  # reports InProgress until the topology controller resolves the new template
+  # reference. Because the ClusterClass and the template are applied in the SAME
+  # Kustomization with no ordering guarantee, a health-wait could trip before the
+  # template is reconciled, leaving the ClusterClass pointing at a not-yet-ready
+  # template and the Kustomization stuck (the topology controller then wedges,
+  # so it never recovers). Without wait, Flux applies the template AND the
+  # ClusterClass together and returns; CAPI converges asynchronously.
   timeout: 10m
   dependsOn:
     - name: cluster-api-providers

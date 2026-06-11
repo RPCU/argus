@@ -33,7 +33,7 @@ spec:
             - name: CHIHIRO_PORT
               value: "8080"
             - name: CHIHIRO_DOCS_URL
-              value: "https://doc.bealv.io/doc/kubernetes-as-a-service-yfQ5uMwDio"
+              value: "https://docs.rpcu.io/"
             # OIDC Configuration
             - name: CHIHIRO_OIDC_ISSUER_URL
               value: "https://zitadel.bealv.io"
@@ -68,7 +68,7 @@ spec:
             - name: CHIHIRO_CREATOR_GROUPS
               value: "kube-admin"
             - name: CHIHIRO_AVAILABLE_VERSIONS
-              value: "v1.35.4"
+              value: "v1.36.1"
             - name: CHIHIRO_MAX_CLUSTERS
               value: "5"
             - name: CHIHIRO_MAX_TOTAL_NODES

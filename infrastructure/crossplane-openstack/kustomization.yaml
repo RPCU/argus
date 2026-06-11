@@ -1,3 +1,13 @@
+# Shared OpenStack Crossplane base: the Crossplane OpenStack provider package.
+# Cluster-scoped, so no namespace override.
+#
+# The reusable composition machinery (Function, ExternalNetwork XRD + Composition)
+# lives in infrastructure/crossplane-compositions (its own Flux Kustomization).
+# The concrete OpenStack managed/composite resources and the ClusterProviderConfig
+# live in the per-cluster overlay clusters/openstack/crossplane/openstack.
+#
+# namespace: crossplane-system is retained from the original (a no-op for the
+# cluster-scoped Provider) to keep the applied object byte-identical.
 namespace: crossplane-system
 resources:
   - provider.yaml

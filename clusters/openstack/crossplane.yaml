@@ -14,6 +14,7 @@ spec:
   wait: true
   timeout: 5m
 ---
+# Shared OpenStack base: provider package only (unchanged).
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -32,24 +33,9 @@ spec:
   dependsOn:
     - name: crossplane
 ---
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: crossplane-zitadel
-  namespace: flux-system
-spec:
-  interval: 10m0s
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-    namespace: flux-system
-  path: ./infrastructure/crossplane-zitadel
-  prune: true
-  wait: true
-  timeout: 5m
-  dependsOn:
-    - name: crossplane
----
+# Reusable composition machinery (Function, ExternalNetwork XRD + Composition).
+# Unchanged — left in place to avoid pruning the in-use XRD (which would
+# cascade-delete the ExternalNetwork composite and its real OpenStack network/router).
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -68,6 +54,37 @@ spec:
   dependsOn:
     - name: crossplane-openstack
 ---
+# Shared Zitadel base: the Crossplane Zitadel provider only (cluster-agnostic).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: crossplane-zitadel
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  path: ./infrastructure/crossplane-zitadel
+  prune: false
+  wait: true
+  timeout: 5m
+  dependsOn:
+    - name: crossplane
+---
+# OpenStack-cluster concrete resources (the instances): OpenStack managed/composite
+# resources (openstack/) + the full Zitadel platform (org/projects/roles/actions/
+# providerConfig) and the openstack/netbird OIDC apps (zitadel/). This is the same
+# Flux Kustomization name ("crossplane-resources") as before, only its path moved
+# from ./infrastructure/crossplane-resources to ./clusters/openstack/crossplane and
+# it now also owns the Zitadel platform that previously lived under that path's
+# zitadel/ subdir — so the object set is unchanged and Flux adopts in place.
+#
+# prune is false during the migration as a safety belt: pruning any Crossplane
+# managed resource here would delete the real OpenStack object (network/router/
+# flavor/...) or the live Zitadel app. Re-enable prune only after confirming clean
+# adoption.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -79,9 +96,10 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  path: ./infrastructure/crossplane-resources
-  prune: true
+  path: ./clusters/openstack/crossplane
+  prune: false
   wait: true
   timeout: 5m
   dependsOn:
     - name: crossplane-compositions
+    - name: crossplane-zitadel

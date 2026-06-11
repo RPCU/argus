@@ -8,3 +8,4 @@ resources:
   - rbacs.yaml
   - dragonfly.yaml
   - session-key.yaml
+  - oidc.yaml

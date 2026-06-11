@@ -38,6 +38,36 @@ Whenever you modify the codebase:
 
 **Argus** is RPCU's GitOps repository for Kubernetes cluster configuration, built with Flux CD. The project implements declarative, automated infrastructure management for cloud environments, ensuring consistent deployments and continuous reconciliation.
 
+### Key Features
+
+- **Everything is Infrastructure as Code.** Almost the entire stack is described
+  declaratively in this repository and reconciled by Flux CD — the Kubernetes
+  clusters (mgmt + openstack), the CNI (Cilium), storage (Rook/Ceph), the full
+  OpenStack control plane (Yaook operators + service CRs), networking
+  (Neutron/OVN), certificates (cert-manager/trust-manager), the API gateway
+  (Gateway API/kgateway), DNS (ExternalDNS/Designate), cluster lifecycle
+  (Cluster API/CAPO), and even the OpenStack tenant resources (networks, routers,
+  subnets via Crossplane). There is effectively no click-ops: a change is a Git
+  commit, and Flux continuously converges the live state to match `main`.
+
+- **Adding a compute node is trivial.** To grow OpenStack capacity you do **not**
+  edit this repo — you simply **join a new node to the openstack Kubernetes
+  cluster and apply the right Kubernetes node labels**. The Yaook operators do
+  the rest: they watch node labels and, when a node carries the labels their
+  `nodeSelectors` match, they automatically schedule the corresponding OpenStack
+  agents onto it (e.g. `nova-compute` from `nova.yaml`, the OVN `ovn-controller`
+  from `neutron.yaml`), register it as a hypervisor in Nova, and wire it into the
+  OVN data plane. The relevant operator CRs select nodes via
+  `compute.configTemplates[].nodeSelectors[].matchLabels`
+  (`infrastructure/yaook/nova.yaml:24`) and
+  `setup.ovn.controller.configTemplates[].nodeSelectors[].matchLabels`
+  (`infrastructure/yaook/neutron.yaml:94`). With the current `matchLabels: {}`
+  (match-all) these target every node; to gate compute/OVN onto specific nodes,
+  set explicit labels here and apply the matching labels (plus the Yaook
+  management labels, e.g. `node.yaook.cloud/...`) to the new node. No
+  re-provisioning of the control plane is required — capacity scales by labeling
+  nodes.
+
 ---
 
 ## 1. Directory Structure
@@ -84,7 +114,17 @@ Key files:
 - `ceph-adapter-rook.yaml` - OpenStack/Ceph integration
 - `rook.yaml` - Rook storage orchestrator
 - `yaook-operator.yaml` - Yaook OpenStack operators
-- `crossplane.yaml` - Crossplane universal control plane
+- `crossplane.yaml` - Crossplane Flux Kustomizations: `crossplane` (Helm),
+  `crossplane-openstack` (provider base), `crossplane-zitadel` (provider base),
+  `crossplane-compositions` (XRD/Composition/Function base), and
+  `crossplane-resources` (the openstack overlay `./clusters/openstack/crossplane`).
+- `crossplane/` - **openstack overlay** (concrete instances). `openstack/`:
+  OpenStack managed/composite resources (networks, routers, flavors, groups,
+  projects, security groups, DNS zone) + the `ClusterProviderConfig` (ns yaook).
+  `zitadel/`: the SINGLE-owner shared Zitadel platform (org `rpcu`, projects,
+  roles, actions), the Zitadel `ProviderConfig`, and the `openstack`/`netbird`
+  OIDC apps (ns zitadel). The mgmt cluster must NOT also manage the Zitadel
+  platform — both clusters share one Zitadel instance.
 - `external-secrets.yaml` - External Secrets Operator
 - `flux-operator.yaml` - Flux operator deployment
 - `fluxcd/` - Flux CD configuration
@@ -115,10 +155,26 @@ Key files:
 - `external-snapshotter.yaml` - snapshot-controller Deployment + RBAC (shared `infrastructure/external-snapshotter/controller`, dependsOn external-snapshotter-crds)
 - `openstack-cinder-csi.yaml` - Cinder CSI Driver (DaemonSet + Deployment), provides `StorageClass` for Cinder PVCs (dependsOn openstack-ccm-identity + external-snapshotter-crds — its csi-snapshotter sidecar needs the VolumeSnapshot CRDs)
 - `external-dns.yaml` - ExternalDNS with Designate provider, syncs Service/Gateway DNS records into the rpcu.lan zone (dependsOn external-secrets; `wait: false` — ESO-rendered openstack-credentials secret requires the manual capo-variables secret first)
+- `crossplane.yaml` - Crossplane Helm install (shared `infrastructure/crossplane`, dependsOn nothing)
+- `crossplane-providers.yaml` - provider-random base (shared `infrastructure/crossplane-providers`, dependsOn crossplane). Currently unused / failing to install — candidate for removal.
+- `crossplane-zitadel.yaml` - provider-zitadel base (shared `infrastructure/crossplane-zitadel`, dependsOn crossplane). Provider only.
+- `crossplane-resources.yaml` - **mgmt overlay** `./clusters/mgmt/crossplane/zitadel` (dependsOn crossplane-zitadel, `prune: false`). mgmt's own Zitadel `ProviderConfig` (`default`, points at the manually-created `crossplane-provider-zitadel` secret in ns zitadel) + the **chihiro** `Oidc` app. The chihiro Oidc references the shared org/project by **literal external ID** (org rpcu `369994019545117645`, project administration `370001231734928333`) because those Project/Org MRs are owned by the openstack cluster and don't exist here. It writes its connection secret as `chihiro-oidc-conn` (keys `attribute.client_id` / `attribute.client_secret`) into chihiro-system.
+- `chihiro.yaml` - chihiro app (path `./clusters/mgmt/apps/chihiro`, dependsOn cert-manager-issuer + kgateway + dragonfly-operator + external-secrets + crossplane-resources). The added `apps/chihiro/oidc.yaml` is an ESO `SecretStore` + `ExternalSecret` that remaps `chihiro-oidc-conn`'s `attribute.client_id`/`attribute.client_secret` into the `chihiro-oidc` secret (keys `clientId`/`clientSecret`) consumed by `deploy.yaml`.
+- `dragonfly-operator.yaml` - Dragonfly (Redis-compatible) operator for chihiro's session store
 - `flux-operator.yaml` - Flux operator deployment
 - `fluxcd/` - Flux CD configuration
   - `flux-instance-patch.yaml` - Flux instance patch (sync path ./clusters/mgmt, domain mgmt.local)
   - `kustomization.yaml` - Flux component references
+
+> **mgmt Crossplane / chihiro OIDC.** The mgmt cluster runs its own Crossplane
+> (Helm + zitadel provider) and creates the chihiro OIDC client on the shared
+> Zitadel instance. The `crossplane-provider-zitadel` admin-credentials secret
+> (ns zitadel) is created **manually** on mgmt (same as on openstack). The
+> chihiro `Oidc` writes `chihiro-oidc-conn`; an ESO `ExternalSecret` remaps it to
+> the `chihiro-oidc` secret with the `clientId`/`clientSecret` keys chihiro
+> expects. The mgmt cluster must NOT manage the shared Zitadel platform
+> (org/projects/roles/actions) — that is owned exclusively by the openstack
+> overlay, since both clusters share one Zitadel instance.
 
 ### infrastructure/ - Reusable Components
 
@@ -205,18 +261,43 @@ _rook/configs/_ - Ceph cluster configuration
 - `values.yaml` - Custom Helm values (beta features enabled: usages, realtime-compositions)
 - `kustomization.yaml` - Kustomization manifest
 
-**crossplane-compositions/** - Crossplane XRDs & Compositions
+> **Crossplane layout (shared bases vs per-cluster overlays).** The
+> `infrastructure/crossplane*` dirs hold only **cluster-agnostic** pieces (the
+> Crossplane Helm install, the provider packages, and the reusable composition
+> machinery). All **concrete instances** (OpenStack managed/composite resources,
+> the Zitadel platform, and the per-app OIDC clients) live in per-cluster
+> overlays under `clusters/<cluster>/crossplane/`. This split exists because
+> there is a **single shared Zitadel instance**: the Zitadel org/projects/roles/
+> actions must be owned by exactly one cluster (the openstack cluster) — if both
+> clusters applied them they would fight over the same external objects.
 
-- `xrd-router.yaml` - CompositeResourceDefinition for XRouter (networking.rpcu.io/v1alpha1)
-- `composition-router.yaml` - Composition wiring NetworkV2 ID into RouterV2 externalNetworkId
-- `kustomization.yaml` - Kustomization manifest (no namespace, cluster-scoped resources)
+**crossplane-providers/** - Crossplane provider packages (mgmt)
 
-**crossplane-resources/** - Crossplane Managed Resources & Composite Resources
+- `provider-random.yaml` - provider-random (currently unused; install fails on mgmt — candidate for removal)
+- `kustomization.yaml` - Kustomization manifest
 
-- `network-mgmt.yaml` - Management network (NetworkV2 + SubnetV2, CIDR 192.168.0.0/24)
-- `network-ext.yaml` - External network subnet (SubnetV2, CIDR 172.16.0.0/16)
-- `routers.yaml` - XRouter composite resource (router-ext with ext network gateway)
-- `kustomization.yaml` - Kustomization manifest (namespace: crossplane-system)
+**crossplane-openstack/** - Shared OpenStack provider base
+
+- `provider.yaml` - provider-openstack package (cluster-scoped)
+- `kustomization.yaml` - Kustomization manifest (namespace: crossplane-system, no-op for the cluster-scoped Provider)
+
+**crossplane-zitadel/** - Shared Zitadel provider base (provider only)
+
+- `provider.yaml` - provider-zitadel package (banhcanh/provider-zitadel)
+- `kustomization.yaml` - Kustomization manifest. ONLY the provider lives here — the cluster-agnostic piece both clusters install. The ProviderConfig, Zitadel platform and OIDC apps are per-cluster overlays (see below).
+
+**crossplane-compositions/** - Crossplane XRDs & Compositions (OpenStack)
+
+- `xrd-externalnetwork.yaml` - CompositeResourceDefinition `externalnetworks.networking.rpcu.io` (v1alpha1, Namespaced)
+- `composition-router.yaml` - Composition `external-network` (NetworkV2 + SubnetV2 + RouterV2)
+- `function-patch-and-transform.yaml` - Crossplane patch-and-transform Function
+- `kustomization.yaml` - Kustomization manifest. Left as its own Flux Kustomization (not folded into the overlay) to avoid pruning the in-use XRD, which would cascade-delete the ExternalNetwork composite and its real OpenStack network/router.
+
+> The OpenStack concrete resources and the Zitadel platform/OIDC apps formerly in
+> `infrastructure/crossplane-resources/` were moved to the openstack overlay
+> `clusters/openstack/crossplane/` (`openstack/` + `zitadel/`). The mgmt cluster's
+> chihiro OIDC client lives in `clusters/mgmt/crossplane/zitadel/`. See the
+> per-cluster sections.
 
 **external-secrets/** - External Secrets Operator (v2.3.0)
 
@@ -617,6 +698,7 @@ _fluxcd/instances/_ - Instance configuration
 
 - **Kubernetes API**: 10.0.0.5:6443
 - **Device Routing**: eno1.4000 (VLAN)
+- **Cilium `--devices`**: `eno1.4000,br-ex,br-int` — the OVN bridges `br-int`/`br-ex` must be included for OpenStack VM communication (see "Cilium `--devices` must include the OVN bridges" in Section 8)
 - **L2 Announcement Interface**: eno1.4000
 - **Load Balancer IPs**: 10.0.0.240-10.0.0.253 (now used by kgateway)
 
@@ -688,7 +770,7 @@ _fluxcd/instances/_ - Instance configuration
    - kgateway-crds (depends on gateway-api)
    - kgateway (depends on kgateway-crds)
    - cilium (with VLAN patches)
-   - crossplane (Helm → crossplane-openstack → crossplane-compositions → crossplane-resources)
+   - crossplane (Helm → crossplane-openstack → crossplane-compositions → crossplane-resources [./clusters/openstack/crossplane, prune:false])
    - external-secrets
    - ceph-adapter-rook
    - rook (setup → configs with health checks)
@@ -748,6 +830,19 @@ CAPI management cluster (self-management target via `clusterctl move`):
     openstack-credentials in external-dns namespace); `OS_CLOUD` env var selects
     the cloud entry. IMPORTANT: `auth_url` in `capo-variables` must be the
     gateway endpoint (`https://keystone.rpcu.vpn`), not the in-cluster Keystone.
+17. **crossplane** (no dependencies) → Crossplane Helm install
+18. **crossplane-zitadel** (dependsOn crossplane) → provider-zitadel package
+    (provider only — no ProviderConfig or platform resources here)
+19. **crossplane-resources** (dependsOn crossplane-zitadel, `prune: false`) →
+    mgmt's own Zitadel `ProviderConfig` + the **chihiro** `Oidc` app (writes
+    `chihiro-oidc-conn` secret). References the shared org/project by literal
+    external ID — the openstack cluster owns the Zitadel platform.
+20. **chihiro** (dependsOn cert-manager-issuer + kgateway + dragonfly-operator +
+    external-secrets + crossplane-resources) → chihiro app. The `apps/chihiro/oidc.yaml`
+    ESO ExternalSecret remaps `chihiro-oidc-conn`'s `attribute.client_id` /
+    `attribute.client_secret` into the `chihiro-oidc` secret with the
+    `clientId`/`clientSecret` keys `deploy.yaml` expects.
+21. **dragonfly-operator** (no dependencies) → Dragonfly (Redis-compatible) operator
 
 ### Health Checks
 
@@ -906,6 +1001,36 @@ eBPF socket load-balancer from interfering with connections made inside the
 guest VMs. If you ever move the base default, re-evaluate both clusters'
 patches.
 
+#### Cilium `--devices` must include the OVN bridges `br-int` and `br-ex` (openstack cluster)
+
+The baremetal openstack cluster patches the Cilium agent's device list in
+`clusters/openstack/cilium.yaml`:
+
+```yaml
+extraArgs:
+  - --devices=eno1.4000,br-ex,br-int
+  - --direct-routing-device=eno1.4000
+```
+
+`br-int` (the OVN **integration bridge**, where every VM tap port lands) and
+`br-ex` (the OVN external/provider bridge, uplink `enp3s0`, physnet `public` —
+see `infrastructure/yaook/neutron.yaml` `ovn-controller` `configTemplates`) **must
+be listed in `--devices`** for OpenStack VM communication to work.
+
+Why: with `kubeProxyReplacement: true` Cilium's eBPF datapath (NodePort /
+host-routing / health datapath) only processes traffic on the interfaces named
+in `--devices`. Tenant VM traffic enters the host through OVN's bridges, **not**
+through `eno1.4000`. If `br-int`/`br-ex` are omitted, Cilium's datapath does not
+see that traffic and return/forwarded packets for VM↔node and VM↔Service
+(ClusterIP/NodePort/LoadBalancer) flows are dropped — VMs can't reach
+in-cluster services and, depending on the path, can't communicate at all.
+`--direct-routing-device` stays pinned to `eno1.4000` (the node's real uplink);
+only the device-attach list is widened to cover the OVN bridges.
+
+If the OVN bridge names ever change (e.g. a different `bridgeName` in the
+NeutronDeployment `bridgeConfig`, or an added tenant/provider bridge), update
+this `--devices` list to match.
+
 #### OpenStack CCM replaces Cilium L2-announcement LoadBalancer on mgmt
 
 On the mgmt cluster, `Service` type `LoadBalancer` is provided by the OpenStack
@@ -1044,7 +1169,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: June 2026 (removed Crossplane-managed chihiro OIDC wiring on mgmt — deleted infrastructure/crossplane-resources/zitadel-mgmt/ (Zitadel `Oidc` chihiro-oidc + providerConfig), the `crossplane-zitadel-mgmt` Flux Kustomization and its entry/dependsOn, and chihiro's ExternalSecret that synced the crossplane-produced `chihiro-oidc` secret; Zitadel is now prepro and the `chihiro-oidc` secret (clientId/clientSecret) is entered manually in chihiro-system, consumed unchanged by deploy.yaml; previously: fixed OCCM lb-provider to ovn for mgmt Octavia backend; switched external-dns to inovex Designate webhook provider; previously: added external-dns with Designate provider for mgmt cluster — syncs Service/Gateway DNS records into rpcu.lan zone via designate.rpcu.vpn, ESO credentials from capo-variables with gateway auth_url override; added mgmt cert-manager-issuer chain — independent `root-mgmt` CA + `rpcu-lan-wildcard-tls` `*.mgmt.rpcu.lan` wildcard, repointed mgmt kgateway Gateway to it; added external-snapshotter v8.6.0 — VolumeSnapshot CRDs + snapshot-controller remote bases for the mgmt Cinder CSI)
+**Last Updated**: June 2026 (restructured Crossplane layout: split shared bases (infrastructure/crossplane\*) from per-cluster overlays (clusters/<cluster>/crossplane/); moved openstack MRs/zitadel platform/OIDC apps into clusters/openstack/crossplane/ overlay with prune:false safety; added mgmt Crossplane + chihiro OIDC app (crossplane/zitadel/) with ESO key remapping to match chihiro expectations; documented mgmt Crossplane/chihiro OIDC section, updated deployment dependency chains for both clusters; removed stale infrastructure/crossplane-resources/ directory)
 **Repository**: https://github.com/RPCU/argus.git
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

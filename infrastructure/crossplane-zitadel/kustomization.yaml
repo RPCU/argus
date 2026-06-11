@@ -1,3 +1,16 @@
+# Shared Zitadel base: the Crossplane Zitadel provider only. This is the single
+# cluster-agnostic piece — both the openstack and mgmt clusters install the same
+# provider package. It is cluster-scoped (a pkg.crossplane.io/v1 Provider);
+# namespace: crossplane-system is retained from the original as a harmless no-op
+# to keep the applied object byte-identical (avoids any adoption churn).
+#
+# Everything else is cluster-specific and must NOT live here, because there is a
+# single shared Zitadel instance: if two clusters applied the same org/projects/
+# roles/actions they would fight over the same external objects. The Zitadel
+# platform (org/projects/roles/actions), the ProviderConfig and the OpenStack
+# OIDC apps are owned by the openstack cluster overlay
+# (clusters/openstack/crossplane/zitadel). The mgmt cluster brings its own
+# ProviderConfig + chihiro Oidc app (clusters/mgmt/crossplane/zitadel).
 namespace: crossplane-system
 resources:
   - provider.yaml

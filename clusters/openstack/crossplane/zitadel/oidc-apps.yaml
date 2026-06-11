@@ -1,3 +1,7 @@
+# OpenStack-cluster Zitadel OIDC applications. These are concrete instances of
+# the shared Zitadel platform (org/projects/roles live in the shared base
+# infrastructure/crossplane-zitadel). The connection secrets are written into
+# the namespaces that consume them on this cluster (crossplane-system / yaook).
 apiVersion: application.zitadel.didactiklabs.io/v1alpha1
 kind: Oidc
 metadata:

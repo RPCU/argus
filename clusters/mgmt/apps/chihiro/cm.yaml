@@ -30,11 +30,11 @@ data:
           clusterNetwork:
             pods:
               cidrBlocks:
-                - 172.16.0.0/16
+                - 10.244.0.0/16
             serviceDomain: PLACEHOLDER_SERVICE_DOMAIN
             services:
               cidrBlocks:
-                - 172.17.0.0/16
+                - 10.96.0.0/16
           topology:
             classRef:
               name: openstack-default

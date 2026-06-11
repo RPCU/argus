@@ -36,7 +36,7 @@ spec:
               value: "https://docs.rpcu.io/"
             # OIDC Configuration
             - name: CHIHIRO_OIDC_ISSUER_URL
-              value: "https://zitadel.bealv.io"
+              value: "https://rpcu-gabeck.eu1.zitadel.cloud"
             - name: CHIHIRO_OIDC_CLIENT_ID
               valueFrom:
                 secretKeyRef:

@@ -526,6 +526,21 @@ Split out of `cluster-api-templates` so an ESO failure (admission, missing
 > `dependsOn: cluster-api-providers` so the ClusterClass/templates only reconcile
 > after the CAPO/kubeadm provider CRDs exist.
 
+> `clusters/mgmt/cluster-api-templates.yaml` intentionally does **NOT** set
+> `wait: true` (it defaults to `false`). With `wait: true`, Flux health-gates
+> every object in the Kustomization via kstatus — including the `ClusterClass`.
+> The `ClusterClass` and its `OpenStackClusterTemplate`s live in the **same**
+> Kustomization with no apply-ordering guarantee, so during a `-vN` template
+> rotation (repointing `infrastructure.templateRef` to a new template) the health
+> wait can trip while the `ClusterClass` momentarily reports `InProgress` — and if
+> the new template object isn't reconciled yet, the topology controller wedges
+> (`TopologyReconciled=False`, `ClusterClass.status.observedGeneration` stuck one
+> behind) and the Kustomization never recovers. Without `wait`, Flux applies the
+> template and the ClusterClass together and returns; CAPI converges the topology
+> asynchronously. (If a future change needs strict ordering, the durable fix is to
+> split the templates and the ClusterClass into two Kustomizations with
+> `dependsOn`, like `kgateway-crds` → `kgateway`.)
+
 **yaook-operator/** - Yaook OpenStack Operators (v2.2.0)
 
 - `namespace.yaml` - Kubernetes namespace (yaook)

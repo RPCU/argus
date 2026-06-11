@@ -34,7 +34,7 @@ spec:
     orgId: "369994019545117645"
     postLogoutRedirectUris:
       - "*"
-    projectId: "370001231734928333"
+    projectId: "370001231801746254"
     redirectUris:
       - https://chihiro.mgmt.rpcu.lan/auth/callback
     responseTypes:

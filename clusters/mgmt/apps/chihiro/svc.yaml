@@ -5,7 +5,7 @@ metadata:
   labels:
     app.kubernetes.io/name: chihiro-service
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   ports:
     - protocol: TCP
       port: 8080

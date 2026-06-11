@@ -24,19 +24,3 @@ spec:
       backendRefs:
         - name: chihiro-service
           port: 8080
----
-apiVersion: gateway.networking.k8s.io/v1
-kind: BackendTLSPolicy
-metadata:
-  name: chihiro
-spec:
-  targetRefs:
-    - group: ""
-      kind: Service
-      name: chihiro-service
-  validation:
-    caCertificateRefs:
-      - group: ""
-        kind: ConfigMap
-        name: rpcu-bundle
-    hostname: chihiro.mgmt.rpcu.lan

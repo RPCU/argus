@@ -1,0 +1,8 @@
+# mgmt-cluster Zitadel resources: only this cluster's own ProviderConfig and the
+# chihiro Oidc app. The shared Zitadel platform (org/projects/roles/actions) is
+# owned by the openstack cluster overlay — it must not be duplicated here, or the
+# two clusters would fight over the same external Zitadel objects.
+namespace: zitadel
+resources:
+  - providerConfig.yaml
+  - oidc-chihiro.yaml

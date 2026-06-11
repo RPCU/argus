@@ -1,0 +1,18 @@
+# mgmt-cluster ProviderConfig for the Crossplane Zitadel provider. Points at the
+# crossplane-provider-zitadel admin-credentials secret in the zitadel namespace
+# (created manually on the mgmt cluster — same as on openstack). This is a
+# SEPARATE ProviderConfig from the openstack cluster's: each cluster runs its own
+# Crossplane and needs its own "default" ProviderConfig. The shared Zitadel
+# platform (org/projects/roles/actions) is owned exclusively by the openstack
+# cluster; mgmt only creates the chihiro Oidc app here.
+apiVersion: zitadel.didactiklabs.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: default
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      name: crossplane-provider-zitadel
+      namespace: zitadel
+      key: credentials

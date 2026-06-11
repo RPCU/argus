@@ -1,0 +1,46 @@
+# chihiro OIDC application on the shared Zitadel instance, managed by the mgmt
+# cluster's Crossplane. Writes its client credentials into the chihiro-oidc-conn
+# connection secret (chihiro-system) with the provider's native key names
+# (attribute.client_id / attribute.client_secret). An ESO ExternalSecret
+# (clusters/mgmt/apps/chihiro/oidc.yaml) remaps those into the chihiro-oidc secret
+# with keys clientId / clientSecret that chihiro's Deployment consumes
+# (clusters/mgmt/apps/chihiro/deploy.yaml: CHIHIRO_OIDC_CLIENT_ID /
+# CHIHIRO_OIDC_CLIENT_SECRET).
+#
+# orgId / projectId are referenced by literal external ID (not orgIdRef /
+# projectIdRef) on purpose: the org "rpcu" and project "administration" MRs are
+# owned by the openstack cluster overlay and do NOT exist on mgmt, so a ref would
+# never resolve here. IDs taken from the live Zitadel objects:
+#   org rpcu               = 369994019545117645
+#   project administration = 370001231734928333
+apiVersion: application.zitadel.didactiklabs.io/v1alpha1
+kind: Oidc
+metadata:
+  name: chihiro
+spec:
+  forProvider:
+    accessTokenRoleAssertion: false
+    accessTokenType: OIDC_TOKEN_TYPE_BEARER
+    additionalOrigins: []
+    appType: OIDC_APP_TYPE_WEB
+    authMethodType: OIDC_AUTH_METHOD_TYPE_BASIC
+    clockSkew: 0s
+    devMode: false
+    grantTypes:
+      - OIDC_GRANT_TYPE_AUTHORIZATION_CODE
+    idTokenRoleAssertion: false
+    idTokenUserinfoAssertion: false
+    name: chihiro
+    orgId: "369994019545117645"
+    postLogoutRedirectUris:
+      - "*"
+    projectId: "370001231734928333"
+    redirectUris:
+      - https://chihiro.mgmt.rpcu.lan/auth/callback
+    responseTypes:
+      - OIDC_RESPONSE_TYPE_CODE
+    skipNativeAppSuccessPage: false
+    version: OIDC_VERSION_1_0
+  writeConnectionSecretToRef:
+    name: chihiro-oidc-conn
+    namespace: chihiro-system

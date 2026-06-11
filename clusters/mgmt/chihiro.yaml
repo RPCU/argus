@@ -17,3 +17,6 @@ spec:
     - name: kgateway
     - name: dragonfly-operator
     - name: external-secrets
+    # chihiro's oidc.yaml ESO remaps the Crossplane-written connection secret
+    # (chihiro-oidc-conn) into chihiro-oidc; crossplane-resources owns that Oidc.
+    - name: crossplane-resources

@@ -1,9 +1,0 @@
-namespace: zitadel
-resources:
-  - providerConfig.yaml
-  - namespace.yaml
-  - projects.yaml
-  - orgs.yaml
-  - roles.yaml
-  - actions.yaml
-  - adminstrations-app.yaml

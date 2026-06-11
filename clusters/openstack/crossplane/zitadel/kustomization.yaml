@@ -1,0 +1,15 @@
+# OpenStack-cluster Zitadel resources. The openstack cluster is the SINGLE owner
+# of the shared Zitadel platform (org/projects/roles/actions) against the one
+# shared Zitadel instance, plus its own ProviderConfig and the openstack/netbird
+# OIDC apps. The mgmt cluster must NOT also manage these (it would fight over the
+# same external Zitadel objects); mgmt brings only its own ProviderConfig +
+# chihiro Oidc.
+namespace: zitadel
+resources:
+  - namespace.yaml
+  - providerConfig.yaml
+  - orgs.yaml
+  - projects.yaml
+  - roles.yaml
+  - actions.yaml
+  - oidc-apps.yaml

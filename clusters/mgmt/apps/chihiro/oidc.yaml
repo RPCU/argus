@@ -1,0 +1,83 @@
+# Bridges the Crossplane-written Zitadel OIDC connection secret to the key names
+# chihiro's Deployment expects.
+#
+# The Crossplane Zitadel Oidc app (clusters/mgmt/crossplane/zitadel/oidc-chihiro.yaml)
+# writes its connection secret as `chihiro-oidc-conn` with the provider's native
+# key names `attribute.client_id` / `attribute.client_secret`. chihiro's
+# deploy.yaml instead reads keys `clientId` / `clientSecret` from a secret named
+# `chihiro-oidc`. This ExternalSecret remaps the former into the latter — the
+# same pattern the openstack cluster uses for keystone
+# (infrastructure/yaook/externalsecret-oidc.yaml).
+#
+# A namespaced Kubernetes-provider SecretStore (reading chihiro-system itself) +
+# a minimal Role/RoleBinding give ESO read access to the connection secret.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: chihiro-oidc-reader
+  namespace: chihiro-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: chihiro-oidc-reader
+  namespace: chihiro-system
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: chihiro-oidc-reader
+  namespace: chihiro-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: chihiro-oidc-reader
+subjects:
+  - kind: ServiceAccount
+    name: chihiro-oidc-reader
+    namespace: chihiro-system
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: chihiro-secrets
+  namespace: chihiro-system
+spec:
+  provider:
+    kubernetes:
+      remoteNamespace: chihiro-system
+      server:
+        caProvider:
+          type: ConfigMap
+          name: kube-root-ca.crt
+          key: ca.crt
+      auth:
+        serviceAccount:
+          name: chihiro-oidc-reader
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: chihiro-oidc
+  namespace: chihiro-system
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: chihiro-secrets
+    kind: SecretStore
+  target:
+    name: chihiro-oidc
+    creationPolicy: Owner
+  data:
+    - secretKey: clientId
+      remoteRef:
+        key: chihiro-oidc-conn
+        property: attribute.client_id
+    - secretKey: clientSecret
+      remoteRef:
+        key: chihiro-oidc-conn
+        property: attribute.client_secret

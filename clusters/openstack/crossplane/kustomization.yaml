@@ -1,0 +1,9 @@
+# OpenStack-cluster concrete Crossplane resources (the instances that consume the
+# shared bases infrastructure/crossplane-openstack and infrastructure/crossplane-zitadel):
+#   - openstack/  OpenStack managed/composite resources (networks, routers,
+#                 flavors, groups, projects, security groups, DNS zone) + the
+#                 ClusterProviderConfig pointing at the live OpenStack creds. (ns yaook)
+#   - zitadel/    OpenStack-cluster Zitadel Oidc apps (openstack, netbird). (ns zitadel)
+resources:
+  - openstack/
+  - zitadel/

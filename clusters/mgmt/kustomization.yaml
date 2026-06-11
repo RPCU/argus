@@ -20,6 +20,7 @@ resources:
   - crossplane.yaml
   - crossplane-zitadel.yaml
   - crossplane-providers.yaml
+  - crossplane-resources.yaml
   - dragonfly-operator.yaml
   - chihiro.yaml
   - flux-operator.yaml

@@ -17,6 +17,13 @@
 # referenced. The managedSecurityGroups block below is intentionally part of the
 # base (not a patch) because it is the same for every Cilium cluster. To change
 # the SG rules (or identityRef), bump to -v2 and repoint infrastructure.templateRef.
+#
+# -v1 is RETAINED (unreferenced) only for the duration of the rotation to -v2.
+# The ClusterClass now points at -v2 (adds the NodePort-range ingress rule so the
+# OpenStack Octavia/OVN LoadBalancer can reach Service NodePorts — without it,
+# externally-exposed `type: LoadBalancer` services time out at the TCP layer:
+# the Octavia VIP DNATs to a node IP:nodePort that the managed SG was dropping).
+# Once -v2 has reconciled and LoadBalancer connectivity is confirmed, delete -v1.
 # -----------------------------------------------------------------------------
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: OpenStackClusterTemplate
@@ -119,3 +126,123 @@ spec:
             remoteManagedGroups:
               - controlplane
               - worker
+---
+# -----------------------------------------------------------------------------
+# openstack-default-cluster-v2
+#
+# Identical to -v1 plus a NodePort-range ingress rule. CAPO's default managed
+# security groups do NOT open the Service NodePort range (30000-32767) from
+# outside the cluster. With an external `type: LoadBalancer` Service, the
+# OpenStack Cloud Controller Manager provisions an Octavia (OVN provider) load
+# balancer whose VIP DNATs incoming traffic to a member = <node IP>:<nodePort>.
+# Because the managed SG dropped that nodePort ingress, the TCP handshake to the
+# LoadBalancer floating IP never completed (curl: "Connection timed out") even
+# though the VIP, floating IP and DNS were all correct.
+#
+# The rule below opens the kube-proxy/Cilium default NodePort range for TCP from
+# anywhere. Source is 0.0.0.0/0 because the Octavia OVN VIP may forward with the
+# original client source IP preserved (lb-method SOURCE_IP_PORT), so the member
+# ingress cannot be scoped to a single LB address. This matches the standard
+# requirement for externally-reachable NodePort-backed LoadBalancer services.
+#
+# IMMUTABILITY: this is a NEW template (not an in-place edit of -v1). The
+# ClusterClass infrastructure.templateRef is repointed to -v2; -v1 is deleted
+# once the rotation is confirmed (see README "-vN rotation workflow").
+# -----------------------------------------------------------------------------
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: OpenStackClusterTemplate
+metadata:
+  name: openstack-default-cluster-v2
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      apiServerLoadBalancer:
+        enabled: true
+      identityRef:
+        name: mgmt-cloud-config
+        cloudName: openstack
+      managedSecurityGroups:
+        # See -v1 above for the rationale behind allowAllInClusterTraffic and the
+        # Cilium data-plane rules. -v2 only ADDS the NodePort-range rule.
+        allowAllInClusterTraffic: true
+        allNodesSecurityGroupRules:
+          - description: Allow SSH ingress from anywhere
+            direction: ingress
+            etherType: IPv4
+            name: SSH ingress
+            portRangeMax: 22
+            portRangeMin: 22
+            protocol: tcp
+            remoteIPPrefix: 0.0.0.0/0
+          - description: Allow DNS egress (UDP) to anywhere
+            direction: egress
+            etherType: IPv4
+            name: DNS egress (UDP)
+            portRangeMax: 53
+            portRangeMin: 53
+            protocol: udp
+            remoteIPPrefix: 0.0.0.0/0
+          - description: Allow DNS egress (TCP) to anywhere
+            direction: egress
+            etherType: IPv4
+            name: DNS egress (TCP)
+            portRangeMax: 53
+            portRangeMin: 53
+            protocol: tcp
+            remoteIPPrefix: 0.0.0.0/0
+          # ---------------------------------------------------------------
+          # Cilium data-plane between nodes. (See -v1 for full rationale.)
+          # ---------------------------------------------------------------
+          - description: Cilium VXLAN overlay (node-to-node)
+            direction: ingress
+            etherType: IPv4
+            name: Cilium VXLAN
+            portRangeMax: 8472
+            portRangeMin: 8472
+            protocol: udp
+            remoteManagedGroups:
+              - controlplane
+              - worker
+          - description: Cilium health checks (node-to-node)
+            direction: ingress
+            etherType: IPv4
+            name: Cilium health (TCP 4240)
+            portRangeMax: 4240
+            portRangeMin: 4240
+            protocol: tcp
+            remoteManagedGroups:
+              - controlplane
+              - worker
+          - description: Hubble relay/peer (node-to-node)
+            direction: ingress
+            etherType: IPv4
+            name: Cilium Hubble (TCP 4244)
+            portRangeMax: 4244
+            portRangeMin: 4244
+            protocol: tcp
+            remoteManagedGroups:
+              - controlplane
+              - worker
+          - description: ICMP between nodes (health/path MTU)
+            direction: ingress
+            etherType: IPv4
+            name: ICMP (node-to-node)
+            protocol: icmp
+            remoteManagedGroups:
+              - controlplane
+              - worker
+          # ---------------------------------------------------------------
+          # Kubernetes NodePort range — REQUIRED for external `type:
+          # LoadBalancer` Services routed via the OpenStack CCM + Octavia.
+          # The Octavia VIP forwards to <node IP>:<nodePort>; without this
+          # ingress the managed SG drops it and the LB times out.
+          # ---------------------------------------------------------------
+          - description: Kubernetes NodePort services (Octavia LoadBalancer backends)
+            direction: ingress
+            etherType: IPv4
+            name: NodePort range (TCP)
+            portRangeMax: 32767
+            portRangeMin: 30000
+            protocol: tcp
+            remoteIPPrefix: 0.0.0.0/0

@@ -149,5 +149,17 @@ This keeps the change explicit, auditable, and safely rolled out via GitOps.
   data-plane (VXLAN 8472, health 4240, Hubble 4244, ICMP) on top of
   `allowAllInClusterTraffic: true`. See the root `AGENTS.md` ("CAPO managed
   security groups must open the Cilium overlay") for why this is mandatory.
+- `infracluster.yaml` now also carries `openstack-default-cluster-v2`, which is
+  identical to `-v1` plus an ingress rule opening the Kubernetes **NodePort
+  range (TCP 30000–32767, from `0.0.0.0/0`)**. This is REQUIRED for external
+  `type: LoadBalancer` Services on clusters that use the OpenStack CCM + Octavia
+  (e.g. mgmt): the Octavia/OVN VIP forwards traffic to `<node IP>:<nodePort>`,
+  and CAPO's default managed SGs do not open that range — so without it the LB
+  floating IP times out at the TCP layer even though the VIP, floating IP and
+  DNS are all correct. The ClusterClass `infrastructure.templateRef` points at
+  `-v2`; `-v1` is retained only until the rotation is confirmed, then deleted
+  (this is exactly the `-vN` workflow above — an `OpenStackClusterTemplate`
+  rotation reconciles the SGs onto the live `OpenStackCluster` without rolling
+  machines).
 - Machine `flavor`/`image` in `machines.yaml` are deliberate `dummy`
   placeholders — they are always overwritten by patches.

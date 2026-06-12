@@ -24,6 +24,7 @@ resources:
   - dragonfly-operator.yaml
   - chihiro.yaml
   - kubernetes-rbac.yaml
+  - sveltos.yaml
   - flux-operator.yaml
   - kamaji.yaml
   - fluxcd/

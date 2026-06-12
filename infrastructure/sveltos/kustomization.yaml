@@ -1,0 +1,17 @@
+# Basic Sveltos install (mgmt cluster).
+#
+# Structure (one concern per file):
+#   namespace.yaml    - projectsveltos namespace
+#   helmrepo.yaml     - projectsveltos Helm repository
+#   helmrelease.yaml  - Sveltos core controllers
+#   dashboard.yaml    - Sveltos dashboard (OIDC, PKCE public client)
+#   clusterprofiles/  - ClusterProfiles Sveltos pushes to child clusters
+#                       (oidc-rbac: kube-admin/kube-user -> cluster-admin)
+#   gateway/          - kgateway HTTPRoute exposing the dashboard
+resources:
+  - namespace.yaml
+  - helmrepo.yaml
+  - helmrelease.yaml
+  - dashboard.yaml
+  - clusterprofiles/
+  - gateway/

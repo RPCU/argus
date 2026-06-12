@@ -13,6 +13,8 @@ data:
         metadata:
           name: PLACEHOLDER_NAME
           namespace: mgmt
+          labels:
+            sveltos.argus.rpcu.io/oidc-rbac: enabled
         spec:
           clusterNetwork:
             pods:

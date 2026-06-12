@@ -17,3 +17,8 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: capo-system
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: capi-kamaji-control-plane-system

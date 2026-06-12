@@ -1,7 +1,10 @@
 resources:
   - namespace.yaml
   - clusterclass.yaml
+  - clusterclass-kamaji.yaml
   - templates/controlplane.yaml
+  - templates/controlplane-kamaji.yaml
   - templates/bootstrap.yaml
   - templates/infracluster.yaml
   - templates/machines.yaml
+  - templates/infrakamaji.yaml

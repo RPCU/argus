@@ -11,6 +11,7 @@ resources:
   - bootstrap-kubeadm.yaml
   - control-plane-kubeadm.yaml
   - infrastructure-openstack.yaml
+  - control-plane-kamaji.yaml
   - clusterctl-providers.yaml
 #
 # NOTE: ORC (openstack-resource-controller) is a hard dependency of CAPO

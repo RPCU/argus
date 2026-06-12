@@ -1,0 +1,12 @@
+namespace: kamaji-system
+resources:
+  - namespace.yaml
+  - helmrepo.yaml
+  - helmrelease-crds.yaml
+  - helmrelease.yaml
+configMapGenerator:
+  - name: kamaji-values
+    files:
+      - values.yaml
+generatorOptions:
+  disableNameSuffixHash: true

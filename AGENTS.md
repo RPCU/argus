@@ -122,9 +122,13 @@ Key files:
   OpenStack managed/composite resources (networks, routers, flavors, groups,
   projects, security groups, DNS zone) + the `ClusterProviderConfig` (ns yaook).
   `zitadel/`: the SINGLE-owner shared Zitadel platform (org `rpcu`, projects,
-  roles, actions), the Zitadel `ProviderConfig`, and the `openstack`/`netbird`
-  OIDC apps (ns zitadel). The mgmt cluster must NOT also manage the Zitadel
-  platform — both clusters share one Zitadel instance.
+  roles, actions), the Zitadel `ProviderConfig`, and the
+  `openstack`/`netbird`/`kubernetes` OIDC apps (ns zitadel). The `kubernetes`
+  app is a public/native PKCE client with **no client secret** (and thus no
+  `writeConnectionSecretToRef`) used by the CAPI clusters' kube-apiserver OIDC —
+  the ClusterClass `oidc` variable injects its issuer/clientID as apiserver
+  flags. The mgmt cluster must NOT also manage the Zitadel platform — both
+  clusters share one Zitadel instance.
 - `external-secrets.yaml` - External Secrets Operator
 - `flux-operator.yaml` - Flux operator deployment
 - `fluxcd/` - Flux CD configuration
@@ -486,7 +490,7 @@ is a ClusterClass variable injected via patches, so creating a new cluster is a
 small `Cluster` CR (no template forking). See `README.md` for the variable table
 and the `-vN` immutability/rotation workflow.
 
-- `clusterclass.yaml` - ClusterClass `openstack-default` (renamed from `openstack-mgmt`) with variables: identityRef, externalNetworkId, managedSubnetCIDR, managedSubnetAllocationPools, imageName, controlPlaneFlavor, workerFlavor, sshKeyName, apiServerFloatingIP. Template refs use the versioned `openstack-default-*-v1` names, except `infrastructure.templateRef` which now points at `openstack-default-cluster-v2` (NodePort SG rotation, see below).
+- `clusterclass.yaml` - ClusterClass `openstack-default` (renamed from `openstack-mgmt`) with variables: identityRef, externalNetworkId, managedSubnetCIDR, managedSubnetAllocationPools, imageName, controlPlaneFlavor, workerFlavor, sshKeyName, apiServerFloatingIP, **oidc**. Template refs use the versioned `openstack-default-*-v1` names, except `infrastructure.templateRef` which now points at `openstack-default-cluster-v2` (NodePort SG rotation, see below). The **`oidc`** object variable (`enabled`/`issuerURL`/`clientID`/`usernameClaim`/`usernamePrefix`/`groupsClaim`/`groupsPrefix`) is an `enabledIf` patch that appends the `--oidc-*` kube-apiserver `extraArgs` (issuer-url, client-id, username-claim, username-prefix, groups-claim, groups-prefix) onto the control-plane `KubeadmControlPlaneTemplate`. It targets the shared Zitadel **`kubernetes`** OIDC client (a public/native PKCE app with **no client secret** — see `clusters/openstack/crossplane/zitadel/oidc-apps.yaml`); the apiserver only validates ID tokens so no secret is plumbed to mgmt. The Zitadel-generated `clientID` must be copied by hand into the `Cluster` CR's `oidc.clientID` and `enabled` flipped to true (don't enable with an empty clientID; enabling rolls the control-plane machines). The `kubernetes` Zitadel project's `kube-user`/`kube-admin` roles surface as `groups` (bind via RBAC as `oidc:kube-admin` / `oidc:kube-user`).
 - `templates/controlplane.yaml` - KubeadmControlPlaneTemplate `openstack-default-control-plane-v1`
 - `templates/bootstrap.yaml` - KubeadmConfigTemplate `openstack-default-worker-v1`
 - `templates/infracluster.yaml` - OpenStackClusterTemplate `openstack-default-cluster-v1` **and** `-v2`. The `managedSecurityGroups` sets `allowAllInClusterTraffic: true` plus explicit Cilium data-plane rules (VXLAN UDP 8472, health TCP 4240, Hubble TCP 4244, ICMP via `remoteManagedGroups: [controlplane, worker]`) — required because CAPO's default managed SGs only open API/etcd/kubelet/node-port and would otherwise drop Cilium's cross-node overlay (see note in Cluster Safety). **`-v2` additionally opens the Kubernetes NodePort range (TCP 30000–32767 from `0.0.0.0/0`)** — REQUIRED for external `type: LoadBalancer` Services via the OpenStack CCM + Octavia (the Octavia/OVN VIP DNATs to `<node IP>:<nodePort>`; without this rule the managed SG drops it and the LB floating IP times out at the TCP layer despite correct VIP/floating-IP/DNS). The ClusterClass points `infrastructure.templateRef` at `-v2`; `-v1` is retained only until the rotation is confirmed, then deleted (per the README `-vN` workflow — an `OpenStackClusterTemplate` rotation reconciles the SGs onto the live `OpenStackCluster` without rolling machines). `identityRef` is hardcoded to `mgmt-cloud-config` (CAPO requires it at admission time); the ClusterClass `identityRef` variable/patch overrides this default per-cluster when the topology controller synthesizes the concrete `OpenStackCluster`.
@@ -1210,7 +1214,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: June 2026 (restructured Crossplane layout: split shared bases (infrastructure/crossplane\*) from per-cluster overlays (clusters/<cluster>/crossplane/); moved openstack MRs/zitadel platform/OIDC apps into clusters/openstack/crossplane/ overlay with prune:false safety; added mgmt Crossplane + chihiro OIDC app (crossplane/zitadel/) with ESO key remapping to match chihiro expectations; documented mgmt Crossplane/chihiro OIDC section, updated deployment dependency chains for both clusters; removed stale infrastructure/crossplane-resources/ directory)
+**Last Updated**: June 2026 (added kube-apiserver OIDC support to the `openstack-default` ClusterClass: new `oidc` object variable + `enabledIf` patch injecting `--oidc-*` apiserver flags onto the control-plane template; added the shared Zitadel `kubernetes` OIDC app (public/native PKCE, no client secret) in `clusters/openstack/crossplane/zitadel/oidc-apps.yaml`; wired the disabled-by-default `oidc` block into `clusters/mgmt/clusters/mgmt.yaml`; documented in cluster-api-templates README. PRIOR: restructured Crossplane layout: split shared bases (infrastructure/crossplane\*) from per-cluster overlays (clusters/<cluster>/crossplane/); moved openstack MRs/zitadel platform/OIDC apps into clusters/openstack/crossplane/ overlay with prune:false safety; added mgmt Crossplane + chihiro OIDC app (crossplane/zitadel/) with ESO key remapping to match chihiro expectations; documented mgmt Crossplane/chihiro OIDC section, updated deployment dependency chains for both clusters; removed stale infrastructure/crossplane-resources/ directory)
 **Repository**: https://github.com/RPCU/argus.git
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

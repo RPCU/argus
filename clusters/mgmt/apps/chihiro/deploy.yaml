@@ -22,7 +22,7 @@ spec:
             - --config=/config.yaml
           command:
             - /chihiro
-          image: zot.bealv.io/public/chihiro:v0.1.4
+          image: zot.bealv.io/public/chihiro:v0.1.5
           ports:
             - containerPort: 8080
               name: http
@@ -73,6 +73,8 @@ spec:
               value: "5"
             - name: CHIHIRO_MAX_TOTAL_NODES
               value: "10"
+            - name: CHIHIRO_MAX_TOTAL_CP
+              value: "9"
           volumeMounts:
             - name: config
               mountPath: /config.yaml

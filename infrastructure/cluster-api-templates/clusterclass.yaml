@@ -190,16 +190,28 @@ spec:
               description: ID-token claim mapped to the Kubernetes username.
             usernamePrefix:
               type: string
-              default: "oidc:"
-              description: Prefix prepended to usernames to avoid clashes.
+              default: ""
+              description: >-
+                Prefix prepended to usernames. Left empty to match the bare
+                group names asserted by the Zitadel "groupsClaim" Action and the
+                RBAC bindings (clusters/mgmt/apps/kubernetes-rbac).
             groupsClaim:
               type: string
               default: groups
-              description: ID-token claim mapped to Kubernetes groups.
+              description: >-
+                ID-token claim mapped to Kubernetes groups. The shared Zitadel
+                "groupsClaim" Action (clusters/openstack/crossplane/zitadel/actions.yaml)
+                injects the user's project role keys (e.g. kube-admin,
+                kube-user) into this claim.
             groupsPrefix:
               type: string
-              default: "oidc:"
-              description: Prefix prepended to groups to avoid clashes.
+              default: ""
+              description: >-
+                Prefix prepended to groups. Left EMPTY on purpose: the
+                groupsClaim Action emits bare role keys (kube-admin / kube-user)
+                and the RBAC ClusterRoleBindings bind those bare group names. A
+                non-empty prefix here would require the bindings to use
+                "<prefix>kube-admin" instead.
           required:
             - enabled
 

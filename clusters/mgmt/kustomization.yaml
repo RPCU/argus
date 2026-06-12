@@ -23,6 +23,7 @@ resources:
   - crossplane-resources.yaml
   - dragonfly-operator.yaml
   - chihiro.yaml
+  - kubernetes-rbac.yaml
   - flux-operator.yaml
   - fluxcd/
   - clusters/

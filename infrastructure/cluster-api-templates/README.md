@@ -75,9 +75,9 @@ When `oidc.enabled: true`, an `enabledIf` patch appends these apiserver
 | `issuerURL`      | `https://rpcu-gabeck.eu1.zitadel.cloud` | OIDC issuer (the Zitadel instance)        |
 | `clientID`       | `""`                                    | Client ID of the Zitadel "kubernetes" app |
 | `usernameClaim`  | `sub`                                   | ID-token claim → Kubernetes username      |
-| `usernamePrefix` | `oidc:`                                 | Username prefix                           |
+| `usernamePrefix` | `""`                                    | Username prefix (empty — see groups note) |
 | `groupsClaim`    | `groups`                                | ID-token claim → Kubernetes groups        |
-| `groupsPrefix`   | `oidc:`                                 | Group prefix                              |
+| `groupsPrefix`   | `""`                                    | Group prefix (empty — bare group names)   |
 
 **clientID must be copied by hand**: Zitadel generates the Client ID when it
 creates the `Oidc` app, so it cannot be known declaratively up front. Read it
@@ -86,10 +86,27 @@ off the app (or its status/the Zitadel console) and paste it into the cluster's
 `clientID` — the apiserver would start with a broken `--oidc-client-id` flag.
 Enabling/disabling rolls the control-plane machines (apiserver flag change).
 
-The `kubernetes` Zitadel project already defines `kube-user` / `kube-admin`
-roles (`clusters/openstack/crossplane/zitadel/roles.yaml`); with role assertion
-on, those surface in the `groups` claim and can be bound via RBAC
-(`oidc:kube-admin`, `oidc:kube-user`).
+### Group mapping & RBAC
+
+The `kubernetes` Zitadel project defines `kube-user` / `kube-admin` roles
+(`clusters/openstack/crossplane/zitadel/roles.yaml`). The shared Zitadel
+**`groupsClaim` Action** (`clusters/openstack/crossplane/zitadel/actions.yaml`)
+collects each user's granted project role keys and writes them into the token's
+`groups` claim as **bare names** (e.g. `kube-admin`, `kube-user` — no prefix).
+
+Because the groups arrive bare, the ClusterClass sets an **empty `groupsPrefix`**
+so the apiserver presents the Kubernetes group exactly as `kube-admin` /
+`kube-user`. The RBAC bindings that grant those groups access live at
+**`clusters/mgmt/apps/kubernetes-rbac/`** (applied by the `kubernetes-rbac` Flux
+Kustomization):
+
+- `kube-admin` → `cluster-admin` ClusterRole
+- `kube-user` → `view` ClusterRole
+
+This mirrors the bealv reference setup (`gitops/apps/kubernetes/crb.yaml` binds
+the bare `kube-admin` group to `cluster-admin`). If you set a non-empty
+`groupsPrefix`, you must rename the binding subjects to `<prefix>kube-admin`
+accordingly.
 
 ### OpenStack credentials (`identityRef`)
 

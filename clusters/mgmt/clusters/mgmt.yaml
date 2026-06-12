@@ -41,4 +41,4 @@ spec:
         value:
           enabled: true
           issuerURL: https://rpcu-gabeck.eu1.zitadel.cloud
-          clientID: "377050089060836713"
+          clientID: "377050089077613929"

@@ -196,10 +196,10 @@ spec:
     resources:
       placement:
         requests:
-          cpu: 200m
-          memory: 512Mi
-        limits:
+          cpu: 400m
           memory: 1Gi
+        limits:
+          memory: 2Gi
   placementCleanup:
     schedule: 0 0 1 * *
   policy:

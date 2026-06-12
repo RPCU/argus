@@ -37,3 +37,8 @@ spec:
         value: xmedium
       - name: apiServerFloatingIP
         value: 172.16.255.212
+      - name: oidc
+        value:
+          enabled: true
+          issuerURL: https://rpcu-gabeck.eu1.zitadel.cloud
+          clientID: "377050089060836713"

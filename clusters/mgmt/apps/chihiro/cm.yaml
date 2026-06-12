@@ -38,6 +38,11 @@ data:
                 value: xmedium
               - name: workerFlavor
                 value: xmedium
+              - name: oidc
+                value:
+                  enabled: true
+                  issuerURL: https://rpcu-gabeck.eu1.zitadel.cloud
+                  clientID: "377050089060836713"
             controlPlane:
               replicas: 3
             version: PLACEHOLDER_VERSION

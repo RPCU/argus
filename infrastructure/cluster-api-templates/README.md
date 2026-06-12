@@ -37,21 +37,59 @@ template).
 
 Set these in a `Cluster` `spec.topology.variables`:
 
-| Variable                       | Required | Default          | Purpose                                                         |
-| ------------------------------ | -------- | ---------------- | --------------------------------------------------------------- |
-| `identityRef`                  | yes      | —                | Secret (`name` + `cloudName`) holding the OpenStack clouds.yaml |
-| `externalNetworkId`            | yes      | —                | ID of the external / floating-IP network                        |
-| `imageName`                    | yes      | —                | Glance image name used for all machines                         |
-| `managedSubnetCIDR`            | no       | `192.168.1.0/24` | CIDR for the managed node subnet                                |
-| `managedSubnetAllocationPools` | no       | `.11`–`.254`     | DHCP allocation ranges (leaves low IPs free for manual ports)   |
-| `controlPlaneFlavor`           | no       | `large`          | OpenStack flavor for control-plane machines                     |
-| `workerFlavor`                 | no       | `xlarge`         | OpenStack flavor for worker machines                            |
-| `sshKeyName`                   | no       | `""` (off)       | Existing OpenStack keypair to inject (patch disabled if empty)  |
-| `apiServerFloatingIP`          | no       | auto-allocated   | Pin a specific floating IP to the API server LB                 |
+| Variable                       | Required | Default           | Purpose                                                         |
+| ------------------------------ | -------- | ----------------- | --------------------------------------------------------------- |
+| `identityRef`                  | yes      | —                 | Secret (`name` + `cloudName`) holding the OpenStack clouds.yaml |
+| `externalNetworkId`            | yes      | —                 | ID of the external / floating-IP network                        |
+| `imageName`                    | yes      | —                 | Glance image name used for all machines                         |
+| `managedSubnetCIDR`            | no       | `192.168.1.0/24`  | CIDR for the managed node subnet                                |
+| `managedSubnetAllocationPools` | no       | `.11`–`.254`      | DHCP allocation ranges (leaves low IPs free for manual ports)   |
+| `controlPlaneFlavor`           | no       | `large`           | OpenStack flavor for control-plane machines                     |
+| `workerFlavor`                 | no       | `xlarge`          | OpenStack flavor for worker machines                            |
+| `sshKeyName`                   | no       | `""` (off)        | Existing OpenStack keypair to inject (patch disabled if empty)  |
+| `apiServerFloatingIP`          | no       | auto-allocated    | Pin a specific floating IP to the API server LB                 |
+| `oidc`                         | no       | `{enabled:false}` | kube-apiserver OIDC via the shared Zitadel "kubernetes" client  |
 
 Topology-level knobs that are _not_ class variables (set them directly under
 `spec.topology`): Kubernetes `version`, control-plane `replicas`, and each
 `machineDeployments[].replicas`.
+
+### kube-apiserver OIDC (`oidc`)
+
+The `oidc` object variable wires the control-plane apiserver to the **shared
+Zitadel "kubernetes" OIDC client** (`clusters/openstack/crossplane/zitadel/oidc-apps.yaml`).
+That Zitadel `Oidc` app is a **public / native client using PKCE with NO client
+secret**: the kube-apiserver only validates ID tokens against the issuer +
+clientID (it never does a client-credential exchange), and `kubectl oidc-login`
+(kubelogin) performs the auth-code + PKCE flow from the user's machine. Because
+there is no secret, the app has no `writeConnectionSecretToRef` and nothing
+needs to be plumbed into the mgmt cluster.
+
+When `oidc.enabled: true`, an `enabledIf` patch appends these apiserver
+`extraArgs`: `--oidc-issuer-url`, `--oidc-client-id`, `--oidc-username-claim`,
+`--oidc-username-prefix`, `--oidc-groups-claim`, `--oidc-groups-prefix`.
+
+| Field            | Default                                 | Purpose                                   |
+| ---------------- | --------------------------------------- | ----------------------------------------- |
+| `enabled`        | `false`                                 | Inject the `--oidc-*` flags               |
+| `issuerURL`      | `https://rpcu-gabeck.eu1.zitadel.cloud` | OIDC issuer (the Zitadel instance)        |
+| `clientID`       | `""`                                    | Client ID of the Zitadel "kubernetes" app |
+| `usernameClaim`  | `sub`                                   | ID-token claim → Kubernetes username      |
+| `usernamePrefix` | `oidc:`                                 | Username prefix                           |
+| `groupsClaim`    | `groups`                                | ID-token claim → Kubernetes groups        |
+| `groupsPrefix`   | `oidc:`                                 | Group prefix                              |
+
+**clientID must be copied by hand**: Zitadel generates the Client ID when it
+creates the `Oidc` app, so it cannot be known declaratively up front. Read it
+off the app (or its status/the Zitadel console) and paste it into the cluster's
+`oidc.clientID`, then flip `enabled: true`. Do **not** enable with an empty
+`clientID` — the apiserver would start with a broken `--oidc-client-id` flag.
+Enabling/disabling rolls the control-plane machines (apiserver flag change).
+
+The `kubernetes` Zitadel project already defines `kube-user` / `kube-admin`
+roles (`clusters/openstack/crossplane/zitadel/roles.yaml`); with role assertion
+on, those surface in the `groups` claim and can be bound via RBAC
+(`oidc:kube-admin`, `oidc:kube-user`).
 
 ### OpenStack credentials (`identityRef`)
 

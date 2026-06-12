@@ -1,0 +1,8 @@
+# Kamaji control plane provider.
+apiVersion: operator.cluster.x-k8s.io/v1alpha2
+kind: ControlPlaneProvider
+metadata:
+  name: kamaji
+  namespace: capi-kamaji-control-plane-system
+spec:
+  version: v0.20.0

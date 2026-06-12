@@ -25,5 +25,6 @@ resources:
   - chihiro.yaml
   - kubernetes-rbac.yaml
   - flux-operator.yaml
+  - kamaji.yaml
   - fluxcd/
   - clusters/

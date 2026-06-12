@@ -1,0 +1,13 @@
+etcd:
+  deploy: true
+  persistence:
+    storageClassName: csi-cinder-sc-delete
+image:
+  tag: 26.6.2-edge
+kamaji-etcd:
+  clusterDomain: "mgmt.local"
+gatewayAPI:
+  enabled: false
+datastore:
+  enabled: true
+  name: default

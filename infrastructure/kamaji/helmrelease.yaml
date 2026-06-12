@@ -1,0 +1,19 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kamaji
+spec:
+  interval: 5m
+  dependsOn:
+    - name: kamaji-crds
+  chart:
+    spec:
+      chart: kamaji
+      version: "0.0.0+latest"
+      sourceRef:
+        kind: HelmRepository
+        name: kamaji
+        namespace: kamaji-system
+  valuesFrom:
+    - kind: ConfigMap
+      name: kamaji-values

@@ -43,8 +43,8 @@ data:
                   enabled: true
                   issuerURL: https://rpcu-gabeck.eu1.zitadel.cloud
                   clientID: "377050089077613929"
-            controlPlane:
-              replicas: 3
+            # controlPlane:
+            #   replicas: 3
             version: PLACEHOLDER_VERSION
             workers:
               machineDeployments:

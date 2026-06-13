@@ -5,6 +5,13 @@ etcd:
 image:
   tag: 26.6.2-edge
 replicaCount: 3
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 256Mi
 kamaji-etcd:
   clusterDomain: "mgmt.local"
 gatewayAPI:

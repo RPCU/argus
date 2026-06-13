@@ -48,3 +48,45 @@ data:
       - apiGroup: rbac.authorization.k8s.io
         kind: Group
         name: kube-user
+    # ---------------------------------------------------------------
+    # Kamaji kube-apiserver -> kubelet RBAC (workaround).
+    # Kamaji does not call kubeadm's AllowAPIServerToAccessKubeletAPI
+    # phase, so the ClusterRole + ClusterRoleBinding that let the
+    # kube-apiserver proxy logs/exec/port-forward to node kubelets
+    # are never created. Upstream: clastix/kamaji#1171
+    # Remove once Kamaji ships the fix.
+    # ---------------------------------------------------------------
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    metadata:
+      name: system:kube-apiserver-to-kubelet
+    rules:
+      - apiGroups: [""]
+        resources:
+          - nodes/proxy
+          - nodes/log
+          - nodes/spec
+          - nodes/metrics
+          - pods/log
+          - pods/exec
+          - pods/portforward
+        verbs: ["*"]
+      - apiGroups: ["metrics.k8s.io"]
+        resources:
+          - nodes
+          - pods
+        verbs: ["get", "list"]
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: system:kube-apiserver-kubelet
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: system:kube-apiserver-to-kubelet
+    subjects:
+      - apiGroup: rbac.authorization.k8s.io
+        kind: User
+        name: kube-apiserver-kubelet-client

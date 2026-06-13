@@ -1,0 +1,32 @@
+# -----------------------------------------------------------------------------
+# Control plane template (KamajiControlPlane) — v2
+#
+# Same as v1 but initialises apiServer.extraArgs as an empty array so that
+# ClusterClass patches can append (--op add, path …/extraArgs/-) to it.
+# RFC 6902 "add" with "/-" requires the target array to already exist.
+#
+# IMMUTABILITY: KamajiControlPlaneTemplate.spec.template.spec is immutable
+# once referenced by a ClusterClass. To change anything here, create a NEW
+# template with a bumped version suffix (e.g. -v3), point the ClusterClass
+# controlPlane.templateRef at it, and let the topology controller reconcile.
+# -----------------------------------------------------------------------------
+apiVersion: controlplane.cluster.x-k8s.io/v1alpha2
+kind: KamajiControlPlaneTemplate
+metadata:
+  name: openstack-kamaji-control-plane-v2
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      dataStoreName: default
+      apiServer:
+        extraArgs: []
+      kubelet:
+        preferredAddressTypes:
+          - InternalIP
+          - ExternalIP
+          - Hostname
+      network:
+        serviceType: LoadBalancer
+      addons:
+        coreDNS: {}

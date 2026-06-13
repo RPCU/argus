@@ -634,7 +634,23 @@ and the `-vN` immutability/rotation workflow.
 - `templates/infracluster.yaml` - OpenStackClusterTemplate `openstack-default-cluster-v1` **and** `-v2`. The `managedSecurityGroups` sets `allowAllInClusterTraffic: true` plus explicit Cilium data-plane rules (VXLAN UDP 8472, health TCP 4240, Hubble TCP 4244, ICMP via `remoteManagedGroups: [controlplane, worker]`) — required because CAPO's default managed SGs only open API/etcd/kubelet/node-port and would otherwise drop Cilium's cross-node overlay (see note in Cluster Safety). **`-v2` additionally opens the Kubernetes NodePort range (TCP 30000–32767 from `0.0.0.0/0`)** — REQUIRED for external `type: LoadBalancer` Services via the OpenStack CCM + Octavia (the Octavia/OVN VIP DNATs to `<node IP>:<nodePort>`; without this rule the managed SG drops it and the LB floating IP times out at the TCP layer despite correct VIP/floating-IP/DNS). The ClusterClass points `infrastructure.templateRef` at `-v2`; `-v1` is retained only until the rotation is confirmed, then deleted (per the README `-vN` workflow — an `OpenStackClusterTemplate` rotation reconciles the SGs onto the live `OpenStackCluster` without rolling machines). `identityRef` is hardcoded to `mgmt-cloud-config` (CAPO requires it at admission time); the ClusterClass `identityRef` variable/patch overrides this default per-cluster when the topology controller synthesizes the concrete `OpenStackCluster`.
 - `templates/machines.yaml` - OpenStackMachineTemplate `openstack-default-control-plane-v1` and `openstack-default-worker-v1` (flavor/image are `dummy` placeholders overwritten by patches)
 - `namespace.yaml` - Namespace `mgmt`
-- `README.md` - Structure, variable table, credentials/ESO note, new-cluster recipe, and immutability/`-vN` rotation workflow
+- `README.md` - Structure, variable table, credentials/ESO note, new-cluster recipe, immutability/`-vN` rotation workflow, and **"Multiple worker pools with different flavors"** (per-pool `workerFlavor` overrides)
+
+> **Multiple worker pools / per-pool flavors.** Both ClusterClasses
+> (`openstack-default` and `openstack-kamaji`) expose a single `default-worker`
+> machine-deployment class, and the `workerFlavor` patch targets that class (not
+> a specific pool). A `Cluster` CR can therefore instantiate `default-worker`
+> any number of times under `spec.topology.workers.machineDeployments[]` and set
+> a different flavor per pool via `machineDeployments[].variables.overrides`
+> (`name: workerFlavor`, `value: <flavor>`). A pool that omits the override
+> inherits the top-level `workerFlavor` (default `xlarge`). No extra worker
+> classes or template rotation are needed — this is the idiomatic CAPI
+> per-MachineDeployment variable-override mechanism. Other worker-class variables
+> (`imageName`, `sshKeyName`) can be overridden the same way; `controlPlaneFlavor`
+> and cluster-wide values (e.g. `externalNetworkId`) cannot be per-pool. See the
+> README section for a full example. The same comment is inlined above the
+> `workerFlavor` patch in both `clusterclass.yaml` and `clusterclass-kamaji.yaml`.
+
 - `kustomization.yaml` - Kustomization manifest (references namespace, clusterclass, and all four `templates/*` files). The actual `Cluster` CR lives at `clusters/mgmt/clusters/mgmt.yaml` and now references `classRef.name: openstack-default` (and no longer sets an `identityRef` variable).
 
 > The OpenStack credentials secret (`mgmt-cloud-config`) consumed by the hardcoded

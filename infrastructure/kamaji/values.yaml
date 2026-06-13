@@ -4,6 +4,7 @@ etcd:
     storageClassName: csi-cinder-sc-delete
 image:
   tag: 26.6.2-edge
+replicaCount: 3
 kamaji-etcd:
   clusterDomain: "mgmt.local"
 gatewayAPI:

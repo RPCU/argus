@@ -296,6 +296,12 @@ spec:
               valueFrom:
                 variable: imageName
 
+    # workerFlavor sets the flavor for the default-worker machine-deployment
+    # class. Because the patch targets that class (not a specific pool), a
+    # Cluster can instantiate `default-worker` multiple times and override
+    # workerFlavor per-pool via machineDeployments[].variables.overrides —
+    # giving heterogeneous worker pools (different flavors) without extra
+    # classes. See README "Multiple worker pools with different flavors".
     - name: workerFlavor
       definitions:
         - selector:

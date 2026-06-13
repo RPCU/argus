@@ -45,7 +45,7 @@ Set these in a `Cluster` `spec.topology.variables`:
 | `managedSubnetCIDR`            | no       | `192.168.1.0/24`  | CIDR for the managed node subnet                                |
 | `managedSubnetAllocationPools` | no       | `.11`–`.254`      | DHCP allocation ranges (leaves low IPs free for manual ports)   |
 | `controlPlaneFlavor`           | no       | `large`           | OpenStack flavor for control-plane machines                     |
-| `workerFlavor`                 | no       | `xlarge`          | OpenStack flavor for worker machines                            |
+| `workerFlavor`                 | no       | `xlarge`          | OpenStack flavor for worker machines (per-pool overridable)     |
 | `sshKeyName`                   | no       | `""` (off)        | Existing OpenStack keypair to inject (patch disabled if empty)  |
 | `apiServerFloatingIP`          | no       | auto-allocated    | Pin a specific floating IP to the API server LB                 |
 | `oidc`                         | no       | `{enabled:false}` | kube-apiserver OIDC via the shared Zitadel "kubernetes" client  |
@@ -53,6 +53,54 @@ Set these in a `Cluster` `spec.topology.variables`:
 Topology-level knobs that are _not_ class variables (set them directly under
 `spec.topology`): Kubernetes `version`, control-plane `replicas`, and each
 `machineDeployments[].replicas`.
+
+### Multiple worker pools with different flavors
+
+> Applies to **both** ClusterClasses — `openstack-default` and `openstack-kamaji`
+> share the same `default-worker` class and `workerFlavor` patch.
+
+`workerFlavor` is a normal class variable, and the `workerFlavor` patch targets
+the `default-worker` machine-deployment class. CAPI lets you instantiate the
+**same class any number of times** as separate `machineDeployments` and
+**override** a class variable per-pool via `variables.overrides`. So you do not
+need extra worker classes to mix flavors — just add more `machineDeployments`
+entries and override `workerFlavor` on each:
+
+```yaml
+workers:
+  machineDeployments:
+    # General-purpose pool — uses the class default workerFlavor (xlarge)
+    - class: default-worker
+      name: md-general
+      replicas: 3
+    # Memory-optimised pool — overrides the flavor for THIS pool only
+    - class: default-worker
+      name: md-bigmem
+      replicas: 2
+      variables:
+        overrides:
+          - name: workerFlavor
+            value: xxlarge
+    # GPU pool — different flavor again
+    - class: default-worker
+      name: md-gpu
+      replicas: 1
+      variables:
+        overrides:
+          - name: workerFlavor
+            value: gpu-a100
+```
+
+Each pool becomes its own `MachineDeployment` with independent `replicas`,
+flavor, scaling, and rolling-update lifecycle. A pool that omits the override
+inherits the top-level `workerFlavor` (or the class default `xlarge`). Any
+other class variable that targets `default-worker` — e.g. `imageName`,
+`sshKeyName` — can be overridden the same way for heterogeneous pools.
+
+> Per-pool `variables.overrides` only work for variables whose patch selects the
+> worker class. `controlPlaneFlavor` cannot be overridden per worker pool (it
+> targets the control plane); cluster-wide values like `externalNetworkId` are
+> not per-pool either.
 
 ### kube-apiserver OIDC (`oidc`)
 
@@ -159,6 +207,15 @@ spec:
         - class: default-worker
           name: md-0
           replicas: 3
+        # Optional extra pool with a different flavor (see "Multiple worker
+        # pools with different flavors" above):
+        # - class: default-worker
+        #   name: md-bigmem
+        #   replicas: 2
+        #   variables:
+        #     overrides:
+        #       - name: workerFlavor
+        #         value: xxlarge
     variables:
       - name: identityRef
         value: { name: my-cloud-config, cloudName: openstack }

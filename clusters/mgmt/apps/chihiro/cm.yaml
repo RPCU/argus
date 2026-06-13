@@ -21,14 +21,14 @@ data:
           clusterNetwork:
             pods:
               cidrBlocks:
-                - 10.244.0.0/16
+                - 10.207.0.0/16
             serviceDomain: PLACEHOLDER_SERVICE_DOMAIN
             services:
               cidrBlocks:
-                - 10.96.0.0/16
+                - 10.107.0.0/16
           topology:
             classRef:
-              name: openstack-default
+              name: openstack-kamaji
             variables:
               - name: identityRef
                 value:
@@ -38,8 +38,6 @@ data:
                 value: 1cfd69da-057c-4748-a0d4-de5b0ca77db2
               - name: imageName
                 value: hephaestus-kaas-26.05-v1.36.1
-              - name: controlPlaneFlavor
-                value: xmedium
               - name: workerFlavor
                 value: xmedium
               - name: oidc
@@ -47,8 +45,6 @@ data:
                   enabled: true
                   issuerURL: https://rpcu-gabeck.eu1.zitadel.cloud
                   clientID: "377050089077613929"
-            # controlPlane:
-            #   replicas: 3
             version: PLACEHOLDER_VERSION
             workers:
               machineDeployments:

@@ -28,4 +28,4 @@ resources:
   - flux-operator.yaml
   - kamaji.yaml
   - fluxcd/
-  - clusters/
+  - clusters.yaml

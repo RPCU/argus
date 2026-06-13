@@ -88,32 +88,6 @@ spec:
           type: string
           default: 192.168.1.0/24
           description: CIDR for the managed node subnet.
-
-    - name: managedSubnetAllocationPools
-      required: false
-      schema:
-        openAPIV3Schema:
-          type: array
-          description: >-
-            IP ranges OpenStack will allocate from for machines. IPs outside
-            these pools (e.g. .2-.10) can still be used for manual ports.
-            If omitted, the full CIDR range is allocated.
-          default:
-            - start: 192.168.1.11
-              end: 192.168.1.254
-          items:
-            type: object
-            properties:
-              start:
-                type: string
-                description: First IP in the allocation pool (inclusive).
-              end:
-                type: string
-                description: Last IP in the allocation pool (inclusive).
-            required:
-              - start
-              - end
-
     - name: imageName
       required: true
       schema:
@@ -273,14 +247,6 @@ spec:
               valueFrom:
                 template: |
                   - cidr: '{{ .managedSubnetCIDR }}'
-                    {{- if .managedSubnetAllocationPools }}
-                    allocationPools:
-                    {{- range .managedSubnetAllocationPools }}
-                      - start: '{{ .start }}'
-                        end: '{{ .end }}'
-                    {{- end }}
-                    {{- end }}
-
     - name: imageName
       definitions:
         - selector:

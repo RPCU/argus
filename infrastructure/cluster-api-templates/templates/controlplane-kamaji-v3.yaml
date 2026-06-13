@@ -1,0 +1,34 @@
+# -----------------------------------------------------------------------------
+# Control plane template (KamajiControlPlane) — v3
+#
+# Same as v2 but adds konnectivity addon. Konnectivity runs a network proxy
+# between the kube-apiserver (in the mgmt cluster) and the kubelets (on the
+# workload nodes), so the apiserver can reach kubelets even when the direct
+# path is blocked by security groups or network policies.
+#
+# IMMUTABILITY: KamajiControlPlaneTemplate.spec.template.spec is immutable
+# once referenced by a ClusterClass. To change anything here, create a NEW
+# template with a bumped version suffix (e.g. -v4), point the ClusterClass
+# controlPlane.templateRef at it, and let the topology controller reconcile.
+# -----------------------------------------------------------------------------
+apiVersion: controlplane.cluster.x-k8s.io/v1alpha2
+kind: KamajiControlPlaneTemplate
+metadata:
+  name: openstack-kamaji-control-plane-v3
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      dataStoreName: default
+      apiServer:
+        extraArgs: []
+      kubelet:
+        preferredAddressTypes:
+          - InternalIP
+          - ExternalIP
+          - Hostname
+      network:
+        serviceType: LoadBalancer
+      addons:
+        coreDNS: {}
+        konnectivity: {}

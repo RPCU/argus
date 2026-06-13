@@ -8,6 +8,7 @@ spec:
   syncMode: ContinuousWithDriftDetection
   clusterSelector:
     matchLabels:
+      type: workload
       sveltos.argus.rpcu.io/oidc-rbac: enabled
   policyRefs:
     - name: oidc-rbac

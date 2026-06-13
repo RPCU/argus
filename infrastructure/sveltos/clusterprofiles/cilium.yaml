@@ -1,0 +1,36 @@
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: cilium
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  clusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/cilium: enabled
+  helmCharts:
+    - repositoryURL: https://helm.cilium.io/
+      repositoryName: cilium
+      chartName: cilium/cilium
+      chartVersion: "1.18.6"
+      releaseName: cilium
+      releaseNamespace: kube-system
+      helmChartAction: Install
+      # Cluster-specific values, instantiated by Sveltos from the matching
+      # Cluster resource in the management cluster. Without these the bootstrap
+      # chart cannot reach the API server (kube-proxy-free workload clusters
+      # have no CNI/DNS yet, so Cilium must be told the apiserver host/port
+      # directly). Mirrors infrastructure/cilium/values.yaml + the per-cluster
+      # fields the cilium-workload-values ConfigMap generates for the Flux
+      # takeover path.
+      values: |
+        k8sServiceHost: "{{ .Cluster.spec.controlPlaneEndpoint.host }}"
+        k8sServicePort: "{{ .Cluster.spec.controlPlaneEndpoint.port }}"
+        ipam:
+          operator:
+            clusterPoolIPv4PodCIDRList:
+              - "{{ (index .Cluster.spec.clusterNetwork.pods.cidrBlocks 0) }}"
+        clusterDomain: "{{ .Cluster.metadata.name }}.local"
+---
+

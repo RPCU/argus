@@ -182,6 +182,29 @@ Key files:
 > (org/projects/roles/actions) — that is owned exclusively by the openstack
 > overlay, since both clusters share one Zitadel instance.
 
+**Workload clusters**: no dedicated `clusters/` directory.
+
+CAPI-provisioned workload clusters are fully **Sveltos-driven** — there is no
+`clusters/workload/` directory. The Sveltos `flux` ClusterProfile bootstraps the
+Flux Operator + a FluxInstance whose `sync` block points **directly at
+`./infrastructure/fluxcd/operator`**, so Flux self-reconciles its own operator
+install from the centralized repo (the operator's own `kustomization.yaml` is the
+sync root — no per-workload-cluster overlay dir is needed).
+
+Everything else a workload cluster gets is pushed **per-cluster by Sveltos
+ClusterProfiles**, gated by labels (see the `infrastructure/sveltos` section):
+
+- The Flux Operator + FluxInstance (`flux` ClusterProfile, `type: workload`).
+- Cilium — both the bootstrap Helm install (`cilium` ClusterProfile) and the
+  Flux-managed takeover (`cilium-values` ClusterProfile, which also pushes the
+  Flux `cilium` Kustomization CR) — gated by `sveltos.argus.rpcu.io/cilium: enabled`.
+- OIDC user RBAC (`oidc-rbac` ClusterProfile, gated by
+  `sveltos.argus.rpcu.io/oidc-rbac: enabled`).
+
+This avoids a shared Git sync path that would force an addon onto every
+Flux-bootstrapped cluster: opt-in addons live in their own labelled
+ClusterProfiles, not in a wholesale-reconciled directory.
+
 ### infrastructure/ - Reusable Components
 
 **cert-manager/** - SSL/TLS Certificate Management (v1.19.2)
@@ -471,6 +494,66 @@ files). Deployed only on mgmt for now.
   Zitadel `groupsClaim` Action output and the ClusterClass empty
   `--oidc-groups-prefix`. `clusterprofiles/kustomization.yaml` lists it (add
   future ClusterProfiles here).
+- `clusterprofiles/cilium.yaml` - **CNI bootstrap for workload clusters**.
+  A Sveltos `ClusterProfile` (`syncMode: ContinuousWithDriftDetection`) that
+  deploys Cilium v1.18.6 via `helmCharts` (same chart as
+  `infrastructure/cilium/helmrelease.yaml`). The cluster-specific values
+  (`k8sServiceHost`/`k8sServicePort`, the IPAM `clusterPoolIPv4PodCIDRList`, and
+  `clusterDomain`) are expressed **inline** as a templated `helmCharts[].values`
+  block, which Sveltos instantiates from the matching `Cluster` resource in the
+  management cluster (`.Cluster.spec.controlPlaneEndpoint.host/port`,
+  `.Cluster.spec.clusterNetwork.pods.cidrBlocks[0]`, `.Cluster.metadata.name`).
+  These values are REQUIRED — a kube-proxy-free workload cluster has no
+  CNI/DNS yet, so Cilium must be told the apiserver host/port directly or the
+  bootstrap chart fails to come up. **Opt-in**: `clusterSelector:
+matchLabels: {type: workload, sveltos.argus.rpcu.io/cilium: enabled}`. This is a
+  bootstrap only — once Cilium is running and pods can schedule, the
+  `cilium-values` ClusterProfile pushes the Flux `cilium` Kustomization CR which
+  takes over reconciling Cilium from `infrastructure/cilium`. No version sync
+  needed: Flux overwrites with the repo version.
+- `clusterprofiles/cilium-values.yaml` - **Flux takeover path for Cilium on
+  OPT-IN workload clusters** (the per-cluster modularity gate). A Sveltos
+  `ClusterProfile` (`syncMode: ContinuousWithDriftDetection`, `clusterSelector:
+matchLabels: {type: workload, sveltos.argus.rpcu.io/cilium: enabled}`) that pushes
+  **two** `policyRefs` ConfigMaps to each matching cluster: (1) a templated
+  `cilium-workload-values` ConfigMap with per-cluster values pulled from the
+  SveltosCluster resource (pod CIDR `spec.clusterNetwork.pods.cidrBlocks[0]`, API
+  server endpoint `spec.controlPlaneEndpoint.host/port`, domain
+  `<cluster-name>.local`); and (2) a `cilium-flux-kustomization` ConfigMap holding
+  the Flux `cilium` Kustomization CR (path `infrastructure/cilium`, patched to
+  source the values ConfigMap). This is **deliberately NOT in a shared Flux sync
+  path** — keeping the Flux Kustomization CR in this opt-in ClusterProfile means
+  Flux-managed Cilium only lands on clusters carrying the cilium label, instead of
+  every Flux-bootstrapped cluster. (The bootstrap `cilium` ClusterProfile above
+  does NOT consume the values ConfigMap — it carries its own inline templated
+  values; this profile is the post-bootstrap Flux takeover.)
+- `clusterprofiles/flux.yaml` - **Flux bootstrap for workload clusters**, split
+  into TWO `ClusterProfile`s (both `clusterSelector: matchLabels: type: workload`)
+  because a ClusterProfile has a single `syncMode` and the two pieces want
+  different semantics:
+  - `flux` (**`syncMode: OneTime`**) — deploys the Flux Operator v0.40.0 via
+    `helmCharts` (OCI chart `oci://ghcr.io/controlplaneio-fluxcd/charts`, chart
+    `flux-operator`; `installCRDs: true` installs the `FluxInstance` CRD, default
+    `rbac.create: true` grants the operator cluster-admin to deploy the Flux
+    controllers). A one-time bootstrap; the operator thereafter self-updates via
+    the FluxInstance's sync to `./infrastructure/fluxcd/operator`.
+  - `flux-instance` (**`syncMode: ContinuousWithDriftDetection`**, `dependsOn:
+[flux]`) — pushes the `flux-sources` ConfigMap (`projectsveltos.io/template:
+"true"`) containing the `FluxInstance` CR, kept continuously reconciled so its
+    desired state is enforced and drift corrected. `dependsOn: flux` because the
+    `FluxInstance` CRD ships with the operator, so the operator must land first.
+
+  The FluxInstance mirrors `infrastructure/fluxcd/instances/flux.yaml` (all four
+  components incl. `notification-controller`, the `concurrent=42` patch) with
+  `cluster.domain` patched per-cluster to `{{ .Cluster.metadata.name }}.local` and
+  a **real `sync` block** pointing at `https://github.com/RPCU/argus.git`
+  `refs/heads/main` path **`./infrastructure/fluxcd/operator`** — so **Flux
+  self-reconciles its own operator install** directly from the centralized repo
+  (the operator's own `kustomization.yaml` is the sync root — no
+  `clusters/workload/` directory is needed). Opt-in addons (e.g. Cilium) are NOT
+  in this sync path — they are pushed by their own labelled ClusterProfiles, so
+  the shared Git path can never force an addon onto every workload cluster.
+
 - `gateway/httproute-dashboard.yaml` - kgateway `HTTPRoute` exposing the dashboard
   at `sveltos.mgmt.rpcu.lan` via the `https` Gateway (TLS terminates at the
   Gateway; backend `dashboard:80`). Hostname must match the dashboard
@@ -926,9 +1009,19 @@ CAPI management cluster (self-management target via `clusterctl move`):
     the shared Zitadel `kubernetes` client) + an `oidc-rbac` ClusterProfile that
     Sveltos pushes to opt-in child clusters (those labelled
     `sveltos.argus.rpcu.io/oidc-rbac: enabled`) binding both `kube-admin` and
-    `kube-user` to `cluster-admin` + kgateway `HTTPRoute` at
-    `sveltos.mgmt.rpcu.lan`. `wait: false` — the dashboard's placeholder OIDC
-    `clientId` must be set before it can come up healthy.
+    `kube-user` to `cluster-admin` + `cilium`/`cilium-values` ClusterProfiles
+    (`syncMode: ContinuousWithDriftDetection`) bootstrapping Cilium v1.18.6 and
+    pushing the Flux `cilium` Kustomization CR onto opt-in workload clusters
+    (label `sveltos.argus.rpcu.io/cilium: enabled`) + `flux` (`syncMode: OneTime`,
+    Flux operator v0.40.0) and `flux-instance` (`syncMode:
+ContinuousWithDriftDetection`, `dependsOn: flux`) ClusterProfiles deploying a
+    FluxInstance (mirrors `infrastructure/fluxcd/instances/flux.yaml` with
+    `cluster.domain` patched to `{{ .Cluster.metadata.name }}.local` and a `sync`
+    block pinned to `./infrastructure/fluxcd/operator`) so Flux self-reconciles
+    its own operator from the centralized repo — no `clusters/workload/` dir, and
+    opt-in addons are pushed by their own labelled ClusterProfiles, never via a
+    shared Git path. `wait: false` — the dashboard's placeholder OIDC `clientId`
+    must be set before it can come up healthy.
 
 ### Health Checks
 
@@ -1281,7 +1374,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: June 2026 (added a basic Sveltos install for the mgmt cluster: new `infrastructure/sveltos` base (one-concern-per-file: namespace, helmrepo, core HelmRelease v1.10.0, dashboard HelmRelease v1.10.1 wired for OIDC/PKCE against the shared Zitadel `kubernetes` client, an `oidc-rbac` ClusterProfile that Sveltos pushes to opt-in child clusters (label `sveltos.argus.rpcu.io/oidc-rbac: enabled`) binding both `kube-admin` and `kube-user` Zitadel OIDC groups to `cluster-admin`, and a kgateway `HTTPRoute` at `sveltos.mgmt.rpcu.lan`); new Flux Kustomization `clusters/mgmt/sveltos.yaml` (dependsOn kgateway, `wait: false` for the placeholder dashboard OIDC clientId) wired into `clusters/mgmt/kustomization.yaml`; documented the component, mgmt key-file, and dependency-chain entries. PRIOR: added kube-apiserver OIDC support to the `openstack-default` ClusterClass: new `oidc` object variable + `enabledIf` patch injecting `--oidc-*` apiserver flags onto the control-plane template; added the shared Zitadel `kubernetes` OIDC app (public/native PKCE, no client secret) in `clusters/openstack/crossplane/zitadel/oidc-apps.yaml`; wired the disabled-by-default `oidc` block into `clusters/mgmt/clusters/mgmt.yaml`; documented in cluster-api-templates README. PRIOR: restructured Crossplane layout: split shared bases (infrastructure/crossplane\*) from per-cluster overlays (clusters/<cluster>/crossplane/); moved openstack MRs/zitadel platform/OIDC apps into clusters/openstack/crossplane/ overlay with prune:false safety; added mgmt Crossplane + chihiro OIDC app (crossplane/zitadel/) with ESO key remapping to match chihiro expectations; documented mgmt Crossplane/chihiro OIDC section, updated deployment dependency chains for both clusters; removed stale infrastructure/crossplane-resources/ directory)
+**Last Updated**: June 2026 (updated Sveltos ClusterProfiles for workload clusters: `flux.yaml` changed to `syncMode: OneTime` and FluxInstance now mirrors `infrastructure/fluxcd/instances/flux.yaml` with `cluster.domain` patched to `{{ .Cluster.metadata.name }}.local` and no `sync` block (cilium Kustomization CR handles Cilium reconciliation separately); flux uses `excludeSelector: type: mgmt` to avoid the mgmt cluster; cilium opt-in via label `sveltos.argus.rpcu.io/cilium: enabled`; documented in sveltos section. PRIOR: added Sveltos ClusterProfiles for Cilium bootstrap and Flux operator on workload clusters: `cilium.yaml` (`syncMode: OneTime`) deploys Cilium v1.18.6 via `helmCharts` to bootstrap networking so pods can schedule; PRIOR: added a basic Sveltos install for the mgmt cluster: new `infrastructure/sveltos` base (one-concern-per-file: namespace, helmrepo, core HelmRelease v1.10.0, dashboard HelmRelease v1.10.1 wired for OIDC/PKCE against the shared Zitadel `kubernetes` client, an `oidc-rbac` ClusterProfile that Sveltos pushes to opt-in child clusters (label `sveltos.argus.rpcu.io/oidc-rbac: enabled`) binding both `kube-admin` and `kube-user` Zitadel OIDC groups to `cluster-admin`, and a kgateway `HTTPRoute` at `sveltos.mgmt.rpcu.lan`); new Flux Kustomization `clusters/mgmt/sveltos.yaml` (dependsOn kgateway, `wait: false` for the placeholder dashboard OIDC clientId) wired into `clusters/mgmt/kustomization.yaml`; documented the component, mgmt key-file, and dependency-chain entries. PRIOR: added kube-apiserver OIDC support to the `openstack-default` ClusterClass: new `oidc` object variable + `enabledIf` patch injecting `--oidc-*` apiserver flags onto the control-plane template; added the shared Zitadel `kubernetes` OIDC app (public/native PKCE, no client secret) in `clusters/openstack/crossplane/zitadel/oidc-apps.yaml`; wired the disabled-by-default `oidc` block into `clusters/mgmt/clusters/mgmt.yaml`; documented in cluster-api-templates README. PRIOR: restructured Crossplane layout: split shared bases (infrastructure/crossplane\*) from per-cluster overlays (clusters/<cluster>/crossplane/); moved openstack MRs/zitadel platform/OIDC apps into clusters/openstack/crossplane/ overlay with prune:false safety; added mgmt Crossplane + chihiro OIDC app (crossplane/zitadel/) with ESO key remapping to match chihiro expectations; documented mgmt Crossplane/chihiro OIDC section, updated deployment dependency chains for both clusters; removed stale infrastructure/crossplane-resources/ directory)
 **Repository**: https://github.com/RPCU/argus.git
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

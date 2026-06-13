@@ -1,0 +1,112 @@
+# Flux bootstrap for workload clusters, split into two ClusterProfiles so each
+# piece gets the right sync semantics (a ClusterProfile has a single syncMode):
+#
+#   - `flux`          (OneTime)                     — the Flux Operator Helm
+#                                                     install. A one-time
+#                                                     bootstrap; once installed,
+#                                                     the operator self-updates
+#                                                     via the FluxInstance sync
+#                                                     to infrastructure/fluxcd/operator.
+#   - `flux-instance` (ContinuousWithDriftDetection) — the FluxInstance CR. Kept
+#                                                     continuously reconciled so
+#                                                     its desired state (domain,
+#                                                     components, sync block) is
+#                                                     enforced and drift is
+#                                                     corrected.
+#
+# `flux-instance` dependsOn `flux` (the FluxInstance CRD ships with the operator,
+# so the operator must land first). Opt-in addons (e.g. Cilium) are NOT in the
+# FluxInstance sync path — they are pushed per-cluster by their own Sveltos
+# ClusterProfiles, gated by labels, so a shared Git path can't force an addon
+# onto every workload cluster.
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: flux
+  namespace: projectsveltos
+spec:
+  syncMode: OneTime
+  clusterSelector:
+    matchLabels:
+      type: workload
+  helmCharts:
+    - repositoryURL: oci://ghcr.io/controlplaneio-fluxcd/charts
+      repositoryName: flux-operator
+      chartName: flux-operator
+      chartVersion: "0.40.0"
+      releaseName: flux-operator
+      releaseNamespace: flux-system
+      helmChartAction: Install
+      values: |
+        # installCRDs (default true) installs the FluxInstance CRD; rbac.create
+        # (default true) grants the operator cluster-admin so it can deploy the
+        # Flux controllers from the FluxInstance.
+        installCRDs: true
+---
+# FluxInstance, continuously reconciled with drift detection (separate from the
+# OneTime operator install above).
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: flux-instance
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  dependsOn:
+    - flux
+  clusterSelector:
+    matchLabels:
+      type: workload
+  policyRefs:
+    - name: flux-sources
+      namespace: projectsveltos
+      kind: ConfigMap
+---
+# Template ConfigMap: Sveltos instantiates the Go templates from the matching
+# Cluster resource and deploys the resulting FluxInstance to each workload
+# cluster. Mirrors infrastructure/fluxcd/instances/flux.yaml with cluster.domain
+# patched per-cluster and the sync path pinned to ./infrastructure/fluxcd/operator
+# (Flux self-reconciles its own operator from Git; no clusters/workload/ dir).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flux-sources
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/template: "true"
+data:
+  flux-instance.yaml: |
+    apiVersion: fluxcd.controlplane.io/v1
+    kind: FluxInstance
+    metadata:
+      name: flux
+      namespace: flux-system
+    spec:
+      distribution:
+        version: "2.x"
+        registry: "ghcr.io/fluxcd"
+      components:
+        - source-controller
+        - kustomize-controller
+        - helm-controller
+        - notification-controller
+      cluster:
+        type: kubernetes
+        multitenant: false
+        networkPolicy: true
+        domain: "{{ .Cluster.metadata.name }}.local"
+      kustomize:
+        patches:
+          - target:
+              kind: Deployment
+              name: "(kustomize-controller|helm-controller)"
+            patch: |
+              - op: add
+                path: /spec/template/spec/containers/0/args/-
+                value: --concurrent=42
+      sync:
+        kind: GitRepository
+        url: "https://github.com/RPCU/argus.git"
+        ref: "refs/heads/main"
+        path: "./infrastructure/fluxcd/operator"
+        interval: "1m"

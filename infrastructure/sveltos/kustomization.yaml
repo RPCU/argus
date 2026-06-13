@@ -7,6 +7,8 @@
 #   dashboard.yaml    - Sveltos dashboard (OIDC, PKCE public client)
 #   clusterprofiles/  - ClusterProfiles Sveltos pushes to child clusters
 #                       (oidc-rbac: kube-admin/kube-user -> cluster-admin)
+#                       (cilium: OneTime CNI bootstrap)
+#                       (flux: Flux operator + reconciles Cilium from repo)
 #   gateway/          - kgateway HTTPRoute exposing the dashboard
 resources:
   - namespace.yaml

@@ -29,4 +29,3 @@ spec:
         serviceType: LoadBalancer
       addons:
         coreDNS: {}
-        kubeProxy: {}

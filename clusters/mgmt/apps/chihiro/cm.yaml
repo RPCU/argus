@@ -7,11 +7,32 @@ data:
     # Most configuration is now handled via environment variables
     # See deployment.yaml for CHIHIRO_* environment variables
     cluster:
+      injections:
+        name:
+          path: metadata.name
+        version:
+          path: spec.topology.version
+          label: "Kubernetes Version"
+          editable: true
+        serviceDomain:
+          path: spec.clusterNetwork.serviceDomain
+        groups:
+          label: "Access Groups"
+          editable: true
+        workerGroups:
+          path: spec.topology.workers.machineDeployments
+          label: "Worker Groups"
+          editable: true
+        controlPlaneReplicas:
+          path: spec.topology.controlPlane.replicas
+          label: "Control Plane Replicas"
+          editable: true
+          min: 1
+          max: 9
       template: |
         apiVersion: cluster.x-k8s.io/v1beta2
         kind: Cluster
         metadata:
-          name: PLACEHOLDER_NAME
           namespace: mgmt
           labels:
             sveltos.argus.rpcu.io/oidc-rbac: enabled
@@ -21,14 +42,16 @@ data:
           clusterNetwork:
             pods:
               cidrBlocks:
-                - 10.207.0.0/16
-            serviceDomain: PLACEHOLDER_SERVICE_DOMAIN
+                - {{ chihiro.podCIDR }}
+            serviceDomain: ignore
             services:
               cidrBlocks:
-                - 10.107.0.0/16
+                - {{ chihiro.serviceCIDR }}
           topology:
             classRef:
               name: openstack-kamaji
+            controlPlane:
+              replicas: 0
             variables:
               - name: identityRef
                 value:
@@ -37,19 +60,33 @@ data:
               - name: externalNetworkId
                 value: 1cfd69da-057c-4748-a0d4-de5b0ca77db2
               - name: imageName
-                value: hephaestus-kaas-26.05-v1.36.1
-              - name: workerFlavor
-                value: xmedium
+                value: {{ chihiro.imageName }}
               - name: oidc
                 value:
                   enabled: true
                   issuerURL: https://rpcu-gabeck.eu1.zitadel.cloud
                   clientID: "377050089077613929"
-            version: PLACEHOLDER_VERSION
-            workers:
-              machineDeployments:
-                - class: default-worker
-                  name: worker
-                  replicas: PLACEHOLDER_NODES
-      # Field mapping: specify where to inject the node count
-      node_count_path: 'spec.topology.workers.machineDeployments[0].replicas'
+              - name: managedSubnetCIDR
+                value: {{ chihiro.managedSubnetCIDR }}
+            version: "0.0.0"
+      parameters:
+        podCIDR:
+          label: "Pod CIDR"
+          description: "CIDR block for pod networking"
+          type: string
+          default: "10.207.0.0/16"
+        serviceCIDR:
+          label: "Service CIDR"
+          description: "CIDR block for service networking"
+          type: string
+          default: "10.107.0.0/16"
+        imageName:
+          label: "Node Image"
+          description: "OpenStack image for cluster nodes"
+          type: string
+          default: "hephaestus-kaas-26.05-v1.36.1"
+        managedSubnetCIDR:
+          label: "Managed Subnet CIDR"
+          description: "CIDR block for the managed subnet"
+          type: string
+          default: "192.168.1.0/24"

@@ -75,6 +75,10 @@ spec:
               value: "10"
             - name: CHIHIRO_MAX_TOTAL_CP
               value: "9"
+            - name: CHIHIRO_WORKER_FLAVORS
+              value: "small,medium,xmedium,large,xlarge"
+            - name: CHIHIRO_WORKER_CLASSES
+              value: "default-worker"
           volumeMounts:
             - name: config
               mountPath: /config.yaml

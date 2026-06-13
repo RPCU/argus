@@ -5,6 +5,7 @@ resources:
   - templates/controlplane.yaml
   - templates/controlplane-kamaji.yaml
   - templates/controlplane-kamaji-v2.yaml
+  - templates/controlplane-kamaji-v3.yaml
   - templates/bootstrap.yaml
   - templates/infracluster.yaml
   - templates/machines.yaml

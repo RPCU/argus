@@ -848,7 +848,7 @@ _fluxcd/instances/_ - Instance configuration
 
 ### Git Repository
 
-- **Remote**: git@github.com:RPCU/argus.git
+- **Remote**: <git@github.com>:RPCU/argus.git
 - **Main Branch**: main
 - **Sync Interval**: 1 minute
 - **Development Branches**: dev, dev-vic, ciliumlb
@@ -861,7 +861,7 @@ _fluxcd/instances/_ - Instance configuration
 
 - **Distribution**: Flux 2.x
 - **Components**: source, kustomize, helm, notification controllers
-- **Git Repository**: https://github.com/RPCU/argus.git
+- **Git Repository**: <https://github.com/RPCU/argus.git>
 - **Branch**: main
 - **Path**: ./clusters/PLACEHOLDER (cluster-specific override)
 - **Concurrency**: 42 operations per controller
@@ -1133,14 +1133,14 @@ Prettier, nixfmt, and shfmt are integrated for automatic formatting on commit.
 
 ### External Resources
 
-- **Official Docs**: https://docs.rpcu.io/gitops/
-- **Flux CD**: https://fluxcd.io/docs/
-- **Cilium**: https://docs.cilium.io/
-- **Gateway API**: https://gateway-api.sigs.k8s.io/
-- **kgateway**: https://kgateway.dev/
-- **Rook**: https://rook.io/docs/rook/
-- **Cert-Manager**: https://cert-manager.io/docs/
-- **Crossplane**: https://docs.crossplane.io/
+- **Official Docs**: <https://docs.rpcu.io/gitops/>
+- **Flux CD**: <https://fluxcd.io/docs/>
+- **Cilium**: <https://docs.cilium.io/>
+- **Gateway API**: <https://gateway-api.sigs.k8s.io/>
+- **kgateway**: <https://kgateway.dev/>
+- **Rook**: <https://rook.io/docs/rook/>
+- **Cert-Manager**: <https://cert-manager.io/docs/>
+- **Crossplane**: <https://docs.crossplane.io/>
 
 ### Git Aliases (from .git/config)
 
@@ -1299,6 +1299,35 @@ frames piecemeal — an MTU mismatch on any hop is worse than a consistent small
 MTU. Confirm overlay connectivity first, then size Cilium `MTU` to the OpenStack
 tenant-network MTU if needed.
 
+#### Kamaji control plane must open kubelet port 10250 (workload clusters)
+
+With the `openstack-kamaji` ClusterClass the kube-apiserver runs as **pods in
+the mgmt cluster** (KamajiControlPlane), NOT as OpenStack VMs in the workload
+cluster's managed security groups. `kubectl logs` / `exec` / `attach` /
+`port-forward` and `kubectl top node` all proxy from the apiserver to each
+node's **kubelet on TCP 10250**. CAPO's default managed SG only opens 10250 to
+the managed `controlplane`/`worker` groups (node-to-node); the Kamaji apiserver
+pods have a source IP from the mgmt cluster's network — outside those SGs — so
+they are dropped. Symptom: `kubectl logs`/`exec` against a Kamaji-CP cluster
+hang / time out (`error dialing backend: ... i/o timeout`) while the API itself
+works.
+
+Fix: `openstack-kamaji-cluster-v3` in
+`infrastructure/cluster-api-templates/templates/infrakamaji.yaml` adds an
+ingress rule opening **TCP 10250 from `0.0.0.0/0`**. Source can't be scoped:
+the Kamaji CP egress IP depends on the mgmt cluster's SNAT/floating-IP, and
+`remoteManagedGroups` cannot reference a group outside this cluster — so it is
+opened from anywhere (the kubelet still enforces authenticated+authorized TLS,
+so the port is exposed but not unauthenticated). Because
+`OpenStackClusterTemplate.spec.template.spec` is immutable once referenced, this
+is a NEW `-v3` template with the Kamaji ClusterClass `infrastructure.templateRef`
+repointed to it (the documented `-vN` rotation) — NOT an in-place edit of `-v2`.
+The rotation reconciles the SGs onto the live `OpenStackCluster` without rolling
+machines; delete `-v2` once confirmed. Verify with
+(and `…-controlplane`). This gap is Kamaji-specific — the kubeadm
+`openstack-default` class runs the apiserver ON a control-plane VM inside the
+managed SGs, so it reaches the kubelet via the node-to-node 10250 rule already.
+
 #### Tenant network MTU is pinned to 1400 (no jumbo frames)
 
 `infrastructure/yaook/neutron.yaml` pins the tenant/provider network MTU to
@@ -1377,20 +1406,20 @@ kubectl get backendtlspolicy -A
 
 Argus is a **production-grade Kubernetes GitOps repository** that:
 
-✅ Declares infrastructure as code (YAML/Helm)  
-✅ Manages via Flux CD for automatic reconciliation  
-✅ Supports multi-cluster deployments (OpenStack-based)  
-✅ Provides networking (Cilium), storage (Rook/Ceph), API Gateway (kgateway), TLS (Cert-Manager)  
-✅ Uses NixOS ecosystem for reproducible development  
-✅ Enforces code quality through pre-commit hooks  
-✅ Syncs from GitHub automatically (1-minute intervals)  
+✅ Declares infrastructure as code (YAML/Helm)
+✅ Manages via Flux CD for automatic reconciliation
+✅ Supports multi-cluster deployments (OpenStack-based)
+✅ Provides networking (Cilium), storage (Rook/Ceph), API Gateway (kgateway), TLS (Cert-Manager)
+✅ Uses NixOS ecosystem for reproducible development
+✅ Enforces code quality through pre-commit hooks
+✅ Syncs from GitHub automatically (1-minute intervals)
 ✅ Handles complex dependencies with health checks
 
 All configuration is declarative, version-controlled, and enables auditable infrastructure changes.
 
 ---
 
-**Last Updated**: June 2026 (updated Sveltos ClusterProfiles for workload clusters: `flux.yaml` changed to `syncMode: OneTime` and FluxInstance now mirrors `infrastructure/fluxcd/instances/flux.yaml` with `cluster.domain` patched to `{{ .Cluster.metadata.name }}.local` and no `sync` block (cilium Kustomization CR handles Cilium reconciliation separately); flux uses `excludeSelector: type: mgmt` to avoid the mgmt cluster; cilium opt-in via label `sveltos.argus.rpcu.io/cilium: enabled`; documented in sveltos section. PRIOR: added Sveltos ClusterProfiles for Cilium bootstrap and Flux operator on workload clusters: `cilium.yaml` (`syncMode: OneTime`) deploys Cilium v1.18.6 via `helmCharts` to bootstrap networking so pods can schedule; PRIOR: added a basic Sveltos install for the mgmt cluster: new `infrastructure/sveltos` base (one-concern-per-file: namespace, helmrepo, core HelmRelease v1.10.0, dashboard HelmRelease v1.10.1 wired for OIDC/PKCE against the shared Zitadel `kubernetes` client, an `oidc-rbac` ClusterProfile that Sveltos pushes to opt-in child clusters (label `sveltos.argus.rpcu.io/oidc-rbac: enabled`) binding both `kube-admin` and `kube-user` Zitadel OIDC groups to `cluster-admin`, and a kgateway `HTTPRoute` at `sveltos.mgmt.rpcu.lan`); new Flux Kustomization `clusters/mgmt/sveltos.yaml` (dependsOn kgateway, `wait: false` for the placeholder dashboard OIDC clientId) wired into `clusters/mgmt/kustomization.yaml`; documented the component, mgmt key-file, and dependency-chain entries. PRIOR: added kube-apiserver OIDC support to the `openstack-default` ClusterClass: new `oidc` object variable + `enabledIf` patch injecting `--oidc-*` apiserver flags onto the control-plane template; added the shared Zitadel `kubernetes` OIDC app (public/native PKCE, no client secret) in `clusters/openstack/crossplane/zitadel/oidc-apps.yaml`; wired the disabled-by-default `oidc` block into `clusters/mgmt/clusters/mgmt.yaml`; documented in cluster-api-templates README. PRIOR: restructured Crossplane layout: split shared bases (infrastructure/crossplane\*) from per-cluster overlays (clusters/<cluster>/crossplane/); moved openstack MRs/zitadel platform/OIDC apps into clusters/openstack/crossplane/ overlay with prune:false safety; added mgmt Crossplane + chihiro OIDC app (crossplane/zitadel/) with ESO key remapping to match chihiro expectations; documented mgmt Crossplane/chihiro OIDC section, updated deployment dependency chains for both clusters; removed stale infrastructure/crossplane-resources/ directory)
-**Repository**: https://github.com/RPCU/argus.git
+**Last Updated**: June 2026 (Kamaji workload clusters: opened kubelet port 10250 from `0.0.0.0/0` so the Kamaji hosted control plane (apiserver pods in the mgmt cluster) can proxy `kubectl logs`/`exec`/`attach`/`port-forward`/`top` to the workload nodes' kubelets — CAPO's managed SG only opened 10250 node-to-node, dropping the off-cluster Kamaji CP source IP. Added NEW `openstack-kamaji-cluster-v3` `OpenStackClusterTemplate` in `infrastructure/cluster-api-templates/templates/infrakamaji.yaml` (= `-v2` + the 10250 ingress rule) and repointed the `openstack-kamaji` ClusterClass `infrastructure.templateRef` to `-v3` (immutable-template `-vN` rotation; delete `-v2` once confirmed); documented in the new "Kamaji control plane must open kubelet port 10250" section. PRIOR: updated Sveltos ClusterProfiles for workload clusters: `flux.yaml` changed to `syncMode: OneTime` and FluxInstance now mirrors `infrastructure/fluxcd/instances/flux.yaml` with `cluster.domain` patched to `{{ .Cluster.metadata.name }}.local` and no `sync` block (cilium Kustomization CR handles Cilium reconciliation separately); flux uses `excludeSelector: type: mgmt` to avoid the mgmt cluster; cilium opt-in via label `sveltos.argus.rpcu.io/cilium: enabled`; documented in sveltos section. PRIOR: added Sveltos ClusterProfiles for Cilium bootstrap and Flux operator on workload clusters: `cilium.yaml` (`syncMode: OneTime`) deploys Cilium v1.18.6 via `helmCharts` to bootstrap networking so pods can schedule; PRIOR: added a basic Sveltos install for the mgmt cluster: new `infrastructure/sveltos` base (one-concern-per-file: namespace, helmrepo, core HelmRelease v1.10.0, dashboard HelmRelease v1.10.1 wired for OIDC/PKCE against the shared Zitadel `kubernetes` client, an `oidc-rbac` ClusterProfile that Sveltos pushes to opt-in child clusters (label `sveltos.argus.rpcu.io/oidc-rbac: enabled`) binding both `kube-admin` and `kube-user` Zitadel OIDC groups to `cluster-admin`, and a kgateway `HTTPRoute` at `sveltos.mgmt.rpcu.lan`); new Flux Kustomization `clusters/mgmt/sveltos.yaml` (dependsOn kgateway, `wait: false` for the placeholder dashboard OIDC clientId) wired into `clusters/mgmt/kustomization.yaml`; documented the component, mgmt key-file, and dependency-chain entries. PRIOR: added kube-apiserver OIDC support to the `openstack-default` ClusterClass: new `oidc` object variable + `enabledIf` patch injecting `--oidc-*` apiserver flags onto the control-plane template; added the shared Zitadel `kubernetes` OIDC app (public/native PKCE, no client secret) in `clusters/openstack/crossplane/zitadel/oidc-apps.yaml`; wired the disabled-by-default `oidc` block into `clusters/mgmt/clusters/mgmt.yaml`; documented in cluster-api-templates README. PRIOR: restructured Crossplane layout: split shared bases (infrastructure/crossplane\*) from per-cluster overlays (clusters/<cluster>/crossplane/); moved openstack MRs/zitadel platform/OIDC apps into clusters/openstack/crossplane/ overlay with prune:false safety; added mgmt Crossplane + chihiro OIDC app (crossplane/zitadel/) with ESO key remapping to match chihiro expectations; documented mgmt Crossplane/chihiro OIDC section, updated deployment dependency chains for both clusters; removed stale infrastructure/crossplane-resources/ directory)
+**Repository**: <https://github.com/RPCU/argus.git>
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

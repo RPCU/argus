@@ -56,7 +56,7 @@ data:
               - name: identityRef
                 value:
                   name: mgmt-cloud-config
-                  cloudName: openstack
+                  cloudName: lab
               - name: externalNetworkId
                 value: 1cfd69da-057c-4748-a0d4-de5b0ca77db2
               - name: imageName

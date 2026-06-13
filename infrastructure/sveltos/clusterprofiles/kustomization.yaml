@@ -1,2 +1,5 @@
 resources:
   - oidc-rbac.yaml
+  - cilium.yaml
+  - cilium-values.yaml
+  - flux.yaml

@@ -1,0 +1,100 @@
+# Flux takeover path for Cilium on OPT-IN workload clusters.
+#
+# This ClusterProfile is the per-cluster modularity gate: it is the ONLY thing
+# that puts Flux-managed Cilium onto a workload cluster, and it is opt-in via the
+# `sveltos.argus.rpcu.io/cilium: enabled` label. It pushes two things to each
+# matching cluster:
+#   1. the "cilium-workload-values" ConfigMap (cluster-specific values pulled
+#      from the SveltosCluster resource: pod CIDR, API server endpoint, domain);
+#   2. the Flux "cilium" Kustomization CR (infrastructure/cilium, patched to use
+#      that ConfigMap) — so Flux on the workload cluster reconciles Cilium.
+#
+# This is deliberately NOT in a shared Flux sync path (the `flux` ClusterProfile's
+# FluxInstance only syncs infrastructure/fluxcd/operator, nothing cluster-wide).
+# Keeping the Flux Kustomization CR in this opt-in ClusterProfile means it only
+# exists on clusters carrying the cilium label, instead of being forced onto every
+# Flux-bootstrapped workload cluster.
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: cilium-values
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  clusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/cilium: enabled
+  policyRefs:
+    - name: cilium-workload-values-template
+      namespace: projectsveltos
+      kind: ConfigMap
+    - name: cilium-flux-kustomization
+      namespace: projectsveltos
+      kind: ConfigMap
+---
+# Template ConfigMap: Sveltos instantiates the Go templates using
+# Cluster fields and deploys the result to each matching cluster.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cilium-workload-values-template
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/template: "true"
+data:
+  cilium-workload-values.yaml: |
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: cilium-workload-values
+      namespace: kube-system
+    data:
+      values.yaml: |
+        k8sServiceHost: "{{ .Cluster.spec.controlPlaneEndpoint.host }}"
+        k8sServicePort: "{{ .Cluster.spec.controlPlaneEndpoint.port }}"
+        ipam:
+          operator:
+            clusterPoolIPv4PodCIDRList:
+              - "{{ (index .Cluster.spec.clusterNetwork.pods.cidrBlocks 0) }}"
+        clusterDomain: "{{ .Cluster.metadata.name }}.local"
+---
+# The Flux "cilium" Kustomization CR, pushed only to opt-in workload clusters.
+# Wraps the shared base infrastructure/cilium/ and patches the HelmRelease to
+# source the cilium-workload-values ConfigMap generated above. Deployed by Sveltos
+# so it is gated by the cilium opt-in label instead of living in a shared Flux
+# sync path that would land on every Flux-bootstrapped cluster.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cilium-flux-kustomization
+  namespace: projectsveltos
+data:
+  cilium-flux-kustomization.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: cilium
+      namespace: kube-system
+    spec:
+      interval: 10m
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/cilium
+      prune: false
+      patches:
+        - patch: |
+            apiVersion: helm.toolkit.fluxcd.io/v2
+            kind: HelmRelease
+            metadata:
+              name: cilium
+            spec:
+              valuesFrom:
+                - kind: ConfigMap
+                  name: cilium-workload-values
+                  namespace: kube-system
+          target:
+            kind: HelmRelease
+            name: cilium

@@ -3,6 +3,8 @@ kind: Cluster
 metadata:
   name: mgmt
   namespace: mgmt
+  labels:
+    type: mgmt
 spec:
   clusterNetwork:
     pods:

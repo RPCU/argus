@@ -22,7 +22,7 @@ spec:
             - --config=/config.yaml
           command:
             - /chihiro
-          image: zot.bealv.io/public/chihiro:v0.2.2
+          image: zot.bealv.io/public/chihiro:v0.3.0
           ports:
             - containerPort: 8080
               name: http

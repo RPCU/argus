@@ -7,5 +7,6 @@ resources:
   - groups.yaml
   - project-admin.yaml
   - project-production.yaml
+  - project-lab.yaml
   - securityGroups.yaml
   - zonedns.yaml

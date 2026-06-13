@@ -94,7 +94,6 @@ data:
               valuesFrom:
                 - kind: ConfigMap
                   name: cilium-workload-values
-                  namespace: kube-system
           target:
             kind: HelmRelease
             name: cilium

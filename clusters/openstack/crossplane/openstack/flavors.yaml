@@ -7,7 +7,7 @@ spec:
     name: small
     vcpus: 1
     ram: 2048
-    disk: 10
+    disk: 30
     isPublic: true
 ---
 apiVersion: compute.openstack.m.crossplane.io/v1alpha1

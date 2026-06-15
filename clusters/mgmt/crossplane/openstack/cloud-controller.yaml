@@ -35,6 +35,7 @@ apiVersion: identity.openstack.m.crossplane.io/v1alpha1
 kind: RoleV3
 metadata:
   name: cloud-controller-lb
+  namespace: crossplane-system
 spec:
   forProvider:
     name: load-balancer_member
@@ -43,6 +44,7 @@ apiVersion: identity.openstack.m.crossplane.io/v1alpha1
 kind: RoleV3
 metadata:
   name: cloud-controller-member
+  namespace: crossplane-system
   annotations:
     crossplane.io/external-name: "8d09b485d2424866a2d11ebcbd41a802"
 spec:
@@ -56,6 +58,7 @@ apiVersion: identity.openstack.m.crossplane.io/v1alpha1
 kind: UserV3
 metadata:
   name: cloud-controller
+  namespace: crossplane-system
   annotations:
     crossplane.io/external-name: cloud-controller
 spec:
@@ -71,6 +74,7 @@ apiVersion: identity.openstack.m.crossplane.io/v1alpha1
 kind: RoleAssignmentV3
 metadata:
   name: cloud-controller-lb
+  namespace: crossplane-system
 spec:
   forProvider:
     roleIdRef:
@@ -84,6 +88,7 @@ apiVersion: identity.openstack.m.crossplane.io/v1alpha1
 kind: RoleAssignmentV3
 metadata:
   name: cloud-controller-member
+  namespace: crossplane-system
 spec:
   forProvider:
     roleIdRef:
@@ -109,6 +114,7 @@ apiVersion: identity.openstack.m.crossplane.io/v1alpha1
 kind: ApplicationCredentialV3
 metadata:
   name: cloud-controller
+  namespace: crossplane-system
 spec:
   forProvider:
     name: cloud-controller

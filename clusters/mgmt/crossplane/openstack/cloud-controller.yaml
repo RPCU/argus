@@ -17,9 +17,13 @@
 # If the roles already exist, Crossplane will adopt them via external-name.
 #
 # ESO plumbing (ServiceAccount, SecretStore, ExternalSecret) lives in
-# clusters/openstack/crossplane/cloud-controller-eso/ (kube-system namespace)
+# clusters/mgmt/crossplane/cloud-controller-eso/ (kube-system namespace)
 # because the CCM/CSI charts mount from kube-system and Sveltos deploys
 # policyRefs to the same namespace on child clusters.
+#
+# NOTE: This resource lives on the mgmt cluster (not openstack) because
+# Sveltos runs on mgmt and needs to access the rendered clouds.yaml Secret
+# to push it to child clusters.
 # =============================================================================
 
 # ---------------------------------------------------------------------------
@@ -59,9 +63,6 @@ spec:
     name: cloud-controller
     description: "CCM + Cinder CSI service user (managed by Crossplane)"
     domainId: default
-    # password is auto-generated and stored in the connection secret.
-    # If you need a fixed password, set it here and omit
-    # writeConnectionSecretToRef (not recommended).
 ---
 # ---------------------------------------------------------------------------
 # Role assignments — grant the user the two roles in the admin project.
@@ -78,7 +79,6 @@ spec:
       name: cloud-controller
     projectIdRef:
       name: admin
-    isDomain: false
 ---
 apiVersion: identity.openstack.m.crossplane.io/v1alpha1
 kind: RoleAssignmentV3
@@ -92,18 +92,18 @@ spec:
       name: cloud-controller
     projectIdRef:
       name: admin
-    isDomain: false
 ---
 # ---------------------------------------------------------------------------
 # Application credential for the service user.
 #
-# Scoped to the admin project, restricted to the two roles above. The
-# generated credential ID and secret are written to the connection secret
+# Scoped to the creating user's project, restricted to the two roles above.
+# The generated credential ID and secret are written to the connection secret
 # (via writeConnectionSecretToRef) so an ESO ExternalSecret can template
 # the clouds.yaml for child clusters.
 #
-# applicationCredentialID and applicationCredentialSecret are the keys
-# written to the target Secret.
+# Note: projectId and userIdRef are NOT supported in forProvider — the app
+# cred is automatically scoped to the authenticated user's project.
+# roles is an array of strings (role names), not objects.
 # ---------------------------------------------------------------------------
 apiVersion: identity.openstack.m.crossplane.io/v1alpha1
 kind: ApplicationCredentialV3
@@ -113,13 +113,9 @@ spec:
   forProvider:
     name: cloud-controller
     description: "Application credential for CCM + Cinder CSI (managed by Crossplane)"
-    userIdRef:
-      name: cloud-controller
-    projectId: bae33843e66e4028b574e36cd0953fac # resolved from the admin project's external-name
     roles:
-      - name: load-balancer_member
-      - name: member
+      - load-balancer_member
+      - member
     unrestricted: false
   writeConnectionSecretToRef:
     name: cloud-controller-app-cred
-    namespace: yaook

@@ -1,0 +1,16 @@
+# Cluster-scoped ClusterProviderConfig for provider-openstack.
+# The admin OpenStack credentials are ESO-synced from capo-variables
+# (capo-system) into crossplane-system via credentials-eso.yaml.
+apiVersion: aws.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: default
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      key: clouds.yaml
+      name: crossplane-provider-openstack
+      namespace: crossplane-system
+      # cloud: openstack
+  # cloud: openstack

@@ -19,6 +19,7 @@ resources:
   - external-dns.yaml
   - crossplane.yaml
   - crossplane-zitadel.yaml
+  - crossplane-openstack.yaml
   - crossplane-providers.yaml
   - crossplane-resources.yaml
   - dragonfly-operator.yaml

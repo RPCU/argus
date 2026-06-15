@@ -17,6 +17,7 @@ items:
         clusterctl.cluster.x-k8s.io/core: inventory
     providerName: cluster-api
     type: CoreProvider
+    # renovate: datasource=github-releases depName=kubernetes-sigs/cluster-api
     version: v1.13.2
   - apiVersion: clusterctl.cluster.x-k8s.io/v1alpha3
     kind: Provider
@@ -29,6 +30,7 @@ items:
         clusterctl.cluster.x-k8s.io/core: inventory
     providerName: kubeadm
     type: BootstrapProvider
+    # renovate: datasource=github-releases depName=kubernetes-sigs/cluster-api
     version: v1.13.2
   - apiVersion: clusterctl.cluster.x-k8s.io/v1alpha3
     kind: Provider
@@ -41,6 +43,7 @@ items:
         clusterctl.cluster.x-k8s.io/core: inventory
     providerName: kubeadm
     type: ControlPlaneProvider
+    # renovate: datasource=github-releases depName=kubernetes-sigs/cluster-api
     version: v1.13.2
   - apiVersion: clusterctl.cluster.x-k8s.io/v1alpha3
     kind: Provider
@@ -53,6 +56,7 @@ items:
         clusterctl.cluster.x-k8s.io/core: inventory
     providerName: openstack
     type: InfrastructureProvider
+    # renovate: datasource=github-releases depName=kubernetes-sigs/cluster-api-provider-openstack
     version: v0.14.4
   - apiVersion: clusterctl.cluster.x-k8s.io/v1alpha3
     kind: Provider
@@ -65,4 +69,5 @@ items:
         clusterctl.cluster.x-k8s.io/core: inventory
     providerName: kamaji
     type: ControlPlaneProvider
+    # renovate: datasource=github-releases depName=clastix/cluster-api-control-plane-provider-kamaji
     version: v0.20.0

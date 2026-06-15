@@ -1,0 +1,68 @@
+# Flux takeover path for the external-snapshotter (VolumeSnapshot CRDs +
+# snapshot-controller) on OPT-IN workload clusters.
+#
+# The Cinder CSI csi-snapshotter sidecar needs the VolumeSnapshot CRDs
+# registered and a running snapshot-controller. On the mgmt cluster these come
+# from infrastructure/external-snapshotter/{crds,controller} (remote kustomize
+# bases pinned to v8.6.0). On workload clusters we deliver the SAME bases via
+# Flux: this ClusterProfile pushes two Flux Kustomization CRs (crds first, then
+# controller) so Flux on the workload cluster reconciles them from the central
+# repo — exactly like the cilium-values takeover.
+#
+# Gated by the cinder opt-in label so it only lands where Cinder CSI is enabled.
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: external-snapshotter
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  clusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/openstack-cinder-csi: enabled
+  policyRefs:
+    - name: external-snapshotter-flux-kustomization
+      namespace: projectsveltos
+      kind: ConfigMap
+---
+# The Flux Kustomization CRs for external-snapshotter, pushed to opt-in workload
+# clusters. crds reconcile before controller (dependsOn) — the controller is not
+# Ready until the CRDs exist, and the Cinder CSI snapshotter sidecar needs them
+# registered.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: external-snapshotter-flux-kustomization
+  namespace: projectsveltos
+data:
+  external-snapshotter-crds.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: external-snapshotter-crds
+      namespace: kube-system
+    spec:
+      interval: 10m
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/external-snapshotter/crds
+      prune: false
+  external-snapshotter-controller.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: external-snapshotter-controller
+      namespace: kube-system
+    spec:
+      interval: 10m
+      dependsOn:
+        - name: external-snapshotter-crds
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/external-snapshotter/controller
+      prune: false

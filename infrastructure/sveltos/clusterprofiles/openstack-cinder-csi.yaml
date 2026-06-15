@@ -1,17 +1,28 @@
-# OpenStack Cinder CSI Driver add-on for CAPI workload clusters.
+# OpenStack Cinder CSI driver for OPT-IN workload clusters, delivered as a Flux
+# takeover (NO Sveltos helmChart bootstrap — same rationale as openstack-ccm:
+# Cinder is not bootstrap-critical, and a Sveltos helmChart would fight Flux over
+# the same Helm release). Flux is the SOLE owner.
 #
-# Provides dynamic Cinder volume provisioning (StorageClass) via the
-# cinder.csi.openstack.org CSI driver. The csi-snapshotter sidecar also
-# needs VolumeSnapshot CRDs and a running snapshot-controller.
+# The shared cloud-controller-clouds Secret is NOT pushed here — the openstack-ccm
+# ClusterProfile owns it. If both profiles deployed it, Sveltos would flag a
+# conflict ("A conflict was detected while deploying resource
+# Secret:kube-system/cloud-controller-clouds"). The Cinder CSI HelmRelease mounts
+# the same secret (secret.name: cloud-controller-clouds) — it just doesn't own it.
+# The VolumeSnapshot CRDs + snapshot-controller come from the
+# external-snapshotter ClusterProfile (Flux), required by the csi-snapshotter
+# sidecar.
 #
-# Depends on openstack-ccm: the CCM initialises nodes (removes the
-# cloud-provider taint), so the CSI DaemonSet can schedule on all nodes.
+# Two things are pushed:
+#   1. the "openstack-cinder-csi-workload-values" ConfigMap (kube-system) —
+#      overrides the mgmt-specific base values.yaml: the shared secret name
+#      (cloud-controller-clouds), secret.filename cloud.conf, and the per-cluster
+#      clusterID (templated from the Cluster resource).
+#   2. the Flux Kustomization CR, patched to add that ConfigMap as a second
+#      valuesFrom (so it overrides the base) and to dependsOn the
+#      external-snapshotter-crds Flux Kustomization (the csi-snapshotter sidecar
+#      needs the VolumeSnapshot CRDs registered first).
 #
-# The clouds.yaml Secret (dedicated application credential) is the same one
-# the CCM uses — pushed from the mgmt cluster via policyRefs.
-#
-# Opt-in: child clusters must carry the label
-#   sveltos.argus.rpcu.io/openstack-cinder-csi: enabled
+# Gated by the opt-in label sveltos.argus.rpcu.io/openstack-cinder-csi: enabled.
 apiVersion: config.projectsveltos.io/v1beta1
 kind: ClusterProfile
 metadata:
@@ -19,60 +30,84 @@ metadata:
   namespace: projectsveltos
 spec:
   syncMode: ContinuousWithDriftDetection
+  # openstack-ccm owns the shared cloud-controller-clouds Secret and initialises
+  # Nodes (removes the cloud-provider taint) so the CSI DaemonSet can schedule;
+  # external-snapshotter installs the VolumeSnapshot CRDs the sidecar needs.
   dependsOn:
     - openstack-ccm
+    - external-snapshotter
   clusterSelector:
     matchLabels:
       type: workload
       sveltos.argus.rpcu.io/openstack-cinder-csi: enabled
   policyRefs:
-    # clouds.yaml with the dedicated application credential (created by
-    # Crossplane + ESO on mgmt). Sveltos pushes it to kube-system on each
-    # child cluster — the Cinder CSI chart mounts it at /etc/config.
-    - name: cloud-controller-clouds
+    - name: openstack-cinder-csi-workload-values
+      namespace: projectsveltos
+      kind: ConfigMap
+    - name: openstack-cinder-csi-flux-kustomization
+      namespace: projectsveltos
+      kind: ConfigMap
+---
+# Per-cluster values override pushed into the workload cluster's kube-system.
+# Sveltos instantiates the {{ .Cluster.metadata.name }} template (clusterID).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openstack-cinder-csi-workload-values
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/template: "true"
+data:
+  openstack-cinder-csi-workload-values.yaml: |
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: openstack-cinder-csi-workload-values
       namespace: kube-system
-      kind: Secret
-    # VolumeSnapshot CRDs — required by the csi-snapshotter sidecar.
-    # Without these CRDs registered, the sidecar cannot start.
-    - name: volume-snapshot-crds
-      namespace: projectsveltos
-      kind: ConfigMap
-    # Snapshot-controller Deployment + RBAC — handles VolumeSnapshot
-    # lifecycle. The csi-snapshotter sidecar needs a running controller.
-    - name: volume-snapshot-controller
-      namespace: projectsveltos
-      kind: ConfigMap
-  helmCharts:
-    - repositoryURL: https://kubernetes.github.io/cloud-provider-openstack
-      repositoryName: cloud-provider-openstack-cinder
-      chartName: cloud-provider-openstack/openstack-cinder-csi
-      # renovate: datasource=helm depName=openstack-cinder-csi registryUrl=https://kubernetes.github.io/cloud-provider-openstack
-      chartVersion: "2.35.0"
-      releaseName: openstack-cinder-csi
-      releaseNamespace: kube-system
-      helmChartAction: Install
-      # Mirrors infrastructure/openstack-cinder-csi/values.yaml.
-      # clusterID is templated per-cluster from the Sveltos Cluster resource.
-      values: |
-        csi:
-          plugin:
-            image:
-              repository: registry.k8s.io/provider-os/cinder-csi-plugin
-              tag: "v1.35.0"
+    data:
+      values.yaml: |
         secret:
           enabled: true
           hostMount: false
           create: false
           name: cloud-controller-clouds
-          filename: clouds.yaml
+          filename: cloud.conf
         clusterID: "{{ .Cluster.metadata.name }}"
-        storageClass:
-          enabled: true
-          delete:
-            isDefault: false
-            allowVolumeExpansion: true
-          retain:
-            isDefault: false
-            allowVolumeExpansion: true
 ---
-
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openstack-cinder-csi-flux-kustomization
+  namespace: projectsveltos
+data:
+  openstack-cinder-csi-flux-kustomization.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: openstack-cinder-csi
+      namespace: kube-system
+    spec:
+      interval: 10m
+      dependsOn:
+        - name: external-snapshotter-crds
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/openstack-cinder-csi
+      prune: false
+      patches:
+        - patch: |
+            apiVersion: helm.toolkit.fluxcd.io/v2
+            kind: HelmRelease
+            metadata:
+              name: openstack-cinder-csi
+            spec:
+              valuesFrom:
+                - kind: ConfigMap
+                  name: openstack-cinder-csi-values
+                - kind: ConfigMap
+                  name: openstack-cinder-csi-workload-values
+          target:
+            kind: HelmRelease
+            name: openstack-cinder-csi

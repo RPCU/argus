@@ -34,15 +34,14 @@ stringData:
     clouds:
       openstack:
         auth:
-          auth_url: https://keystone.yaook.svc:5000/v3
+          auth_url: https://keystone.rpcu.vpn/v3
           username: "<OS_USERNAME>"
           password: "<OS_PASSWORD>"
           project_name: "<OS_PROJECT_NAME>"
-          project_domain_name: "<OS_PROJECT_DOMAIN_NAME>"
           user_domain_name: "<OS_USER_DOMAIN_NAME>"
         region_name: hetzner
         verify: false
-        interface: internal
+        interface: public
         identity_api_version: 3
 EOF
 ```
@@ -57,9 +56,13 @@ kubectl --context openstack -n yaook get secret keystone-admin \
 
 ## Notes
 
-- `auth_url` uses the in-cluster Keystone service. If the mgmt cluster reaches
-  OpenStack over the gateway instead, use the public Keystone endpoint
-  (`https://keystone.rpcu.vpn`) and adjust `verify`/`interface` accordingly.
+- `auth_url` uses the **gateway endpoint** (`keystone.rpcu.vpn`) because the
+  mgmt cluster cannot resolve in-cluster DNS names from the OpenStack cluster
+  (`keystone.yaook.svc`). `interface: public` and `verify: false` are set
+  accordingly.
+- CAPO, the CCM, and the Cinder CSI all share this same `capo-variables`
+  secret. The provider-openstack on mgmt reads it via ESO and renders
+  `crossplane-provider-openstack` in `crossplane-system`.
 - Because the secret is managed manually, `prune: true` on the
   `cluster-api-providers` Flux Kustomization will not touch it (it is not part
   of the Git-tracked manifests).

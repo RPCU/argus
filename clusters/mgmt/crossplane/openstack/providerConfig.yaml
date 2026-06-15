@@ -9,6 +9,6 @@ spec:
   credentials:
     source: Secret
     secretRef:
-      key: clouds.yaml
+      key: config.json
       name: crossplane-provider-openstack
       namespace: crossplane-system

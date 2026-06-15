@@ -135,8 +135,8 @@ spec:
     - secretKey: applicationCredentialID
       remoteRef:
         key: cloud-controller-app-cred
-        property: applicationCredentialID
+        property: id
     - secretKey: applicationCredentialSecret
       remoteRef:
         key: cloud-controller-app-cred
-        property: applicationCredentialSecret
+        property: secret

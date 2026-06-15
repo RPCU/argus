@@ -6,6 +6,7 @@ metadata:
   name: kubeadm
   namespace: capi-kubeadm-control-plane-system
 spec:
+  # renovate: datasource=github-releases depName=kubernetes-sigs/cluster-api
   version: v1.13.2
   manager:
     featureGates:

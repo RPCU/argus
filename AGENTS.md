@@ -84,6 +84,7 @@ Whenever you modify the codebase:
 - `.envrc` - Direnv shell environment loader
 - `.gitignore` - Git ignore patterns
 - `README.md` - Project overview
+- `renovate.json5` - Renovate dependency-update configuration (see "Dependency Updates (Renovate)" in Section 5)
 
 ### nix/ - Custom Nix Packages & Sources
 
@@ -1105,6 +1106,68 @@ Validates devenv configuration and hello script.
 6. Push: `git push origin feature/your-or-your-team's-feature`
 7. Create PR on GitHub
 
+### Dependency Updates (Renovate)
+
+`renovate.json5` (repo root) configures the **Mend Renovate GitHub App** to open
+PRs for outdated dependencies. **No auto-merge** — every PR requires manual
+review/merge (production GitOps). PRs are batched Monday early morning
+(`Europe/Paris`). A Dependency Dashboard issue tracks everything.
+
+**What it tracks, and how:**
+
+- **Flux HelmReleases / HelmRepositories** (HTTP + OCI) — built-in `flux`
+  manager (cert-manager, cilium, kgateway, rook, crossplane, external-secrets,
+  yaook operators, capi-operator, openstack-ccm, openstack-cinder-csi,
+  external-dns, sveltos, flux-operator, etc.).
+- **Helm `values.yaml` images** with a `repository:`+`tag:` pair — built-in
+  `helm-values` manager (openstack-ccm, openstack-cinder-csi).
+- **Custom (regex) managers** in `renovate.json5` for the pins no built-in
+  manager understands:
+  1. Kustomize remote bases via GitHub **release-download URLs**
+     (`.../releases/download/vX/...`) and `raw.githubusercontent.com/.../vX/...`
+     → `github-releases` (orc, gateway-api, dragonfly).
+  2. Kustomize remote bases via **`?ref=vX`** → `github-releases`
+     (external-snapshotter crds + controller).
+  3. **Crossplane** provider/function packages (`package: xpkg.../...:vX`) →
+     `docker` (provider-openstack, provider-zitadel, provider-random,
+     function-patch-and-transform).
+  4. **Cluster API provider** `version:` fields — driven by inline
+     `# renovate: datasource=github-releases depName=<org/repo>` markers in
+     `infrastructure/cluster-api-providers/*.yaml` (core/bootstrap/control-plane
+     → `kubernetes-sigs/cluster-api`; CAPO →
+     `kubernetes-sigs/cluster-api-provider-openstack`; kamaji →
+     `clastix/cluster-api-control-plane-provider-kamaji`). The
+     `clusterctl-providers.yaml` inventory carries the same markers so the
+     inventory stays in lockstep with the operator CRs.
+  5. **Sveltos ClusterProfile inline `helmCharts`** (`chartVersion:`) — inline
+     markers in `infrastructure/sveltos/clusterprofiles/*.yaml` (cilium →
+     `datasource=helm`; flux-operator OCI → `datasource=docker`).
+  6. **Helm-values `tag:` without a sibling `repository:`** — inline marker in
+     `infrastructure/kamaji/values.yaml` (`docker.io/clastix/kamaji`).
+  7. **Plain `image: registry/repo:tag`** in raw manifests → `docker` (rook
+     ceph image + toolbox, chihiro).
+  8. **npins** GitRelease pin in `npins/sources.json` → `github-releases`
+     (sveltosctl). Note: bumping the JSON pin alone is not sufficient — the
+     `hash`/`revision` must be refreshed with `npins update`; treat such PRs as a
+     signal to run `npins update` locally.
+
+**Grouping (packageRules):** yaook operators (shared 2.2.0), openstack
+cloud-provider (CCM + Cinder CSI + their images), cluster-api providers, cilium
+(HelmRelease + Sveltos inline kept in sync), flux-operator (HelmRelease +
+Sveltos inline). `major` updates are un-batched and labelled
+`major-update`/`needs-careful-review`.
+
+**Intentionally NOT bumped:** the kamaji **chart** is pinned to the rolling
+`0.0.0+latest` tag (the chart HelmReleases are `enabled: false` for the `flux`
+manager); only its image tag is tracked via the annotated custom manager.
+
+**Adding a new dependency:** if it's a standard HelmRelease/values image it's
+picked up automatically. For a new URL-pinned base, Crossplane package, CAPI
+provider, Sveltos inline chart, or raw `image:`, either it matches an existing
+regex manager or you must add a `# renovate: datasource=... depName=...` marker
+on the line above the version (see the existing markers for the exact shape).
+Validate after editing: `npx --package renovate -- renovate-config-validator renovate.json5`.
+
 ---
 
 ## 6. Git Hooks & Code Quality
@@ -1419,7 +1482,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: June 2026 (Kamaji workload clusters: opened kubelet port 10250 from `0.0.0.0/0` so the Kamaji hosted control plane (apiserver pods in the mgmt cluster) can proxy `kubectl logs`/`exec`/`attach`/`port-forward`/`top` to the workload nodes' kubelets — CAPO's managed SG only opened 10250 node-to-node, dropping the off-cluster Kamaji CP source IP. Added NEW `openstack-kamaji-cluster-v3` `OpenStackClusterTemplate` in `infrastructure/cluster-api-templates/templates/infrakamaji.yaml` (= `-v2` + the 10250 ingress rule) and repointed the `openstack-kamaji` ClusterClass `infrastructure.templateRef` to `-v3` (immutable-template `-vN` rotation; delete `-v2` once confirmed); documented in the new "Kamaji control plane must open kubelet port 10250" section. PRIOR: updated Sveltos ClusterProfiles for workload clusters: `flux.yaml` changed to `syncMode: OneTime` and FluxInstance now mirrors `infrastructure/fluxcd/instances/flux.yaml` with `cluster.domain` patched to `{{ .Cluster.metadata.name }}.local` and no `sync` block (cilium Kustomization CR handles Cilium reconciliation separately); flux uses `excludeSelector: type: mgmt` to avoid the mgmt cluster; cilium opt-in via label `sveltos.argus.rpcu.io/cilium: enabled`; documented in sveltos section. PRIOR: added Sveltos ClusterProfiles for Cilium bootstrap and Flux operator on workload clusters: `cilium.yaml` (`syncMode: OneTime`) deploys Cilium v1.18.6 via `helmCharts` to bootstrap networking so pods can schedule; PRIOR: added a basic Sveltos install for the mgmt cluster: new `infrastructure/sveltos` base (one-concern-per-file: namespace, helmrepo, core HelmRelease v1.10.0, dashboard HelmRelease v1.10.1 wired for OIDC/PKCE against the shared Zitadel `kubernetes` client, an `oidc-rbac` ClusterProfile that Sveltos pushes to opt-in child clusters (label `sveltos.argus.rpcu.io/oidc-rbac: enabled`) binding both `kube-admin` and `kube-user` Zitadel OIDC groups to `cluster-admin`, and a kgateway `HTTPRoute` at `sveltos.mgmt.rpcu.lan`); new Flux Kustomization `clusters/mgmt/sveltos.yaml` (dependsOn kgateway, `wait: false` for the placeholder dashboard OIDC clientId) wired into `clusters/mgmt/kustomization.yaml`; documented the component, mgmt key-file, and dependency-chain entries. PRIOR: added kube-apiserver OIDC support to the `openstack-default` ClusterClass: new `oidc` object variable + `enabledIf` patch injecting `--oidc-*` apiserver flags onto the control-plane template; added the shared Zitadel `kubernetes` OIDC app (public/native PKCE, no client secret) in `clusters/openstack/crossplane/zitadel/oidc-apps.yaml`; wired the disabled-by-default `oidc` block into `clusters/mgmt/clusters/mgmt.yaml`; documented in cluster-api-templates README. PRIOR: restructured Crossplane layout: split shared bases (infrastructure/crossplane\*) from per-cluster overlays (clusters/<cluster>/crossplane/); moved openstack MRs/zitadel platform/OIDC apps into clusters/openstack/crossplane/ overlay with prune:false safety; added mgmt Crossplane + chihiro OIDC app (crossplane/zitadel/) with ESO key remapping to match chihiro expectations; documented mgmt Crossplane/chihiro OIDC section, updated deployment dependency chains for both clusters; removed stale infrastructure/crossplane-resources/ directory)
+**Last Updated**: June 2026 (Added Renovate dependency automation: new `renovate.json5` at repo root for the Mend Renovate GitHub App (no auto-merge — manual review for every PR; batched Monday early morning `Europe/Paris`; Dependency Dashboard enabled). Built-in `flux` + `helm-values` managers cover HelmReleases/HelmRepositories (HTTP + OCI) and values-image repo/tag pairs. Eight `customManagers` (regex) cover the rest: GitHub release-download + `raw.githubusercontent` URL-pinned kustomize bases (orc/gateway-api/dragonfly), `?ref=vX` bases (external-snapshotter x2), Crossplane provider/function packages, CAPI provider `version:` fields (via inline `# renovate:` markers added to `infrastructure/cluster-api-providers/*.yaml` incl. `clusterctl-providers.yaml`), Sveltos inline `helmCharts` chartVersion (markers in `infrastructure/sveltos/clusterprofiles/{cilium,flux}.yaml`), kamaji values `tag:` (marker in `infrastructure/kamaji/values.yaml`), plain raw-manifest `image:` tags (rook ceph/toolbox, chihiro), and the npins GitRelease pin in `npins/sources.json`. packageRules group yaook operators, openstack cloud-provider (CCM + Cinder CSI + images), cluster-api providers, cilium and flux-operator (HelmRelease + Sveltos inline kept in sync); kamaji chart (`0.0.0+latest`) is disabled for the flux manager; major updates are un-batched + labelled. Config validated with `renovate-config-validator`. Documented in new Section 5 "Dependency Updates (Renovate)" + root-level file entry. PRIOR: Kamaji workload clusters: opened kubelet port 10250 from `0.0.0.0/0` so the Kamaji hosted control plane (apiserver pods in the mgmt cluster) can proxy `kubectl logs`/`exec`/`attach`/`port-forward`/`top` to the workload nodes' kubelets — CAPO's managed SG only opened 10250 node-to-node, dropping the off-cluster Kamaji CP source IP. Added NEW `openstack-kamaji-cluster-v3` `OpenStackClusterTemplate` in `infrastructure/cluster-api-templates/templates/infrakamaji.yaml` (= `-v2` + the 10250 ingress rule) and repointed the `openstack-kamaji` ClusterClass `infrastructure.templateRef` to `-v3` (immutable-template `-vN` rotation; delete `-v2` once confirmed); documented in the new "Kamaji control plane must open kubelet port 10250" section. PRIOR: updated Sveltos ClusterProfiles for workload clusters: `flux.yaml` changed to `syncMode: OneTime` and FluxInstance now mirrors `infrastructure/fluxcd/instances/flux.yaml` with `cluster.domain` patched to `{{ .Cluster.metadata.name }}.local` and no `sync` block (cilium Kustomization CR handles Cilium reconciliation separately); flux uses `excludeSelector: type: mgmt` to avoid the mgmt cluster; cilium opt-in via label `sveltos.argus.rpcu.io/cilium: enabled`; documented in sveltos section. PRIOR: added Sveltos ClusterProfiles for Cilium bootstrap and Flux operator on workload clusters: `cilium.yaml` (`syncMode: OneTime`) deploys Cilium v1.18.6 via `helmCharts` to bootstrap networking so pods can schedule; PRIOR: added a basic Sveltos install for the mgmt cluster: new `infrastructure/sveltos` base (one-concern-per-file: namespace, helmrepo, core HelmRelease v1.10.0, dashboard HelmRelease v1.10.1 wired for OIDC/PKCE against the shared Zitadel `kubernetes` client, an `oidc-rbac` ClusterProfile that Sveltos pushes to opt-in child clusters (label `sveltos.argus.rpcu.io/oidc-rbac: enabled`) binding both `kube-admin` and `kube-user` Zitadel OIDC groups to `cluster-admin`, and a kgateway `HTTPRoute` at `sveltos.mgmt.rpcu.lan`); new Flux Kustomization `clusters/mgmt/sveltos.yaml` (dependsOn kgateway, `wait: false` for the placeholder dashboard OIDC clientId) wired into `clusters/mgmt/kustomization.yaml`; documented the component, mgmt key-file, and dependency-chain entries. PRIOR: added kube-apiserver OIDC support to the `openstack-default` ClusterClass: new `oidc` object variable + `enabledIf` patch injecting `--oidc-*` apiserver flags onto the control-plane template; added the shared Zitadel `kubernetes` OIDC app (public/native PKCE, no client secret) in `clusters/openstack/crossplane/zitadel/oidc-apps.yaml`; wired the disabled-by-default `oidc` block into `clusters/mgmt/clusters/mgmt.yaml`; documented in cluster-api-templates README. PRIOR: restructured Crossplane layout: split shared bases (infrastructure/crossplane\*) from per-cluster overlays (clusters/<cluster>/crossplane/); moved openstack MRs/zitadel platform/OIDC apps into clusters/openstack/crossplane/ overlay with prune:false safety; added mgmt Crossplane + chihiro OIDC app (crossplane/zitadel/) with ESO key remapping to match chihiro expectations; documented mgmt Crossplane/chihiro OIDC section, updated deployment dependency chains for both clusters; removed stale infrastructure/crossplane-resources/ directory)
 **Repository**: <https://github.com/RPCU/argus.git>
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

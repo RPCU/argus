@@ -3,6 +3,7 @@ etcd:
   persistence:
     storageClassName: csi-cinder-sc-delete
 image:
+  # renovate: datasource=docker depName=docker.io/clastix/kamaji
   tag: 26.6.2-edge
 replicaCount: 3
 resources:

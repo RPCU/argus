@@ -5,4 +5,5 @@ metadata:
   name: kamaji
   namespace: capi-kamaji-control-plane-system
 spec:
+  # renovate: datasource=github-releases depName=clastix/cluster-api-control-plane-provider-kamaji
   version: v0.20.0

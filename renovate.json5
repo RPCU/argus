@@ -1,0 +1,253 @@
+// Renovate configuration for the Argus GitOps repository.
+//
+// Goals:
+//   - Reliably update Flux HelmReleases (HTTP + OCI repos), container images
+//     (incl. those buried in Helm `values.yaml` blocks), Kustomize remote
+//     bases pinned to GitHub release URLs / `?ref=` tags, Crossplane provider
+//     & function packages, Cluster API provider version fields, the Sveltos
+//     ClusterProfile inline `helmCharts`, and the npins Go-release pin.
+//   - Manual review for everything (no auto-merge) — production GitOps.
+//
+// Most work is done by Renovate's built-in `flux` and `helm-values` managers.
+// The `customManagers` (regex) below cover the version pins that no built-in
+// manager understands (URL-pinned kustomize bases, Crossplane packages, CAPI
+// provider `version:` fields, Sveltos inline charts, the npins pin, and a few
+// image tags expressed in non-standard YAML shapes).
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+
+  extends: [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":disableRateLimiting",
+    "helpers:pinGitHubActionDigests",
+  ],
+
+  timezone: "Europe/Paris",
+  schedule: ["* 0-6 * * 1"], // Monday early morning, batch the noise
+
+  // Production GitOps: a human reviews and merges every change.
+  automerge: false,
+  prHourlyLimit: 0,
+  prConcurrentLimit: 0,
+  branchConcurrentLimit: 0,
+
+  // Keep the dependency dashboard issue so nothing is silently missed.
+  dependencyDashboard: true,
+  dependencyDashboardTitle: "Renovate Dependency Dashboard",
+
+  // ---------------------------------------------------------------------------
+  // Built-in managers
+  // ---------------------------------------------------------------------------
+  // `flux` parses HelmRelease/HelmRepository (HTTP + OCI), Kustomization,
+  // GitRepository/OCIRepository. `helm-values` parses image repo/tag pairs in
+  // values.yaml. Both are enabled by default; we just make sure the file
+  // matching is broad enough for this repo's layout.
+  flux: {
+    managerFilePatterns: [
+      "/(^|/)infrastructure/.+\\.ya?ml$/",
+      "/(^|/)clusters/.+\\.ya?ml$/",
+    ],
+  },
+  "helm-values": {
+    managerFilePatterns: ["/(^|/)values\\.ya?ml$/"],
+  },
+  kustomize: {
+    managerFilePatterns: ["/(^|/)kustomization\\.ya?ml$/"],
+  },
+
+  // ---------------------------------------------------------------------------
+  // Custom (regex) managers for version pins no built-in manager understands.
+  // ---------------------------------------------------------------------------
+  customManagers: [
+    // 1. Kustomize remote bases pinned via GitHub release-download URLs, e.g.
+    //    - https://github.com/k-orc/openstack-resource-controller/releases/download/v2.5.0/install.yaml
+    //    - https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.1/experimental-install.yaml
+    //    - https://raw.githubusercontent.com/dragonflydb/dragonfly-operator/v1.3.0/manifests/...
+    {
+      customType: "regex",
+      managerFilePatterns: ["/(^|/).+\\.ya?ml$/"],
+      matchStrings: [
+        "https://github\\.com/(?<depName>[^/]+/[^/]+)/releases/download/(?<currentValue>v?[0-9][^/]+)/",
+        "https://raw\\.githubusercontent\\.com/(?<depName>[^/]+/[^/]+)/(?<currentValue>v?[0-9][^/]+)/",
+      ],
+      datasourceTemplate: "github-releases",
+      versioningTemplate: "semver",
+    },
+
+    // 2. Kustomize remote bases pinned via `?ref=vX.Y.Z`, e.g.
+    //    - github.com/kubernetes-csi/external-snapshotter//client/config/crd?ref=v8.6.0
+    {
+      customType: "regex",
+      managerFilePatterns: ["/(^|/)kustomization\\.ya?ml$/"],
+      matchStrings: [
+        "github\\.com/(?<depName>[^/]+/[^/]+?)(?://[^?]+)?\\?ref=(?<currentValue>v?[0-9][^\\s\"']+)",
+      ],
+      datasourceTemplate: "github-releases",
+      versioningTemplate: "semver",
+    },
+
+    // 3. Crossplane provider & function packages, e.g.
+    //    package: xpkg.crossplane.io/crossplane-contrib/provider-openstack:v0.9.0
+    //    package: xpkg.upbound.io/banhcanh/provider-zitadel:v0.11.0-3.g0f3c6d5
+    {
+      customType: "regex",
+      managerFilePatterns: ["/(^|/).+\\.ya?ml$/"],
+      matchStrings: [
+        "package:\\s*(?<depName>(?:xpkg\\.[^/]+|registry\\.upbound\\.io)/[^:\\s]+):(?<currentValue>[^\\s\"']+)",
+      ],
+      datasourceTemplate: "docker",
+    },
+
+    // 4. Cluster API provider version fields (operator.cluster.x-k8s.io CRs and
+    //    the clusterctl inventory). Each provider file carries a comment marker
+    //    so Renovate knows which upstream repo to track. See the comments added
+    //    next to each `version:` in infrastructure/cluster-api-providers/*.yaml,
+    //    of the form:  # renovate: datasource=github-releases depName=org/repo
+    {
+      customType: "regex",
+      managerFilePatterns: ["/(^|/)cluster-api-providers/.+\\.ya?ml$/"],
+      matchStrings: [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)( versioning=(?<versioning>\\S+))?\\s+version:\\s*[\"']?(?<currentValue>v?[0-9][^\\s\"']*)[\"']?",
+      ],
+      versioningTemplate: "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}",
+    },
+
+    // 5. Sveltos ClusterProfile inline helmCharts (chartVersion) — not a real
+    //    HelmRelease so the flux manager skips it. The repositoryURL line that
+    //    precedes chartVersion tells us the source. Annotated with a marker.
+    {
+      customType: "regex",
+      managerFilePatterns: ["/(^|/)sveltos/clusterprofiles/.+\\.ya?ml$/"],
+      matchStrings: [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)( registryUrl=(?<registryUrl>\\S+))?\\s+chartVersion:\\s*[\"']?(?<currentValue>[^\\s\"']+)[\"']?",
+      ],
+      versioningTemplate: "semver",
+    },
+
+    // 6. Generic `tag:` image pins inside Helm values that helm-values misses
+    //    because the image lacks a sibling `repository:` (e.g. kamaji uses the
+    //    chart-default image and overrides only the tag). Annotated with a
+    //    marker so we know what image to track.
+    {
+      customType: "regex",
+      managerFilePatterns: ["/(^|/).+\\.ya?ml$/"],
+      matchStrings: [
+        "# renovate: datasource=docker depName=(?<depName>\\S+)( versioning=(?<versioning>\\S+))?\\s+tag:\\s*[\"']?(?<currentValue>[^\\s\"']+)[\"']?",
+      ],
+      datasourceTemplate: "docker",
+      versioningTemplate: "{{#if versioning}}{{{versioning}}}{{else}}docker{{/if}}",
+    },
+
+    // 7. Plain `image: registry/repo:tag` keys in raw Kubernetes manifests
+    //    (not Helm values, not a HelmRelease) — e.g. the Rook Ceph image,
+    //    the rook toolbox, and the chihiro Deployment. The built-in
+    //    `kubernetes` manager is opt-in and needs file patterns; a regex
+    //    manager keeps it explicit and avoids matching commented examples.
+    //    Requires a registry/namespace in the image (a `/`) so we don't catch
+    //    bare library images by accident; ignores values-style `image:` blocks
+    //    (those have no inline tag on the same line).
+    {
+      customType: "regex",
+      managerFilePatterns: ["/(^|/).+\\.ya?ml$/"],
+      matchStrings: [
+        "image:\\s+[\"']?(?<depName>(?:[a-z0-9.-]+(?::[0-9]+)?/)[a-z0-9._/-]+):(?<currentValue>[a-zA-Z0-9][^\\s\"'@]*)(?:@(?<currentDigest>sha256:[a-f0-9]+))?[\"']?\\s*$",
+      ],
+      datasourceTemplate: "docker",
+    },
+
+    // 8. npins GitRelease pin (npins/sources.json). Tracks the Go release tag.
+    {
+      customType: "regex",
+      managerFilePatterns: ["/(^|/)npins/sources\\.json$/"],
+      matchStrings: [
+        '"owner":\\s*"(?<owner>[^"]+)",\\s*"repo":\\s*"(?<repo>[^"]+)"[\\s\\S]*?"version":\\s*"(?<currentValue>v?[0-9][^"]+)"',
+      ],
+      depNameTemplate: "{{{owner}}}/{{{repo}}}",
+      datasourceTemplate: "github-releases",
+      versioningTemplate: "semver",
+    },
+  ],
+
+  // ---------------------------------------------------------------------------
+  // Package rules: grouping, labels, and a few must-pin behaviours.
+  // ---------------------------------------------------------------------------
+  packageRules: [
+    // Group all the yaook operator HelmReleases (they share one version 2.2.0).
+    {
+      groupName: "yaook operators",
+      matchManagers: ["flux"],
+      matchPackageNames: ["/-operator$/", "/^crds$/"],
+      matchFileNames: ["infrastructure/yaook-operator/**"],
+    },
+
+    // Group the OpenStack cloud-provider charts + their images (CCM + Cinder
+    // CSI ship in lockstep on the same release train).
+    {
+      groupName: "openstack cloud-provider",
+      matchPackageNames: [
+        "openstack-cloud-controller-manager",
+        "openstack-cinder-csi",
+        "registry.k8s.io/provider-os/openstack-cloud-controller-manager",
+        "registry.k8s.io/provider-os/cinder-csi-plugin",
+      ],
+    },
+
+    // Group all Cluster API providers (core/bootstrap/control-plane/CAPO move
+    // together when bumping the CAPI minor).
+    {
+      groupName: "cluster-api providers",
+      matchFileNames: ["infrastructure/cluster-api-providers/**"],
+    },
+
+    // Cilium appears as a HelmRelease AND as a Sveltos inline chart — keep both
+    // bumped together so the bootstrap and Flux-managed versions never diverge.
+    {
+      groupName: "cilium",
+      matchPackageNames: ["cilium", "cilium/cilium"],
+    },
+
+    // flux-operator: HelmRelease + Sveltos inline chart — keep in sync.
+    {
+      groupName: "flux-operator",
+      matchPackageNames: [
+        "flux-operator",
+        "fluxcd-community/flux-operator",
+        "controlplaneio-fluxcd/flux-operator",
+      ],
+    },
+
+    // Major bumps for critical infra get their own PR + a label so they are
+    // never accidentally batched and always reviewed in isolation.
+    {
+      matchUpdateTypes: ["major"],
+      addLabels: ["major-update", "needs-careful-review"],
+    },
+
+    // The kamaji chart is intentionally pinned to a rolling "0.0.0+latest" tag;
+    // there is no real version to bump — skip the chart itself (the image tag
+    // is handled separately via the annotated custom manager).
+    {
+      matchPackageNames: ["kamaji", "kamaji-crds"],
+      matchManagers: ["flux"],
+      enabled: false,
+    },
+
+    // Pin all container image digests so an updated tag is reproducible.
+    {
+      matchDatasources: ["docker"],
+      pinDigests: false, // set true if you want immutable digest pinning
+    },
+
+    // Helpful labels for triage.
+    {
+      matchManagers: ["flux"],
+      addLabels: ["helm"],
+    },
+    {
+      matchDatasources: ["docker"],
+      addLabels: ["container-image"],
+    },
+  ],
+}

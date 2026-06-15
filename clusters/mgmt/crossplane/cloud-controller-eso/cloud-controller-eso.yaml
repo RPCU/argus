@@ -119,24 +119,57 @@ spec:
     creationPolicy: Owner
     template:
       engineVersion: v2
+      # IMPORTANT: This Secret is consumed by Sveltos as a policyRefs source,
+      # NOT mounted directly. Sveltos requires two things:
+      #   1. The Secret TYPE must be addons.projectsveltos.io/cluster-profile,
+      #      otherwise it is rejected with "unsupported secret type".
+      #   2. Each data value is treated as a Kubernetes MANIFEST to deploy into
+      #      the matching child clusters — it is NOT copied verbatim. So we do
+      #      NOT store the raw clouds.yaml here; instead we store the full
+      #      definition of the *target* Opaque Secret that the CCM/CSI charts
+      #      mount in the child cluster's kube-system (key clouds.yaml).
+      type: addons.projectsveltos.io/cluster-profile
       data:
-        clouds.yaml: |
-          clouds:
-            openstack:
-              auth:
-                auth_url: https://keystone.rpcu.vpn
-                application_credential_id: "{{ .applicationCredentialID }}"
-                application_credential_secret: "{{ .applicationCredentialSecret }}"
-              region_name: hetzner
-              verify: false
-              interface: public
-              identity_api_version: 3
+        secret.yaml: |
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: cloud-controller-clouds
+            namespace: kube-system
+          type: Opaque
+          stringData:
+            # The CCM and Cinder CSI binaries read an INI cloud.conf (NOT YAML).
+            # cloud.conf delegates auth to clouds.yaml via use-clouds=true. Both
+            # charts MUST be pointed at this file (secret.filename: cloud.conf);
+            # pointing them at clouds.yaml fails with
+            # "Failed to read OpenStack configuration file: 1:1: expected section header"
+            # because the binary tries to INI-parse the YAML.
+            cloud.conf: |
+              [Global]
+              use-clouds=true
+              clouds-file=/etc/config/clouds.yaml
+              cloud=openstack
+              tls-insecure=true
+
+              [LoadBalancer]
+              enabled=true
+              floating-network-id=1cfd69da-057c-4748-a0d4-de5b0ca77db2
+              create-monitor=true
+              lb-provider=ovn
+              lb-method=SOURCE_IP_PORT
+            clouds.yaml: |
+              clouds:
+                openstack:
+                  auth:
+                    auth_url: https://keystone.rpcu.vpn
+                    application_credential_id: "64d11fabde71487d91065edbfbb70280"
+                    application_credential_secret: "{{ .applicationCredentialSecret }}"
+                  region_name: hetzner
+                  verify: false
+                  interface: public
+                  identity_api_version: 3
   data:
-    - secretKey: applicationCredentialID
-      remoteRef:
-        key: cloud-controller-app-cred
-        property: id
     - secretKey: applicationCredentialSecret
       remoteRef:
         key: cloud-controller-app-cred
-        property: secret
+        property: attribute.secret

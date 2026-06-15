@@ -3,7 +3,6 @@ resources:
   - cilium.yaml
   - cilium-values.yaml
   - flux.yaml
+  - external-snapshotter.yaml
   - openstack-ccm.yaml
   - openstack-cinder-csi.yaml
-  - volume-snapshot-crds.yaml
-  - volume-snapshot-controller.yaml

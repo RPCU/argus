@@ -91,7 +91,18 @@ data:
             metadata:
               name: cilium
             spec:
+              # Keep the base cilium-values ConfigMap (from
+              # infrastructure/cilium, carries kubeProxyReplacement: true +
+              # socketLB.hostNamespaceOnly: false — REQUIRED for host-network
+              # pods like the OpenStack CCM to reach the apiserver ClusterIP) and
+              # append the per-cluster cilium-workload-values (k8sServiceHost/port,
+              # pod CIDR, clusterDomain) so it overrides. Listing ONLY the
+              # workload ConfigMap drops kubeProxyReplacement, leaving
+              # kube-proxy-replacement=false — host-network ClusterIP access then
+              # times out (CCM CrashLoops on extension-apiserver-authentication).
               valuesFrom:
+                - kind: ConfigMap
+                  name: cilium-values
                 - kind: ConfigMap
                   name: cilium-workload-values
           target:

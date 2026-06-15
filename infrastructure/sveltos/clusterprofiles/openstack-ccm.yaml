@@ -1,17 +1,28 @@
-# OpenStack Cloud Controller Manager (OCCM) add-on for CAPI workload clusters.
+# OpenStack Cloud Controller Manager (OCCM) for OPT-IN workload clusters,
+# delivered as a Flux takeover (NO Sveltos helmChart bootstrap).
 #
-# Provides Service type=LoadBalancer via OpenStack Octavia and initialises
-# Nodes (removes the node.cloudprovider.kubernetes.io/uninitialized taint
-# that CAPO sets when starting kubelet with --cloud-provider=external).
+# Why no bootstrap: unlike the CNI (cilium needs a Sveltos helmChart bootstrap
+# because no pod schedules without a CNI), the CCM is not required to bring a
+# cluster up. A Sveltos helmChart bootstrap (ContinuousWithDriftDetection) would
+# also permanently FIGHT Flux over the same Helm release — Sveltos kept
+# reverting Flux's nodeSelector/postRenderer changes. So Flux is the SOLE owner:
+# this ClusterProfile only pushes manifests; Flux installs + reconciles the CCM
+# from the central repo.
 #
-# Uses a dedicated OpenStack user ("cloud-controller") with minimal
-# permissions (load-balancer_member + member), created by Crossplane on the
-# mgmt cluster. An ApplicationCredential is generated and rendered into
-# clouds.yaml via ESO (in kube-system). The resulting Secret is pushed to
-# each child cluster's kube-system by Sveltos.
+# Three things are pushed to each matching workload cluster:
+#   1. the shared "cloud-controller-clouds" Secret (the dedicated app-cred
+#      clouds.yaml + cloud.conf rendered by ESO on mgmt). This profile OWNS the
+#      secret (the old openstack-ccm bootstrap profile used to); the Cinder CSI
+#      profile mounts it but does not own it (avoids a Sveltos deploy conflict).
+#   2. the "openstack-ccm-workload-values" ConfigMap (kube-system) — overrides
+#      the mgmt-specific base values.yaml: the shared secret name
+#      (cloud-controller-clouds) and the Kamaji tolerations.
+#   3. the Flux Kustomization CR (wrapping infrastructure/openstack-ccm), patched
+#      to add that ConfigMap as a second valuesFrom AND a postRenderer that
+#      replaces the chart's control-plane nodeSelector (Kamaji clusters have no
+#      control-plane nodes).
 #
-# Opt-in: child clusters must carry the label
-#   sveltos.argus.rpcu.io/openstack-ccm: enabled
+# Gated by the opt-in label sveltos.argus.rpcu.io/openstack-ccm: enabled.
 apiVersion: config.projectsveltos.io/v1beta1
 kind: ClusterProfile
 metadata:
@@ -24,35 +35,108 @@ spec:
       type: workload
       sveltos.argus.rpcu.io/openstack-ccm: enabled
   policyRefs:
-    # clouds.yaml with the dedicated application credential (created by
-    # Crossplane + ESO on mgmt). Sveltos pushes it to kube-system on each
-    # child cluster — the CCM chart mounts it at /etc/config.
+    # The shared clouds credential Secret (cloud.conf + clouds.yaml), rendered
+    # by ESO on mgmt as type addons.projectsveltos.io/cluster-profile. Sveltos
+    # deploys the wrapped Opaque Secret into the child cluster's kube-system.
     - name: cloud-controller-clouds
       namespace: kube-system
       kind: Secret
-  helmCharts:
-    - repositoryURL: https://kubernetes.github.io/cloud-provider-openstack
-      repositoryName: cloud-provider-openstack
-      chartName: cloud-provider-openstack/openstack-cloud-controller-manager
-      # renovate: datasource=helm depName=openstack-cloud-controller-manager registryUrl=https://kubernetes.github.io/cloud-provider-openstack
-      chartVersion: "2.35.0"
-      releaseName: openstack-cloud-controller-manager
-      releaseNamespace: kube-system
-      helmChartAction: Install
-      # Mirrors infrastructure/openstack-ccm/values.yaml.
-      values: |
-        image:
-          repository: registry.k8s.io/provider-os/openstack-cloud-controller-manager
-          tag: "v1.35.0"
-        enabledControllers:
-          - cloud-node
-          - cloud-node-lifecycle
-          - service
+    - name: openstack-ccm-workload-values
+      namespace: projectsveltos
+      kind: ConfigMap
+    - name: openstack-ccm-flux-kustomization
+      namespace: projectsveltos
+      kind: ConfigMap
+---
+# Per-cluster values override pushed into the workload cluster's kube-system.
+# valuesFrom ConfigMaps are merged in order; the Flux Kustomization patch below
+# appends this one AFTER the base openstack-ccm-values, so these keys win.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openstack-ccm-workload-values
+  namespace: projectsveltos
+data:
+  openstack-ccm-workload-values.yaml: |
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: openstack-ccm-workload-values
+      namespace: kube-system
+    data:
+      values.yaml: |
         secret:
           enabled: true
           create: false
           name: cloud-controller-clouds
-        extraVolumes: []
-        extraVolumeMounts: []
+        # NOTE: nodeSelector is intentionally NOT set here. Helm map-merge cannot
+        # remove the chart's default node-role.kubernetes.io/control-plane key,
+        # so it is overridden by a Helm postRenderer ($patch: replace) on the
+        # Flux Kustomization patch below. tolerations DO apply via values merge.
+        tolerations:
+          - key: node.cloudprovider.kubernetes.io/uninitialized
+            value: "true"
+            effect: NoSchedule
+          - key: node-role.kubernetes.io/control-plane
+            effect: NoSchedule
+          - key: node-role.kubernetes.io/master
+            effect: NoSchedule
 ---
-
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openstack-ccm-flux-kustomization
+  namespace: projectsveltos
+data:
+  openstack-ccm-flux-kustomization.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: openstack-ccm
+      namespace: kube-system
+    spec:
+      interval: 10m
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/openstack-ccm
+      prune: false
+      patches:
+        - patch: |
+            apiVersion: helm.toolkit.fluxcd.io/v2
+            kind: HelmRelease
+            metadata:
+              name: openstack-cloud-controller-manager
+            spec:
+              valuesFrom:
+                - kind: ConfigMap
+                  name: openstack-ccm-values
+                - kind: ConfigMap
+                  name: openstack-ccm-workload-values
+              # Helm deep-merges map values, so neither {} nor adding a key can
+              # REMOVE the chart's default nodeSelector key
+              # node-role.kubernetes.io/control-plane. On Kamaji workload
+              # clusters that key matches no node, so the CCM DaemonSet stays at
+              # 0 desired. Use a Helm postRenderer (kustomize $patch: replace) to
+              # overwrite the rendered DaemonSet's nodeSelector outright.
+              postRenderers:
+                - kustomize:
+                    patches:
+                      - target:
+                          kind: DaemonSet
+                          name: openstack-cloud-controller-manager
+                        patch: |
+                          apiVersion: apps/v1
+                          kind: DaemonSet
+                          metadata:
+                            name: openstack-cloud-controller-manager
+                          spec:
+                            template:
+                              spec:
+                                nodeSelector:
+                                  $patch: replace
+                                  kubernetes.io/os: linux
+          target:
+            kind: HelmRelease
+            name: openstack-cloud-controller-manager

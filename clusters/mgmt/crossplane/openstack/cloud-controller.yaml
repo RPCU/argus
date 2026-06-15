@@ -4,13 +4,26 @@
 # Instead of sharing the admin capo-variables credentials with every child
 # cluster, this creates a dedicated OpenStack user ("cloud-controller") with
 # only the roles required by the CCM (Octavia/LB) and Cinder CSI (volumes).
-# An ApplicationCredential is generated and written to a Kubernetes Secret
+#
+# An ApplicationCredential is generated for the authenticated user
+# (yaook-sys-maint) but restricted to only the roles below, giving the
+# same effective permissions as the dedicated user. The Keystone identity API
+# always creates app-creds for the authenticated user — there is no way to
+# specify a target userId in the request body. To make this work, the same
+# roles are also assigned to yaook-sys-maint so the app-cred creation succeeds
+# (Keystone requires that restricted roles are a subset of the user's roles).
+#
+# The generated credential ID and secret are written to a Kubernetes Secret
 # (via writeConnectionSecretToRef); an ESO ExternalSecret then templates the
 # clouds.yaml from it, and Sveltos pushes it to child clusters.
 #
 # Roles assigned (in the admin project):
 #   - load-balancer_member : Octavia LB CRUD (CCM)
 #   - member               : Cinder volume/snapshot CRUD (CSI)
+#   - reader               : pre-existing on yaook-sys-maint; included because
+#                            Keystone inherits all user roles into the app-cred
+#                            when it is first created, and roles are immutable
+#                            on an existing app-cred.
 #
 # The RoleAssignmentV3 resources reference Crossplane-managed RoleV3 objects.
 # These roles are created by Crossplane (no pre-existing roles needed).
@@ -97,16 +110,50 @@ spec:
     projectId: "bae33843e66e4028b574e36cd0953fac"
 ---
 # ---------------------------------------------------------------------------
-# Application credential for the service user.
+# Role assignments — grant the roles to yaook-sys-maint in the admin project.
 #
-# Scoped to the creating user's project, restricted to the two roles above.
-# The generated credential ID and secret are written to the connection secret
-# (via writeConnectionSecretToRef) so an ESO ExternalSecret can template
-# the clouds.yaml for child clusters.
+# The Keystone application credential API creates creds for the authenticated
+# user only (no userId override is supported). The provider authenticates as
+# yaook-sys-maint, so the app-cred is created for that user. Keystone
+# requires that restricted app-cred roles are a subset of the user's roles,
+# so we must assign load-balancer_member, member, and reader to yaook-sys-maint too.
+# ---------------------------------------------------------------------------
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: RoleAssignmentV3
+metadata:
+  name: yaook-sys-maint-lb
+  namespace: crossplane-system
+spec:
+  forProvider:
+    roleIdRef:
+      name: cloud-controller-lb
+    userId: "44b2b48fb89d4fde9d659bf01831d3b0"
+    projectId: "bae33843e66e4028b574e36cd0953fac"
+---
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: RoleAssignmentV3
+metadata:
+  name: yaook-sys-maint-member
+  namespace: crossplane-system
+spec:
+  forProvider:
+    roleIdRef:
+      name: cloud-controller-member
+    userId: "44b2b48fb89d4fde9d659bf01831d3b0"
+    projectId: "bae33843e66e4028b574e36cd0953fac"
+---
+# ---------------------------------------------------------------------------
+# Application credential for the authenticated user (yaook-sys-maint),
+# restricted to only the roles above.
 #
-# Note: projectId and userIdRef are NOT supported in forProvider — the app
-# cred is automatically scoped to the authenticated user's project.
-# roles is an array of strings (role names), not objects.
+# Scoped to the authenticated user's project (admin). The generated credential
+# ID and secret are written to the connection secret (via
+# writeConnectionSecretToRef) so an ESO ExternalSecret can template the
+# clouds.yaml for child clusters.
+#
+# roles is an array of strings (role names), not objects. The roles field
+# restricts which roles the app-cred can assume — it does NOT assign new
+# roles to the user.
 # ---------------------------------------------------------------------------
 apiVersion: identity.openstack.m.crossplane.io/v1alpha1
 kind: ApplicationCredentialV3
@@ -120,6 +167,7 @@ spec:
     roles:
       - load-balancer_member
       - member
+      - reader
     unrestricted: false
   writeConnectionSecretToRef:
     name: cloud-controller-app-cred

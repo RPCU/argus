@@ -1,0 +1,4 @@
+resources:
+  - providerConfig.yaml
+  - credentials-eso.yaml
+  - cloud-controller.yaml

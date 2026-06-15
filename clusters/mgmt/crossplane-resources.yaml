@@ -1,10 +1,12 @@
-# mgmt-cluster concrete Crossplane resources: this cluster's own Zitadel
-# ProviderConfig + the chihiro Oidc app (clusters/mgmt/crossplane/zitadel).
-# Separate from the openstack cluster's crossplane-resources — mgmt only owns the
-# chihiro Oidc, never the shared Zitadel platform.
+# mgmt-cluster concrete Crossplane resources:
+#   - zitadel/              ProviderConfig + chihiro Oidc app (ns zitadel)
+#   - openstack/            ProviderConfig + cloud-controller user/roles/app-cred
+#                           (ns crossplane-system, cluster-scoped resources)
+#   - cloud-controller-eso/ ESO plumbing rendering clouds.yaml for Sveltos
+#                           (SA in kube-system, reads from crossplane-system)
 #
-# prune is false as a safety belt so a reconcile hiccup can't delete the live
-# chihiro Zitadel app.
+# prune is false for zitadel as a safety belt; openstack and cloud-controller-eso
+# can be pruned normally.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -16,8 +18,9 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  path: ./clusters/mgmt/crossplane/zitadel
+  path: ./clusters/mgmt/crossplane
   prune: false
   timeout: 5m
   dependsOn:
     - name: crossplane-zitadel
+    - name: crossplane-openstack

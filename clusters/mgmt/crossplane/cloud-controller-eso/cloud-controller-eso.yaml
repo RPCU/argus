@@ -1,23 +1,20 @@
-# =============================================================================
-# ESO plumbing for the cloud-controller application credential.
+# ESO plumbing for the cloud-controller application credential (mgmt cluster).
 #
 # Reads the Crossplane-generated ApplicationCredentialV3 connection secret
-# from the yaook namespace and templates clouds.yaml for CCM / Cinder CSI.
+# from crossplane-system and templates clouds.yaml for CCM / Cinder CSI.
 #
-# IMPORTANT: These resources live in kube-system (NOT yaook) because:
-# 1. The CCM and Cinder CSI Helm charts mount the secret from kube-system
-# 2. Sveltos policyRefs deploys Secrets to child clusters in the same namespace
-#    as on the mgmt cluster — so the Secret must be in kube-system to land
-#    in the right place on child clusters.
+# The resulting Secret (cloud-controller-clouds) in kube-system is picked up
+# by Sveltos ClusterProfiles and pushed to child clusters' kube-system namespace.
 #
-# The Crossplane resources (UserV3, RoleV3, RoleAssignmentV3,
-# ApplicationCredentialV3) remain in clusters/openstack/crossplane/openstack/
-# with the other OpenStack managed resources (namespace: yaook).
+# NOTE: The app-cred connection secret is written to crossplane-system by
+# Crossplane (writeConnectionSecretToRef without namespace defaults to the
+# resource's namespace, which is crossplane-system for cluster-scoped providers).
 # =============================================================================
 
 # ---------------------------------------------------------------------------
 # RBAC: ServiceAccount in kube-system that can read the app-cred secret
-# from the yaook namespace.
+# from the crossplane-system namespace, AND read kube-root-ca.crt in its
+# own namespace (required by the SecretStore caProvider).
 # ---------------------------------------------------------------------------
 apiVersion: v1
 kind: ServiceAccount
@@ -25,11 +22,38 @@ metadata:
   name: cloud-controller-reader
   namespace: kube-system
 ---
+# Allow the SA to read kube-root-ca.crt in kube-system (SecretStore caProvider).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cloud-controller-reader-ca
+  namespace: kube-system
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["kube-root-ca.crt"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cloud-controller-reader-ca
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cloud-controller-reader-ca
+subjects:
+  - kind: ServiceAccount
+    name: cloud-controller-reader
+    namespace: kube-system
+---
+# Allow the SA to read the app-cred secret in crossplane-system.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: cloud-controller-app-cred-reader
-  namespace: yaook
+  namespace: crossplane-system
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
@@ -40,7 +64,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: cloud-controller-reader
-  namespace: yaook
+  namespace: crossplane-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -51,17 +75,17 @@ subjects:
     namespace: kube-system
 ---
 # ---------------------------------------------------------------------------
-# SecretStore: reads from the yaook namespace using the kube-system SA.
+# SecretStore: reads from crossplane-system using the kube-system SA.
 # ---------------------------------------------------------------------------
 apiVersion: external-secrets.io/v1
 kind: SecretStore
 metadata:
-  name: yaook-secrets
+  name: crossplane-secrets
   namespace: kube-system
 spec:
   provider:
     kubernetes:
-      remoteNamespace: yaook
+      remoteNamespace: crossplane-system
       server:
         caProvider:
           type: ConfigMap
@@ -88,7 +112,7 @@ metadata:
 spec:
   refreshInterval: 1h
   secretStoreRef:
-    name: yaook-secrets
+    name: crossplane-secrets
     kind: SecretStore
   target:
     name: cloud-controller-clouds

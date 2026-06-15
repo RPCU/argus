@@ -10,3 +10,4 @@ resources:
   - project-lab.yaml
   - securityGroups.yaml
   - zonedns.yaml
+  - cloud-controller.yaml

@@ -4,6 +4,8 @@
 #                 flavors, groups, projects, security groups, DNS zone) + the
 #                 ClusterProviderConfig pointing at the live OpenStack creds. (ns yaook)
 #   - zitadel/    OpenStack-cluster Zitadel Oidc apps (openstack, netbird). (ns zitadel)
+#   - cloud-controller-eso/  ESO plumbing for CCM/CSI app-cred (ns kube-system)
 resources:
   - openstack/
   - zitadel/
+  - cloud-controller-eso/

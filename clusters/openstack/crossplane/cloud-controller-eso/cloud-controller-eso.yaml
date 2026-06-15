@@ -1,0 +1,118 @@
+# =============================================================================
+# ESO plumbing for the cloud-controller application credential.
+#
+# Reads the Crossplane-generated ApplicationCredentialV3 connection secret
+# from the yaook namespace and templates clouds.yaml for CCM / Cinder CSI.
+#
+# IMPORTANT: These resources live in kube-system (NOT yaook) because:
+# 1. The CCM and Cinder CSI Helm charts mount the secret from kube-system
+# 2. Sveltos policyRefs deploys Secrets to child clusters in the same namespace
+#    as on the mgmt cluster — so the Secret must be in kube-system to land
+#    in the right place on child clusters.
+#
+# The Crossplane resources (UserV3, RoleV3, RoleAssignmentV3,
+# ApplicationCredentialV3) remain in clusters/openstack/crossplane/openstack/
+# with the other OpenStack managed resources (namespace: yaook).
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# RBAC: ServiceAccount in kube-system that can read the app-cred secret
+# from the yaook namespace.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cloud-controller-reader
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cloud-controller-app-cred-reader
+  namespace: yaook
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["cloud-controller-app-cred"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cloud-controller-reader
+  namespace: yaook
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cloud-controller-app-cred-reader
+subjects:
+  - kind: ServiceAccount
+    name: cloud-controller-reader
+    namespace: kube-system
+---
+# ---------------------------------------------------------------------------
+# SecretStore: reads from the yaook namespace using the kube-system SA.
+# ---------------------------------------------------------------------------
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: yaook-secrets
+  namespace: kube-system
+spec:
+  provider:
+    kubernetes:
+      remoteNamespace: yaook
+      server:
+        caProvider:
+          type: ConfigMap
+          name: kube-root-ca.crt
+          key: ca.crt
+      auth:
+        serviceAccount:
+          name: cloud-controller-reader
+---
+# ---------------------------------------------------------------------------
+# ExternalSecret: renders clouds.yaml from the application credential.
+#
+# The resulting Secret (cloud-controller-clouds) in kube-system contains:
+#   clouds.yaml — OpenStack clouds.yaml with application credential auth
+#
+# Sveltos ClusterProfiles reference this secret and push it to child clusters'
+# kube-system namespace, where the CCM and CSI charts mount it.
+# ---------------------------------------------------------------------------
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: cloud-controller-clouds
+  namespace: kube-system
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: yaook-secrets
+    kind: SecretStore
+  target:
+    name: cloud-controller-clouds
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        clouds.yaml: |
+          clouds:
+            openstack:
+              auth:
+                auth_url: https://keystone.rpcu.vpn
+                application_credential_id: "{{ .applicationCredentialID }}"
+                application_credential_secret: "{{ .applicationCredentialSecret }}"
+              region_name: hetzner
+              verify: false
+              interface: public
+              identity_api_version: 3
+  data:
+    - secretKey: applicationCredentialID
+      remoteRef:
+        key: cloud-controller-app-cred
+        property: applicationCredentialID
+    - secretKey: applicationCredentialSecret
+      remoteRef:
+        key: cloud-controller-app-cred
+        property: applicationCredentialSecret

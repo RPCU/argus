@@ -1,0 +1,58 @@
+# OpenStack Cloud Controller Manager (OCCM) add-on for CAPI workload clusters.
+#
+# Provides Service type=LoadBalancer via OpenStack Octavia and initialises
+# Nodes (removes the node.cloudprovider.kubernetes.io/uninitialized taint
+# that CAPO sets when starting kubelet with --cloud-provider=external).
+#
+# Uses a dedicated OpenStack user ("cloud-controller") with minimal
+# permissions (load-balancer_member + member), created by Crossplane on the
+# mgmt cluster. An ApplicationCredential is generated and rendered into
+# clouds.yaml via ESO (in kube-system). The resulting Secret is pushed to
+# each child cluster's kube-system by Sveltos.
+#
+# Opt-in: child clusters must carry the label
+#   sveltos.argus.rpcu.io/openstack-ccm: enabled
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: openstack-ccm
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  clusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/openstack-ccm: enabled
+  policyRefs:
+    # clouds.yaml with the dedicated application credential (created by
+    # Crossplane + ESO on mgmt). Sveltos pushes it to kube-system on each
+    # child cluster — the CCM chart mounts it at /etc/config.
+    - name: cloud-controller-clouds
+      namespace: kube-system
+      kind: Secret
+  helmCharts:
+    - repositoryURL: https://kubernetes.github.io/cloud-provider-openstack
+      repositoryName: cloud-provider-openstack
+      chartName: cloud-provider-openstack/openstack-cloud-controller-manager
+      # renovate: datasource=helm depName=openstack-cloud-controller-manager registryUrl=https://kubernetes.github.io/cloud-provider-openstack
+      chartVersion: "2.35.0"
+      releaseName: openstack-cloud-controller-manager
+      releaseNamespace: kube-system
+      helmChartAction: Install
+      # Mirrors infrastructure/openstack-ccm/values.yaml.
+      values: |
+        image:
+          repository: registry.k8s.io/provider-os/openstack-cloud-controller-manager
+          tag: "v1.35.0"
+        enabledControllers:
+          - cloud-node
+          - cloud-node-lifecycle
+          - service
+        secret:
+          enabled: true
+          create: false
+          name: cloud-controller-clouds
+        extraVolumes: []
+        extraVolumeMounts: []
+---
+

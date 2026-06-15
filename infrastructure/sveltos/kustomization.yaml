@@ -9,6 +9,8 @@
 #                       (oidc-rbac: kube-admin/kube-user -> cluster-admin)
 #                       (cilium: OneTime CNI bootstrap)
 #                       (flux: Flux operator + reconciles Cilium from repo)
+#                       (openstack-ccm: OpenStack CCM for workload clusters)
+#                       (openstack-cinder-csi: Cinder CSI + VolumeSnapshot for workload clusters)
 #   gateway/          - kgateway HTTPRoute exposing the dashboard
 resources:
   - namespace.yaml

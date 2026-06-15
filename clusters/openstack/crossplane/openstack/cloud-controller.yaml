@@ -1,0 +1,125 @@
+# =============================================================================
+# OpenStack service user for CCM + Cinder CSI on workload clusters.
+#
+# Instead of sharing the admin capo-variables credentials with every child
+# cluster, this creates a dedicated OpenStack user ("cloud-controller") with
+# only the roles required by the CCM (Octavia/LB) and Cinder CSI (volumes).
+# An ApplicationCredential is generated and written to a Kubernetes Secret
+# (via writeConnectionSecretToRef); an ESO ExternalSecret then templates the
+# clouds.yaml from it, and Sveltos pushes it to child clusters.
+#
+# Roles assigned (in the admin project):
+#   - load-balancer_member : Octavia LB CRUD (CCM)
+#   - member               : Cinder volume/snapshot CRUD (CSI)
+#
+# The RoleAssignmentV3 resources reference Crossplane-managed RoleV3 objects.
+# These roles are created by Crossplane (no pre-existing roles needed).
+# If the roles already exist, Crossplane will adopt them via external-name.
+#
+# ESO plumbing (ServiceAccount, SecretStore, ExternalSecret) lives in
+# clusters/openstack/crossplane/cloud-controller-eso/ (kube-system namespace)
+# because the CCM/CSI charts mount from kube-system and Sveltos deploys
+# policyRefs to the same namespace on child clusters.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Roles:
+#   - load-balancer_member : created by Crossplane (doesn't exist yet)
+#   - member               : adopted via external-name (pre-existing)
+# ---------------------------------------------------------------------------
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: RoleV3
+metadata:
+  name: cloud-controller-lb
+spec:
+  forProvider:
+    name: load-balancer_member
+---
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: RoleV3
+metadata:
+  name: cloud-controller-member
+  annotations:
+    crossplane.io/external-name: "8d09b485d2424866a2d11ebcbd41a802"
+spec:
+  forProvider:
+    name: member
+---
+# ---------------------------------------------------------------------------
+# Service user for the cloud controller manager + Cinder CSI.
+# ---------------------------------------------------------------------------
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: UserV3
+metadata:
+  name: cloud-controller
+  annotations:
+    crossplane.io/external-name: cloud-controller
+spec:
+  forProvider:
+    name: cloud-controller
+    description: "CCM + Cinder CSI service user (managed by Crossplane)"
+    domainId: default
+    # password is auto-generated and stored in the connection secret.
+    # If you need a fixed password, set it here and omit
+    # writeConnectionSecretToRef (not recommended).
+---
+# ---------------------------------------------------------------------------
+# Role assignments — grant the user the two roles in the admin project.
+# ---------------------------------------------------------------------------
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: RoleAssignmentV3
+metadata:
+  name: cloud-controller-lb
+spec:
+  forProvider:
+    roleIdRef:
+      name: cloud-controller-lb
+    userIdRef:
+      name: cloud-controller
+    projectIdRef:
+      name: admin
+    isDomain: false
+---
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: RoleAssignmentV3
+metadata:
+  name: cloud-controller-member
+spec:
+  forProvider:
+    roleIdRef:
+      name: cloud-controller-member
+    userIdRef:
+      name: cloud-controller
+    projectIdRef:
+      name: admin
+    isDomain: false
+---
+# ---------------------------------------------------------------------------
+# Application credential for the service user.
+#
+# Scoped to the admin project, restricted to the two roles above. The
+# generated credential ID and secret are written to the connection secret
+# (via writeConnectionSecretToRef) so an ESO ExternalSecret can template
+# the clouds.yaml for child clusters.
+#
+# applicationCredentialID and applicationCredentialSecret are the keys
+# written to the target Secret.
+# ---------------------------------------------------------------------------
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: ApplicationCredentialV3
+metadata:
+  name: cloud-controller
+spec:
+  forProvider:
+    name: cloud-controller
+    description: "Application credential for CCM + Cinder CSI (managed by Crossplane)"
+    userIdRef:
+      name: cloud-controller
+    projectId: bae33843e66e4028b574e36cd0953fac # resolved from the admin project's external-name
+    roles:
+      - name: load-balancer_member
+      - name: member
+    unrestricted: false
+  writeConnectionSecretToRef:
+    name: cloud-controller-app-cred
+    namespace: yaook

@@ -1,0 +1,78 @@
+# OpenStack Cinder CSI Driver add-on for CAPI workload clusters.
+#
+# Provides dynamic Cinder volume provisioning (StorageClass) via the
+# cinder.csi.openstack.org CSI driver. The csi-snapshotter sidecar also
+# needs VolumeSnapshot CRDs and a running snapshot-controller.
+#
+# Depends on openstack-ccm: the CCM initialises nodes (removes the
+# cloud-provider taint), so the CSI DaemonSet can schedule on all nodes.
+#
+# The clouds.yaml Secret (dedicated application credential) is the same one
+# the CCM uses — pushed from the mgmt cluster via policyRefs.
+#
+# Opt-in: child clusters must carry the label
+#   sveltos.argus.rpcu.io/openstack-cinder-csi: enabled
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: openstack-cinder-csi
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  dependsOn:
+    - openstack-ccm
+  clusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/openstack-cinder-csi: enabled
+  policyRefs:
+    # clouds.yaml with the dedicated application credential (created by
+    # Crossplane + ESO on mgmt). Sveltos pushes it to kube-system on each
+    # child cluster — the Cinder CSI chart mounts it at /etc/config.
+    - name: cloud-controller-clouds
+      namespace: kube-system
+      kind: Secret
+    # VolumeSnapshot CRDs — required by the csi-snapshotter sidecar.
+    # Without these CRDs registered, the sidecar cannot start.
+    - name: volume-snapshot-crds
+      namespace: projectsveltos
+      kind: ConfigMap
+    # Snapshot-controller Deployment + RBAC — handles VolumeSnapshot
+    # lifecycle. The csi-snapshotter sidecar needs a running controller.
+    - name: volume-snapshot-controller
+      namespace: projectsveltos
+      kind: ConfigMap
+  helmCharts:
+    - repositoryURL: https://kubernetes.github.io/cloud-provider-openstack
+      repositoryName: cloud-provider-openstack-cinder
+      chartName: cloud-provider-openstack/openstack-cinder-csi
+      # renovate: datasource=helm depName=openstack-cinder-csi registryUrl=https://kubernetes.github.io/cloud-provider-openstack
+      chartVersion: "2.35.0"
+      releaseName: openstack-cinder-csi
+      releaseNamespace: kube-system
+      helmChartAction: Install
+      # Mirrors infrastructure/openstack-cinder-csi/values.yaml.
+      # clusterID is templated per-cluster from the Sveltos Cluster resource.
+      values: |
+        csi:
+          plugin:
+            image:
+              repository: registry.k8s.io/provider-os/cinder-csi-plugin
+              tag: "v1.35.0"
+        secret:
+          enabled: true
+          hostMount: false
+          create: false
+          name: cloud-controller-clouds
+          filename: clouds.yaml
+        clusterID: "{{ .Cluster.metadata.name }}"
+        storageClass:
+          enabled: true
+          delete:
+            isDefault: false
+            allowVolumeExpansion: true
+          retain:
+            isDefault: false
+            allowVolumeExpansion: true
+---
+

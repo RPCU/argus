@@ -60,7 +60,7 @@ metadata:
   name: cloud-controller
   namespace: crossplane-system
   annotations:
-    crossplane.io/external-name: cloud-controller
+    crossplane.io/external-name: "0409f317537644e6844257115c568ea1"
 spec:
   forProvider:
     name: cloud-controller
@@ -81,8 +81,7 @@ spec:
       name: cloud-controller-lb
     userIdRef:
       name: cloud-controller
-    projectIdRef:
-      name: admin
+    projectId: "bae33843e66e4028b574e36cd0953fac"
 ---
 apiVersion: identity.openstack.m.crossplane.io/v1alpha1
 kind: RoleAssignmentV3
@@ -95,8 +94,7 @@ spec:
       name: cloud-controller-member
     userIdRef:
       name: cloud-controller
-    projectIdRef:
-      name: admin
+    projectId: "bae33843e66e4028b574e36cd0953fac"
 ---
 # ---------------------------------------------------------------------------
 # Application credential for the service user.

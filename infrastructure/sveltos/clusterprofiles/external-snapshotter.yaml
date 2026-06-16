@@ -9,7 +9,17 @@
 # controller) so Flux on the workload cluster reconciles them from the central
 # repo — exactly like the cilium-values takeover.
 #
-# Gated by the cinder opt-in label so it only lands where Cinder CSI is enabled.
+# Gated by the sveltos.argus.rpcu.io/openstack-integration label — the SAME label
+# as the openstack-ccm and openstack-cinder-csi ClusterProfiles. The snapshotter
+# is a Cinder CSI prerequisite (its csi-snapshotter sidecar needs the
+# VolumeSnapshot CRDs), and Cinder CSI is itself gated together with the CCM, so
+# all three share one opt-in label.
+#
+# dependsOn the `flux-instance` ClusterProfile (which itself dependsOn `flux`):
+# this profile pushes Flux Kustomization CRs that reference the `flux-system`
+# GitRepository and are reconciled by the kustomize-controller. Both only exist
+# once the Flux Operator + FluxInstance have deployed the Flux controllers, CRDs,
+# and the GitRepository source — so we must wait for Flux to be in place first.
 apiVersion: config.projectsveltos.io/v1beta1
 kind: ClusterProfile
 metadata:
@@ -17,10 +27,12 @@ metadata:
   namespace: projectsveltos
 spec:
   syncMode: ContinuousWithDriftDetection
+  dependsOn:
+    - flux-instance
   clusterSelector:
     matchLabels:
       type: workload
-      sveltos.argus.rpcu.io/openstack-cinder-csi: enabled
+      sveltos.argus.rpcu.io/openstack-integration: enabled
   policyRefs:
     - name: external-snapshotter-flux-kustomization
       namespace: projectsveltos

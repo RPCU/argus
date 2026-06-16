@@ -29,14 +29,60 @@ data:
           editable: true
           min: 1
           max: 9
+      # Per-worker-group form fields shown in the create/edit UI. Each entry
+      # only describes one input; where its value lands in the machineDeployment
+      # is decided by worker_group_template below.
+      worker_group_fields:
+        name:
+          label: "Group name"
+          type: string
+          required: true
+          order: 0
+        class:
+          label: "Class"
+          type: select
+          options:
+            - default-worker
+          default: default-worker
+          order: 1
+        flavor:
+          label: "Flavor"
+          type: select
+          options:
+            - small
+            - medium
+            - xmedium
+            - large
+            - xlarge
+          default: xmedium
+          order: 2
+        replicas:
+          label: "Replicas"
+          type: number
+          default: "1"
+          min: 1
+          max: 10
+          order: 3
+      # YAML template for ONE machineDeployment entry, rendered once per worker
+      # group and appended to spec.topology.workers.machineDeployments.
+      worker_group_template: |
+        name: {{ chihiro.field.name }}
+        class: {{ chihiro.field.class }}
+        replicas: {{ chihiro.field.replicas }}
+        variables:
+          overrides:
+            - name: workerFlavor
+              value: {{ chihiro.field.flavor }}
       template: |
         apiVersion: cluster.x-k8s.io/v1beta2
         kind: Cluster
         metadata:
           namespace: mgmt
           labels:
-            sveltos.argus.rpcu.io/oidc-rbac: enabled
-            sveltos.argus.rpcu.io/cilium: enabled
+            sveltos.argus.rpcu.io/oidc-rbac: {{ chihiro.oidcRbac }}
+            sveltos.argus.rpcu.io/cilium: {{ chihiro.cilium }}
+            sveltos.argus.rpcu.io/openstack-ccm: {{ chihiro.ccm }}
+            sveltos.argus.rpcu.io/openstack-cinder-csi: {{ chihiro.csi }}
             type: workload
         spec:
           clusterNetwork:
@@ -83,10 +129,56 @@ data:
         imageName:
           label: "Node Image"
           description: "OpenStack image for cluster nodes"
-          type: string
+          type: select
+          options:
+            - value: "hephaestus-kaas-25.11-{{ chihiro.version }}"
+              label: "25.11"
+              versions: ["v1.35.4"]
+            - value: "hephaestus-kaas-26.05-{{ chihiro.version }}"
+              label: "26.05"
+              versions: ["v1.36.1", "v1.35.4"]
           default: "hephaestus-kaas-26.05-{{ chihiro.version }}"
         managedSubnetCIDR:
           label: "Managed Subnet CIDR"
           description: "CIDR block for the managed subnet"
           type: string
           default: "192.168.1.0/24"
+        # Boolean (checkbox) addon toggles. editable + path lets them be flipped
+        # after creation; the label key is single-quoted in the path because it
+        # contains dots.
+        cilium:
+          label: "Cilium CNI"
+          description: "Enable the Cilium addon via Sveltos"
+          type: boolean
+          default: true
+          true_value: enabled
+          false_value: disabled
+          editable: true
+          path: "metadata.labels.'sveltos.argus.rpcu.io/cilium'"
+        oidcRbac:
+          label: "OIDC RBAC"
+          description: "Enable OIDC RBAC addon via Sveltos"
+          type: boolean
+          default: true
+          true_value: enabled
+          false_value: disabled
+          editable: true
+          path: "metadata.labels.'sveltos.argus.rpcu.io/oidc-rbac'"
+        ccm:
+          label: "Openstack CCM"
+          description: "Enable Service Type LB using Octavia"
+          type: boolean
+          default: true
+          true_value: enabled
+          false_value: disabled
+          editable: true
+          path: "metadata.labels.'sveltos.argus.rpcu.io/openstack-ccm'"
+        oidcRbac:
+          label: "Cinder CSI"
+          description: "Enable Cinder CSI for PVC provisioning"
+          type: boolean
+          default: true
+          true_value: enabled
+          false_value: disabled
+          editable: true
+          path: "metadata.labels.'sveltos.argus.rpcu.io/openstack-cinder-csi'"

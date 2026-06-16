@@ -105,6 +105,38 @@ data:
                   name: cilium-values
                 - kind: ConfigMap
                   name: cilium-workload-values
+              # LoadBalancer services on workload clusters are owned by the
+              # OpenStack CCM via Octavia (infrastructure/openstack-ccm, opt-in
+              # via the openstack-ccm ClusterProfile), NOT by Cilium. Disable the
+              # Cilium L2-announcement LoadBalancer implementation here so the
+              # agent does not ARP-announce / hand out IPs from the base
+              # CiliumLoadBalancerIPPool (10.0.0.240-253) — otherwise it races the
+              # CCM and a type: LoadBalancer Service gets a 10.0.0.x Cilium IP
+              # instead of an OpenStack floating IP.
+              values:
+                l2announcements:
+                  enabled: false
           target:
             kind: HelmRelease
             name: cilium
+        # Remove the shared base's LoadBalancer IP pool — Cilium no longer
+        # allocates LB IPs on workload clusters (Octavia/OCCM does).
+        - patch: |
+            $patch: delete
+            apiVersion: cilium.io/v2
+            kind: CiliumLoadBalancerIPPool
+            metadata:
+              name: internal
+          target:
+            kind: CiliumLoadBalancerIPPool
+            name: internal
+        # Remove the shared base's L2 announcement policy.
+        - patch: |
+            $patch: delete
+            apiVersion: "cilium.io/v2alpha1"
+            kind: CiliumL2AnnouncementPolicy
+            metadata:
+              name: internal
+          target:
+            kind: CiliumL2AnnouncementPolicy
+            name: internal

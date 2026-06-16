@@ -30,6 +30,7 @@ spec:
                 application_credential_name: "cloud-controller-lab"
                 application_credential_secret: "{{ .lab_secret }}"
                 user_id: "44b2b48fb89d4fde9d659bf01831d3b0"
+                project_id: "e538e6c8466945b4bd07da85a7ee004e"
               region_name: "RegionOne"
               insecure: true
               interface: public
@@ -41,6 +42,7 @@ spec:
                 application_credential_name: "cloud-controller-production"
                 application_credential_secret: "{{ .production_secret }}"
                 user_id: "44b2b48fb89d4fde9d659bf01831d3b0"
+                project_id: "75aa5d153361400488a2d43a4fe629c3"
               region_name: "RegionOne"
               insecure: true
               interface: public

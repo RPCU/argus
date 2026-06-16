@@ -1,3 +1,22 @@
+# Cilium CNI for OPT-IN workload clusters — Sveltos is the SOLE owner.
+#
+# Previously this was a OneTime Helm *bootstrap* that handed off to a Flux
+# takeover (the old cilium-values.yaml ClusterProfile pushed a Flux Kustomization
+# that managed the SAME Helm release kube-system/cilium). That dual-ownership was
+# broken: Flux's helm-controller cannot adopt a release installed by Sveltos's
+# Helm engine ("release not observed to be made for object"), so it looped
+# upgrade forever, never merging the base values — kubeProxyReplacement /
+# socketLB / k8sServiceHost were dropped and host-network pods (the OpenStack
+# CCM) could not reach the apiserver ClusterIP.
+#
+# Fix: Sveltos owns Cilium outright via ContinuousWithDriftDetection (drift is
+# corrected by Sveltos, no Flux involvement). The Flux takeover (cilium-values.yaml)
+# is removed. Values below are the FULL set (mirrors infrastructure/cilium/
+# values.yaml) plus the per-cluster fields Sveltos templates from the Cluster
+# resource, plus the LoadBalancer disable (Octavia/OCCM owns type: LoadBalancer
+# on workload clusters, not Cilium's L2 announcer).
+#
+# Gated by the opt-in label sveltos.argus.rpcu.io/cilium: enabled.
 apiVersion: config.projectsveltos.io/v1beta1
 kind: ClusterProfile
 metadata:
@@ -18,20 +37,38 @@ spec:
       releaseName: cilium
       releaseNamespace: kube-system
       helmChartAction: Install
-      # Cluster-specific values, instantiated by Sveltos from the matching
-      # Cluster resource in the management cluster. Without these the bootstrap
-      # chart cannot reach the API server (kube-proxy-free workload clusters
-      # have no CNI/DNS yet, so Cilium must be told the apiserver host/port
-      # directly). Mirrors infrastructure/cilium/values.yaml + the per-cluster
-      # fields the cilium-workload-values ConfigMap generates for the Flux
-      # takeover path.
+      # Full values. The per-cluster fields (k8sServiceHost/Port, pod CIDR,
+      # clusterDomain) are templated by Sveltos from the matching Cluster
+      # resource in the management cluster — REQUIRED on kube-proxy-free
+      # workload clusters (no CNI/DNS yet, so Cilium must be told the apiserver
+      # host/port directly).
+      #
+      # kubeProxyReplacement: true + socketLB.hostNamespaceOnly: false are
+      # REQUIRED for host-network pods (e.g. the OpenStack CCM) to resolve the
+      # apiserver ClusterIP; without them the CCM CrashLoops on
+      # extension-apiserver-authentication.
+      #
+      # l2announcements.enabled: false — LoadBalancer services on workload
+      # clusters are owned by the OpenStack CCM via Octavia, NOT Cilium. The
+      # base CiliumLoadBalancerIPPool / CiliumL2AnnouncementPolicy CRs are NOT
+      # deployed here (this profile installs only the Helm chart), so disabling
+      # the announcer is sufficient to keep Cilium from racing the CCM for
+      # type: LoadBalancer IPs.
       values: |
         k8sServiceHost: "{{ .Cluster.spec.controlPlaneEndpoint.host }}"
         k8sServicePort: "{{ .Cluster.spec.controlPlaneEndpoint.port }}"
+        kubeProxyReplacement: true
+        l2announcements:
+          enabled: false
+        socketLB:
+          hostNamespaceOnly: false
+        envoy:
+          enabled: false
+        cni:
+          exclusive: false
         ipam:
           operator:
             clusterPoolIPv4PodCIDRList:
               - "{{ (index .Cluster.spec.clusterNetwork.pods.cidrBlocks 0) }}"
+            clusterPoolIPv4MaskSize: 23
         clusterDomain: "{{ .Cluster.metadata.name }}.local"
----
-

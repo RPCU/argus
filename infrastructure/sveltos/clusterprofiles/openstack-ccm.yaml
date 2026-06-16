@@ -34,19 +34,111 @@ spec:
     matchLabels:
       type: workload
       sveltos.argus.rpcu.io/openstack-ccm: enabled
+  # Load two management-cluster resources so the cloud.conf/clouds.yaml below can
+  # be generated PER-CLUSTER (no hardcoded per-project files):
+  #   - OpenStackCluster: gives this cluster's OpenStack project via
+  #     spec.identityRef.cloudName (e.g. "lab"). Fetched by the CAPI
+  #     infrastructureRef name (random suffix, e.g. lab-665wz) which is read
+  #     dynamically from the Cluster CR.
+  #   - mgmt-cloud-config Secret: the multi-project clouds.yaml CAPO already
+  #     uses (admin/lab/production entries, each with the correct project_id +
+  #     yaook-sys-maint creds). The template extracts ONLY this cluster's entry,
+  #     so no other project's credentials are pushed to the workload cluster.
+  # RBAC for these reads is granted by the addon-controller-role-extra patch in
+  # rbac.yaml.
+  templateResourceRefs:
+    - resource:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+        kind: OpenStackCluster
+        namespace: "{{ .Cluster.metadata.namespace }}"
+        name: "{{ .Cluster.spec.infrastructureRef.name }}"
+      identifier: OpenStackCluster
+    - resource:
+        apiVersion: v1
+        kind: Secret
+        namespace: "{{ .Cluster.metadata.namespace }}"
+        name: mgmt-cloud-config
+      identifier: CloudConfig
   policyRefs:
-    # The shared clouds credential Secret (cloud.conf + clouds.yaml), rendered
-    # by ESO on mgmt as type addons.projectsveltos.io/cluster-profile. Sveltos
-    # deploys the wrapped Opaque Secret into the child cluster's kube-system.
-    - name: cloud-controller-clouds
-      namespace: kube-system
-      kind: Secret
+    # Per-cluster clouds.yaml + cloud.conf, generated dynamically from the
+    # templateResourceRefs above (see ConfigMap openstack-ccm-clouds below).
+    - name: openstack-ccm-clouds
+      namespace: projectsveltos
+      kind: ConfigMap
     - name: openstack-ccm-workload-values
       namespace: projectsveltos
       kind: ConfigMap
     - name: openstack-ccm-flux-kustomization
       namespace: projectsveltos
       kind: ConfigMap
+---
+# Per-cluster CCM credentials, generated DYNAMICALLY (no per-project files).
+#
+# Sveltos instantiates this template on the management cluster:
+#   - cloudName  = the workload cluster's OpenStack project, read from its
+#                  OpenStackCluster.spec.identityRef.cloudName (alias
+#                  OpenStackCluster).
+#   - the matching cloud entry (auth_url, username, password, project_id, ...)
+#                  is extracted from the multi-project mgmt-cloud-config
+#                  clouds.yaml (alias CloudConfig) via fromYaml — ONLY this
+#                  cluster's entry is emitted, so other projects' creds are not
+#                  leaked to the workload cluster.
+#
+# It deploys an Opaque Secret cloud-controller-clouds into the workload
+# cluster's kube-system (the name/keys the CCM + Cinder CSI charts mount). The
+# clouds.yaml is scoped to the cluster's own project, so Octavia builds the LB
+# in the project that owns the tenant subnet (fixes "Subnet not found").
+#
+# NOTE: `cloud=openstack` in cloud.conf stays fixed — we always render the
+# single selected entry under the cloud name "openstack", so the CCM's
+# clouds-file lookup matches regardless of which project it is.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openstack-ccm-clouds
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/template: "true"
+data:
+  openstack-ccm-clouds.yaml: |
+    {{- $cloudName := (getField "OpenStackCluster" "spec.identityRef.cloudName") }}
+    {{- $clouds := ((fromYaml (index (getResource "CloudConfig").data "clouds.yaml" | b64dec)).clouds) }}
+    {{- $entry := (index $clouds $cloudName) }}
+    {{- $auth := $entry.auth }}
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: cloud-controller-clouds
+      namespace: kube-system
+    type: Opaque
+    stringData:
+      cloud.conf: |
+        [Global]
+        use-clouds=true
+        clouds-file=/etc/config/clouds.yaml
+        cloud=openstack
+        tls-insecure=true
+
+        [LoadBalancer]
+        enabled=true
+        floating-network-id=1cfd69da-057c-4748-a0d4-de5b0ca77db2
+        create-monitor=true
+        lb-provider=ovn
+        lb-method=SOURCE_IP_PORT
+      clouds.yaml: |
+        clouds:
+          openstack:
+            auth:
+              auth_url: {{ $auth.auth_url }}
+              username: "{{ $auth.username }}"
+              password: "{{ $auth.password }}"
+              project_id: "{{ $auth.project_id }}"
+              project_name: "{{ $auth.project_name }}"
+              user_domain_name: "{{ $auth.user_domain_name }}"
+            region_name: {{ $entry.region_name }}
+            verify: false
+            interface: public
+            identity_api_version: 3
 ---
 # Per-cluster values override pushed into the workload cluster's kube-system.
 # valuesFrom ConfigMaps are merged in order; the Flux Kustomization patch below

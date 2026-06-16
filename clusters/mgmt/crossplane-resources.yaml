@@ -22,5 +22,6 @@ spec:
   prune: false
   timeout: 5m
   dependsOn:
+    - name: crossplane-compositions
     - name: crossplane-zitadel
     - name: crossplane-openstack

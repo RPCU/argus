@@ -18,6 +18,7 @@ resources:
   - openstack-cinder-csi.yaml
   - external-dns.yaml
   - crossplane.yaml
+  - crossplane-compositions.yaml
   - crossplane-zitadel.yaml
   - crossplane-openstack.yaml
   - crossplane-providers.yaml

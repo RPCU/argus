@@ -81,8 +81,7 @@ data:
           labels:
             sveltos.argus.rpcu.io/oidc-rbac: {{ chihiro.oidcRbac }}
             sveltos.argus.rpcu.io/cilium: {{ chihiro.cilium }}
-            sveltos.argus.rpcu.io/openstack-ccm: {{ chihiro.ccm }}
-            sveltos.argus.rpcu.io/openstack-cinder-csi: {{ chihiro.csi }}
+            sveltos.argus.rpcu.io/openstack-integration: {{ chihiro.openstack }}
             type: workload
         spec:
           clusterNetwork:
@@ -138,6 +137,8 @@ data:
               label: "26.05"
               versions: ["v1.36.1"]
           default: "hephaestus-kaas-26.05-{{ chihiro.version }}"
+          editable: true
+          path: "spec.topology.variables[2].value"
         managedSubnetCIDR:
           label: "Managed Subnet CIDR"
           description: "CIDR block for the managed subnet"
@@ -164,21 +165,12 @@ data:
           false_value: disabled
           editable: true
           path: "metadata.labels.'sveltos.argus.rpcu.io/oidc-rbac'"
-        ccm:
-          label: "Openstack CCM"
-          description: "Enable Service Type LB using Octavia"
+        openstack:
+          label: "Openstack Integration"
+          description: "Enable Service Type LB using Octavia and CSI using Cinder"
           type: boolean
           default: true
           true_value: enabled
           false_value: disabled
           editable: true
-          path: "metadata.labels.'sveltos.argus.rpcu.io/openstack-ccm'"
-        csi:
-          label: "Cinder CSI"
-          description: "Enable Cinder CSI for PVC provisioning"
-          type: boolean
-          default: true
-          true_value: enabled
-          false_value: disabled
-          editable: true
-          path: "metadata.labels.'sveltos.argus.rpcu.io/openstack-cinder-csi'"
+          path: "metadata.labels.'sveltos.argus.rpcu.io/openstack-integration'"

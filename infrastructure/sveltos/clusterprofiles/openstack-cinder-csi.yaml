@@ -22,7 +22,12 @@
 #      external-snapshotter-crds Flux Kustomization (the csi-snapshotter sidecar
 #      needs the VolumeSnapshot CRDs registered first).
 #
-# Gated by the opt-in label sveltos.argus.rpcu.io/openstack-cinder-csi: enabled.
+# Gated by the opt-in label sveltos.argus.rpcu.io/openstack-integration: enabled
+# — the SAME label as the openstack-ccm ClusterProfile. Cinder CSI cannot function
+# without the CCM (it mounts the CCM-owned cloud-controller-clouds Secret and
+# needs the CCM to remove the cloud-provider node taint so its pods schedule), so
+# the two are gated together on one label to avoid a cluster opting into Cinder
+# without the CCM and wedging on the unsatisfiable dependency.
 apiVersion: config.projectsveltos.io/v1beta1
 kind: ClusterProfile
 metadata:
@@ -30,16 +35,22 @@ metadata:
   namespace: projectsveltos
 spec:
   syncMode: ContinuousWithDriftDetection
+  # flux-instance: this profile pushes a Flux Kustomization CR + HelmRelease
+  # (infrastructure/openstack-cinder-csi) reconciled by the kustomize/helm
+  # controllers, which only exist once Flux is installed. (openstack-ccm and
+  # external-snapshotter already dependsOn flux-instance too, so this is also
+  # transitively satisfied — kept explicit for robustness.)
   # openstack-ccm owns the shared cloud-controller-clouds Secret and initialises
   # Nodes (removes the cloud-provider taint) so the CSI DaemonSet can schedule;
   # external-snapshotter installs the VolumeSnapshot CRDs the sidecar needs.
   dependsOn:
+    - flux-instance
     - openstack-ccm
     - external-snapshotter
   clusterSelector:
     matchLabels:
       type: workload
-      sveltos.argus.rpcu.io/openstack-cinder-csi: enabled
+      sveltos.argus.rpcu.io/openstack-integration: enabled
   policyRefs:
     - name: openstack-cinder-csi-workload-values
       namespace: projectsveltos

@@ -27,7 +27,17 @@
 # The project name is resolved from the workload cluster's OpenStackCluster
 # resource (spec.identityRef.cloudName).
 #
-# Gated by the opt-in label sveltos.argus.rpcu.io/openstack-ccm: enabled.
+# Gated by the opt-in label sveltos.argus.rpcu.io/openstack-integration: enabled
+# — the SAME label shared by the openstack-cinder-csi and external-snapshotter
+# ClusterProfiles, so one label opts a cluster into the whole OpenStack
+# integration stack (CCM + Cinder CSI + snapshotter).
+#
+# dependsOn the `flux-instance` ClusterProfile (which itself dependsOn `flux`):
+# this profile pushes a Flux Kustomization CR (wrapping infrastructure/openstack-ccm)
+# that references the `flux-system` GitRepository and a HelmRelease reconciled by
+# the helm-controller. Both only exist once the Flux Operator + FluxInstance have
+# deployed the Flux controllers, CRDs, and the GitRepository source — so we must
+# wait for Flux to be in place first.
 apiVersion: config.projectsveltos.io/v1beta1
 kind: ClusterProfile
 metadata:
@@ -35,10 +45,12 @@ metadata:
   namespace: projectsveltos
 spec:
   syncMode: ContinuousWithDriftDetection
+  dependsOn:
+    - flux-instance
   clusterSelector:
     matchLabels:
       type: workload
-      sveltos.argus.rpcu.io/openstack-ccm: enabled
+      sveltos.argus.rpcu.io/openstack-integration: enabled
   # Load two management-cluster resources so the cloud.conf/clouds.yaml can be
   # generated per-cluster:
   #   - OpenStackCluster: gives this cluster's OpenStack project via

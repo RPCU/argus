@@ -23,35 +23,29 @@ spec:
       engineVersion: v2
       data:
         lab-clouds.yaml: |
-          {{- $clouds := fromYaml .clouds_yaml -}}
-          {{- $auth := index $clouds "clouds" "openstack" "auth" -}}
-          {{- $region := index $clouds "clouds" "openstack" "region_name" -}}
           clouds:
             openstack:
               auth:
-                auth_url: {{ $auth.auth_url | quote }}
+                auth_url: "https://keystone.rpcu.vpn:443/v3/"
                 application_credential_name: "cloud-controller-lab"
                 application_credential_secret: {{ .lab_secret | quote }}
                 user_id: "44b2b48fb89d4fde9d659bf01831d3b0"
                 project_id: "e538e6c8466945b4bd07da85a7ee004e"
-              region_name: {{ $region | quote }}
-              insecure: true
+              region_name: "hetzner"
+              verify: false
               interface: public
               identity_api_version: 3
         production-clouds.yaml: |
-          {{- $clouds := fromYaml .clouds_yaml -}}
-          {{- $auth := index $clouds "clouds" "openstack" "auth" -}}
-          {{- $region := index $clouds "clouds" "openstack" "region_name" -}}
           clouds:
             openstack:
               auth:
-                auth_url: {{ $auth.auth_url | quote }}
+                auth_url: "https://keystone.rpcu.vpn:443/v3/"
                 application_credential_name: "cloud-controller-production"
                 application_credential_secret: {{ .production_secret | quote }}
                 user_id: "44b2b48fb89d4fde9d659bf01831d3b0"
                 project_id: "75aa5d153361400488a2d43a4fe629c3"
-              region_name: {{ $region | quote }}
-              insecure: true
+              region_name: "hetzner"
+              verify: false
               interface: public
               identity_api_version: 3
   data:

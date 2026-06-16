@@ -5,6 +5,8 @@
 #   helmrepo.yaml     - projectsveltos Helm repository
 #   helmrelease.yaml  - Sveltos core controllers
 #   dashboard.yaml    - Sveltos dashboard (OIDC, PKCE public client)
+#   rbac.yaml         - extra RBAC for addon-controller templateResourceRefs
+#                       (read OpenStackCluster + mgmt-cloud-config)
 #   clusterprofiles/  - ClusterProfiles Sveltos pushes to child clusters
 #                       (oidc-rbac: kube-admin/kube-user -> cluster-admin)
 #                       (cilium: OneTime CNI bootstrap)
@@ -17,5 +19,6 @@ resources:
   - helmrepo.yaml
   - helmrelease.yaml
   - dashboard.yaml
+  - rbac.yaml
   - clusterprofiles/
   - gateway/

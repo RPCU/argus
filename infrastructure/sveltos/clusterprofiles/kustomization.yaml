@@ -1,7 +1,6 @@
 resources:
   - oidc-rbac.yaml
   - cilium.yaml
-  - cilium-values.yaml
   - flux.yaml
   - external-snapshotter.yaml
   - openstack-ccm.yaml

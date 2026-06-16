@@ -1,0 +1,42 @@
+# Extra RBAC for the Sveltos addon-controller so its templates can read
+# management-cluster resources via templateResourceRefs.
+#
+# The openstack-ccm ClusterProfile (clusterprofiles/openstack-ccm.yaml) uses
+# templateResourceRefs to fetch, per workload cluster:
+#   - the OpenStackCluster (to read spec.identityRef.cloudName = the project);
+#   - the mgmt-cloud-config Secret (the multi-project clouds.yaml).
+#
+# Sveltos follows least-privilege and ships an EMPTY addon-controller-role-extra
+# ClusterRole for exactly this purpose. Rather than edit that chart-managed
+# (and therefore Helm-reconciled / potentially-overwritten) role, we add our own
+# ClusterRole and bind it to the same addon-controller ServiceAccount.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: addon-controller-argus-template-reader
+rules:
+  # Read OpenStackCluster to resolve each workload cluster's OpenStack project
+  # (spec.identityRef.cloudName).
+  - apiGroups: ["infrastructure.cluster.x-k8s.io"]
+    resources: ["openstackclusters"]
+    verbs: ["get", "list", "watch"]
+  # Read the multi-project clouds.yaml so the per-cluster CCM credentials can be
+  # rendered. Scoped to the mgmt-cloud-config secret only (get by name; no broad
+  # list/watch on secrets).
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["mgmt-cloud-config"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: addon-controller-argus-template-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: addon-controller-argus-template-reader
+subjects:
+  - kind: ServiceAccount
+    name: addon-controller
+    namespace: projectsveltos

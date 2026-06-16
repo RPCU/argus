@@ -43,6 +43,7 @@
 # Roles:
 #   - load-balancer_member : created by Crossplane (doesn't exist yet)
 #   - member               : adopted via external-name (pre-existing)
+#   - reader               : adopted via external-name (pre-existing)
 # ---------------------------------------------------------------------------
 apiVersion: identity.openstack.m.crossplane.io/v1alpha1
 kind: RoleV3
@@ -63,6 +64,17 @@ metadata:
 spec:
   forProvider:
     name: member
+---
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: RoleV3
+metadata:
+  name: cloud-controller-reader
+  namespace: crossplane-system
+  annotations:
+    crossplane.io/external-name: "52a4fb65bccd4e7db8bc5e72c3087962"
+spec:
+  forProvider:
+    name: reader
 ---
 # ---------------------------------------------------------------------------
 # Service user for the cloud controller manager + Cinder CSI.

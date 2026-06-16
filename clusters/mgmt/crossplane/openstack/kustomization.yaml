@@ -1,4 +1,12 @@
 resources:
   - providerConfig.yaml
+  - provider-config-lab.yaml
+  - provider-config-production.yaml
   - credentials-eso.yaml
+  - provider-config-lab-eso.yaml
+  - provider-config-production-eso.yaml
   - cloud-controller.yaml
+  - roleassignments-lab.yaml
+  - roleassignments-production.yaml
+  - ccm-credential-lab.yaml
+  - ccm-credential-production.yaml

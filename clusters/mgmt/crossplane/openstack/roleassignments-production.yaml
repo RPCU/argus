@@ -1,0 +1,42 @@
+# Role assignments for yaook-sys-maint in the production project.
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: RoleAssignmentV3
+metadata:
+  name: yaook-sys-maint-lb-production
+  namespace: crossplane-system
+spec:
+  forProvider:
+    roleIdRef:
+      name: cloud-controller-lb
+    userId: "44b2b48fb89d4fde9d659bf01831d3b0"
+    projectId: "75aa5d153361400488a2d43a4fe629c3"
+  providerConfigRef:
+    name: default
+---
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: RoleAssignmentV3
+metadata:
+  name: yaook-sys-maint-member-production
+  namespace: crossplane-system
+spec:
+  forProvider:
+    roleIdRef:
+      name: cloud-controller-member
+    userId: "44b2b48fb89d4fde9d659bf01831d3b0"
+    projectId: "75aa5d153361400488a2d43a4fe629c3"
+  providerConfigRef:
+    name: default
+---
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: RoleAssignmentV3
+metadata:
+  name: yaook-sys-maint-reader-production
+  namespace: crossplane-system
+spec:
+  forProvider:
+    roleIdRef:
+      name: cloud-controller-reader
+    userId: "44b2b48fb89d4fde9d659bf01831d3b0"
+    projectId: "75aa5d153361400488a2d43a4fe629c3"
+  providerConfigRef:
+    name: default

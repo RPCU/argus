@@ -4,7 +4,8 @@
 # The openstack-ccm ClusterProfile (clusterprofiles/openstack-ccm.yaml) uses
 # templateResourceRefs to fetch, per workload cluster:
 #   - the OpenStackCluster (to read spec.identityRef.cloudName = the project);
-#   - the mgmt-cloud-config Secret (the multi-project clouds.yaml).
+#   - the cloud-controller-app-creds Secret (mgmt namespace) — the multi-project
+#     Application Credential clouds.yaml rendered by ESO on mgmt.
 #
 # Sveltos follows least-privilege and ships an EMPTY addon-controller-role-extra
 # ClusterRole for exactly this purpose. Rather than edit that chart-managed
@@ -20,12 +21,12 @@ rules:
   - apiGroups: ["infrastructure.cluster.x-k8s.io"]
     resources: ["openstackclusters"]
     verbs: ["get", "list", "watch"]
-  # Read the multi-project clouds.yaml so the per-cluster CCM credentials can be
-  # rendered. Scoped to the mgmt-cloud-config secret only (get by name; no broad
+  # Read the cloud-controller-app-creds Secret so the per-cluster CCM credentials
+  # can be rendered. Scoped to the mgmt namespace (get by name; no broad
   # list/watch on secrets).
   - apiGroups: [""]
     resources: ["secrets"]
-    resourceNames: ["mgmt-cloud-config"]
+    resourceNames: ["cloud-controller-app-creds"]
     verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

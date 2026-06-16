@@ -1,0 +1,41 @@
+# ESO: templates the provider-openstack-lab credential secret (config.json) from
+# capo-variables clouds.yaml with tenant_name overridden to "lab".
+#
+# The per-project ProviderConfig (provider-config-lab.yaml) references this
+# Secret, and the CCMCredential Composition uses it to create app-creds in the
+# lab project.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: provider-openstack-lab
+  namespace: crossplane-system
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: capo-system-secrets
+    kind: SecretStore
+  target:
+    name: provider-openstack-lab
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        config.json: |
+          {{- $clouds := fromYaml .clouds_yaml -}}
+          {{- $auth := index $clouds "clouds" "openstack" "auth" -}}
+          {{- $region := index $clouds "clouds" "openstack" "region_name" -}}
+          {
+            "auth_url": {{ $auth.auth_url | quote }},
+            "user_name": {{ $auth.username | quote }},
+            "password": {{ $auth.password | quote }},
+            "tenant_name": "lab",
+            "user_domain_name": {{ $auth.user_domain_name | quote }},
+            "region": {{ $region | quote }},
+            "insecure": "true",
+            "endpoint_type": "public"
+          }
+  data:
+    - secretKey: clouds_yaml
+      remoteRef:
+        key: capo-variables
+        property: clouds.yaml

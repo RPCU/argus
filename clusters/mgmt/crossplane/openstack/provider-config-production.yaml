@@ -1,0 +1,12 @@
+# ClusterProviderConfig for the production project.
+apiVersion: openstack.m.crossplane.io/v1beta1
+kind: ClusterProviderConfig
+metadata:
+  name: provider-openstack-production
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      key: config.json
+      name: provider-openstack-production
+      namespace: crossplane-system

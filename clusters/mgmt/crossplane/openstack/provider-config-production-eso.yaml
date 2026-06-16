@@ -1,0 +1,37 @@
+# ESO: templates the provider-openstack-production credential secret (config.json)
+# from capo-variables clouds.yaml with tenant_name overridden to "production".
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: provider-openstack-production
+  namespace: crossplane-system
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: capo-system-secrets
+    kind: SecretStore
+  target:
+    name: provider-openstack-production
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        config.json: |
+          {{- $clouds := fromYaml .clouds_yaml -}}
+          {{- $auth := index $clouds "clouds" "openstack" "auth" -}}
+          {{- $region := index $clouds "clouds" "openstack" "region_name" -}}
+          {
+            "auth_url": {{ $auth.auth_url | quote }},
+            "user_name": {{ $auth.username | quote }},
+            "password": {{ $auth.password | quote }},
+            "tenant_name": "production",
+            "user_domain_name": {{ $auth.user_domain_name | quote }},
+            "region": {{ $region | quote }},
+            "insecure": "true",
+            "endpoint_type": "public"
+          }
+  data:
+    - secretKey: clouds_yaml
+      remoteRef:
+        key: capo-variables
+        property: clouds.yaml

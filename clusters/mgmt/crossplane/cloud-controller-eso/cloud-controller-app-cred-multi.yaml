@@ -1,0 +1,55 @@
+# Multi-project app-cred Secret for Sveltos.
+#
+# Aggregates per-project ApplicationCredential connection secrets into a
+# single `cloud-controller-app-creds` Secret in the mgmt namespace.
+# Each project gets its own clouds.yaml key (e.g. `lab-clouds.yaml`).
+#
+# Sveltos reads this Secret and pushes the correct clouds.yaml to each
+# workload cluster, keyed by `OpenStackCluster.spec.identityRef.cloudName`.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: cloud-controller-app-creds
+  namespace: mgmt
+spec:
+  refreshInterval: 5m
+  secretStoreRef:
+    name: crossplane-secrets
+    kind: SecretStore
+  target:
+    name: cloud-controller-app-creds
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        lab-clouds.yaml: |
+          clouds:
+            openstack:
+              auth:
+                auth_url: "https://keystone.rpcu.vpn"
+                application_credential_name: "cloud-controller-lab"
+                application_credential_secret: "{{ .lab_secret }}"
+                user_id: "44b2b48fb89d4fde9d659bf01831d3b0"
+              region_name: "RegionOne"
+              insecure: true
+              interface: public
+        production-clouds.yaml: |
+          clouds:
+            openstack:
+              auth:
+                auth_url: "https://keystone.rpcu.vpn"
+                application_credential_name: "cloud-controller-production"
+                application_credential_secret: "{{ .production_secret }}"
+                user_id: "44b2b48fb89d4fde9d659bf01831d3b0"
+              region_name: "RegionOne"
+              insecure: true
+              interface: public
+  data:
+    - secretKey: lab_secret
+      remoteRef:
+        key: cloud-controller-app-cred-lab
+        property: attribute.secret
+    - secretKey: production_secret
+      remoteRef:
+        key: cloud-controller-app-cred-production
+        property: attribute.secret

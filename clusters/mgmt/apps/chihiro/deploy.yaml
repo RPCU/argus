@@ -22,7 +22,7 @@ spec:
             - --config=/config.yaml
           command:
             - /chihiro
-          image: zot.bealv.io/public/chihiro:v0.4.1
+          image: zot.bealv.io/public/chihiro:v0.4.2
           ports:
             - containerPort: 8080
               name: http
@@ -68,7 +68,7 @@ spec:
             - name: CHIHIRO_CREATOR_GROUPS
               value: "kube-admin"
             - name: CHIHIRO_AVAILABLE_VERSIONS
-              value: "v1.36.1"
+              value: "v1.36.1,v1.35.4"
             - name: CHIHIRO_MAX_CLUSTERS
               value: "5"
             - name: CHIHIRO_MAX_TOTAL_NODES

@@ -10,10 +10,9 @@
 # from the central repo.
 #
 # Three things are pushed to each matching workload cluster:
-#   1. the shared "cloud-controller-clouds" Secret (the dedicated app-cred
-#      clouds.yaml + cloud.conf rendered by ESO on mgmt). This profile OWNS the
-#      secret (the old openstack-ccm bootstrap profile used to); the Cinder CSI
-#      profile mounts it but does not own it (avoids a Sveltos deploy conflict).
+#   1. the per-project "cloud-controller-clouds" Secret (the Application
+#      Credential clouds.yaml + cloud.conf rendered by ESO on mgmt). This profile
+#      OWNS the secret; the Cinder CSI profile mounts it but does not own it.
 #   2. the "openstack-ccm-workload-values" ConfigMap (kube-system) — overrides
 #      the mgmt-specific base values.yaml: the shared secret name
 #      (cloud-controller-clouds) and the Kamaji tolerations.
@@ -21,6 +20,12 @@
 #      to add that ConfigMap as a second valuesFrom AND a postRenderer that
 #      replaces the chart's control-plane nodeSelector (Kamaji clusters have no
 #      control-plane nodes).
+#
+# Credentials use Application Credentials (scoped per project) instead of the
+# former yaook-sys-maint admin credentials. The clouds.yaml is templated from
+# the cloud-controller-app-creds Secret (mgmt namespace), keyed by project name.
+# The project name is resolved from the workload cluster's OpenStackCluster
+# resource (spec.identityRef.cloudName).
 #
 # Gated by the opt-in label sveltos.argus.rpcu.io/openstack-ccm: enabled.
 apiVersion: config.projectsveltos.io/v1beta1
@@ -34,16 +39,16 @@ spec:
     matchLabels:
       type: workload
       sveltos.argus.rpcu.io/openstack-ccm: enabled
-  # Load two management-cluster resources so the cloud.conf/clouds.yaml below can
-  # be generated PER-CLUSTER (no hardcoded per-project files):
+  # Load two management-cluster resources so the cloud.conf/clouds.yaml can be
+  # generated per-cluster:
   #   - OpenStackCluster: gives this cluster's OpenStack project via
   #     spec.identityRef.cloudName (e.g. "lab"). Fetched by the CAPI
   #     infrastructureRef name (random suffix, e.g. lab-665wz) which is read
   #     dynamically from the Cluster CR.
-  #   - mgmt-cloud-config Secret: the multi-project clouds.yaml CAPO already
-  #     uses (admin/lab/production entries, each with the correct project_id +
-  #     yaook-sys-maint creds). The template extracts ONLY this cluster's entry,
-  #     so no other project's credentials are pushed to the workload cluster.
+  #   - cloud-controller-app-creds Secret: the multi-project Application
+  #     Credential clouds.yaml rendered by ESO on mgmt. The template extracts
+  #     ONLY this cluster's entry, so no other project's credentials are pushed
+  #     to the workload cluster.
   # RBAC for these reads is granted by the addon-controller-role-extra patch in
   # rbac.yaml.
   templateResourceRefs:
@@ -56,9 +61,9 @@ spec:
     - resource:
         apiVersion: v1
         kind: Secret
-        namespace: "{{ .Cluster.metadata.namespace }}"
-        name: mgmt-cloud-config
-      identifier: CloudConfig
+        namespace: mgmt
+        name: cloud-controller-app-creds
+      identifier: AppCreds
   policyRefs:
     # Per-cluster clouds.yaml + cloud.conf, generated dynamically from the
     # templateResourceRefs above (see ConfigMap openstack-ccm-clouds below).
@@ -79,8 +84,8 @@ spec:
 #                  OpenStackCluster.spec.identityRef.cloudName (alias
 #                  OpenStackCluster).
 #   - the matching cloud entry (auth_url, username, password, project_id, ...)
-#                  is extracted from the multi-project mgmt-cloud-config
-#                  clouds.yaml (alias CloudConfig) via fromYaml — ONLY this
+#                  is extracted from the multi-project cloud-controller-app-creds
+#                  clouds.yaml (alias AppCreds) via fromYaml — ONLY this
 #                  cluster's entry is emitted, so other projects' creds are not
 #                  leaked to the workload cluster.
 #
@@ -102,9 +107,9 @@ metadata:
 data:
   openstack-ccm-clouds.yaml: |
     {{- $cloudName := (getField "OpenStackCluster" "spec.identityRef.cloudName") }}
-    {{- $clouds := ((fromYaml (index (getResource "CloudConfig").data "clouds.yaml" | b64dec)).clouds) }}
-    {{- $entry := (index $clouds $cloudName) }}
-    {{- $auth := $entry.auth }}
+    {{- $cloudsYaml := index (getResource "AppCreds").data (printf "%s-clouds.yaml" $cloudName) | b64dec | fromYaml }}
+    {{- $auth := $cloudsYaml.clouds.openstack.auth }}
+    {{- $region := $cloudsYaml.clouds.openstack.region_name }}
     apiVersion: v1
     kind: Secret
     metadata:
@@ -130,12 +135,10 @@ data:
           openstack:
             auth:
               auth_url: {{ $auth.auth_url }}
-              username: "{{ $auth.username }}"
-              password: "{{ $auth.password }}"
-              project_id: "{{ $auth.project_id }}"
-              project_name: "{{ $auth.project_name }}"
-              user_domain_name: "{{ $auth.user_domain_name }}"
-            region_name: {{ $entry.region_name }}
+              application_credential_name: "{{ $auth.application_credential_name }}"
+              application_credential_secret: "{{ $auth.application_credential_secret }}"
+              user_id: "{{ $auth.user_id }}"
+            region_name: {{ $region }}
             verify: false
             interface: public
             identity_api_version: 3

@@ -1,0 +1,17 @@
+# ClusterProviderConfig for the lab project.
+#
+# Authenticates as yaook-sys-maint to the lab project. Used by the
+# CCMCredential Composition to create ApplicationCredentialVs in the lab
+# project (Keystone always creates app-creds in the authenticated user's
+# project scope).
+apiVersion: openstack.m.crossplane.io/v1beta1
+kind: ClusterProviderConfig
+metadata:
+  name: provider-openstack-lab
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      key: config.json
+      name: provider-openstack-lab
+      namespace: crossplane-system

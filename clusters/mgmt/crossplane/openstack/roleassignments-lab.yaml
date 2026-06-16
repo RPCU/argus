@@ -1,0 +1,50 @@
+# Role assignments for yaook-sys-maint in the lab project.
+#
+# Keystone requires that restricted app-cred roles are a subset of the
+# user's roles in the project. yaook-sys-maint already has system-wide admin,
+# but we assign these explicitly so the intent is clear and the app-cred
+# creation is guaranteed to succeed.
+#
+# Uses the default ClusterProviderConfig (admin project) — admin users can
+# create role assignments in any project.
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: RoleAssignmentV3
+metadata:
+  name: yaook-sys-maint-lb-lab
+  namespace: crossplane-system
+spec:
+  forProvider:
+    roleIdRef:
+      name: cloud-controller-lb
+    userId: "44b2b48fb89d4fde9d659bf01831d3b0"
+    projectId: "e538e6c8466945b4bd07da85a7ee004e"
+  providerConfigRef:
+    name: default
+---
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: RoleAssignmentV3
+metadata:
+  name: yaook-sys-maint-member-lab
+  namespace: crossplane-system
+spec:
+  forProvider:
+    roleIdRef:
+      name: cloud-controller-member
+    userId: "44b2b48fb89d4fde9d659bf01831d3b0"
+    projectId: "e538e6c8466945b4bd07da85a7ee004e"
+  providerConfigRef:
+    name: default
+---
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: RoleAssignmentV3
+metadata:
+  name: yaook-sys-maint-reader-lab
+  namespace: crossplane-system
+spec:
+  forProvider:
+    roleIdRef:
+      name: cloud-controller-reader
+    userId: "44b2b48fb89d4fde9d659bf01831d3b0"
+    projectId: "e538e6c8466945b4bd07da85a7ee004e"
+  providerConfigRef:
+    name: default

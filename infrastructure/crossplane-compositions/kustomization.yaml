@@ -1,4 +1,6 @@
 resources:
   - xrd-externalnetwork.yaml
+  - xrd-ccm-credential.yaml
   - composition-router.yaml
+  - composition-ccm-credential.yaml
   - function-patch-and-transform.yaml

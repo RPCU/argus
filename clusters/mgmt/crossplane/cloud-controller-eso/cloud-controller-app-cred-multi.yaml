@@ -16,7 +16,6 @@ spec:
   secretStoreRef:
     name: crossplane-secrets
     kind: SecretStore
-    namespace: kube-system
   target:
     name: cloud-controller-app-creds
     creationPolicy: Owner

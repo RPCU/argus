@@ -12,6 +12,7 @@ spec:
     projectId: "75aa5d153361400488a2d43a4fe629c3"
   providerConfigRef:
     name: default
+    kind: ClusterProviderConfig
 ---
 apiVersion: identity.openstack.m.crossplane.io/v1alpha1
 kind: RoleAssignmentV3
@@ -26,6 +27,7 @@ spec:
     projectId: "75aa5d153361400488a2d43a4fe629c3"
   providerConfigRef:
     name: default
+    kind: ClusterProviderConfig
 ---
 apiVersion: identity.openstack.m.crossplane.io/v1alpha1
 kind: RoleAssignmentV3
@@ -40,3 +42,4 @@ spec:
     projectId: "75aa5d153361400488a2d43a4fe629c3"
   providerConfigRef:
     name: default
+    kind: ClusterProviderConfig

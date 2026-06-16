@@ -173,7 +173,7 @@ data:
           false_value: disabled
           editable: true
           path: "metadata.labels.'sveltos.argus.rpcu.io/openstack-ccm'"
-        oidcRbac:
+        csi:
           label: "Cinder CSI"
           description: "Enable Cinder CSI for PVC provisioning"
           type: boolean

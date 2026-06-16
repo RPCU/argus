@@ -1,0 +1,19 @@
+# Crossplane Compositions (XRDs + Compositions) for shared infrastructure
+# components. Must reconcile before crossplane-resources (which contains the
+# CCMCredential claims that depend on the XRD).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: crossplane-compositions
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  path: ./infrastructure/crossplane-compositions
+  prune: false
+  timeout: 5m
+  dependsOn:
+    - name: crossplane

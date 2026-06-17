@@ -1,0 +1,33 @@
+# Sveltos dashboard. Not part of the core chart — deployed on top.
+#
+# OIDC: the dashboard uses the Authorization Code Flow with PKCE (public
+# client, no secret). It points at the SAME shared Zitadel "kubernetes" OIDC
+# client the workload clusters' kube-apiserver trusts
+# (clusters/openstack/crossplane/zitadel/oidc-apps.yaml). The dashboard only
+# obtains an ID token and forwards it to the kube-apiserver, so authorization
+# is driven entirely by the apiserver's OIDC config + the RBAC in rbac.yaml.
+#
+# NOTE: issuer/clientId/redirectUri are placeholders. Fill them in once the
+# Zitadel "kubernetes" client ID is known (same value copied into the Cluster
+# CR's oidc.clientID) and the dashboard hostname is decided. Until then the
+# dashboard falls back to manual token auth if issuer/clientId are empty —
+# leaving the placeholders enables OIDC, so keep them accurate.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: sveltos-dashboard
+  namespace: projectsveltos
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: sveltos-dashboard
+      version: 1.10.1
+      interval: 5m
+      sourceRef:
+        kind: HelmRepository
+        name: projectsveltos
+        namespace: projectsveltos
+  valuesFrom:
+    - kind: ConfigMap
+      name: sveltos-core-values

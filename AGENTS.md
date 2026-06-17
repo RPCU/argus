@@ -469,9 +469,13 @@ files). Deployed only on mgmt for now.
 - `namespace.yaml` - Namespace `projectsveltos`
 - `helmrepo.yaml` - HelmRepository (`https://projectsveltos.github.io/helm-charts`)
 - `helmrelease.yaml` - Sveltos core controllers (chart `projectsveltos` v1.10.0).
-  `agent.managementCluster: true` (agents run in the mgmt cluster);
-  `registerMgmtClusterJob` labels the auto-registered management cluster
-  `type=mgmt` so ClusterProfiles can target it; `kubernetesClusterDomain: mgmt.local`.
+  Values are provided by a `sveltos-core-values` ConfigMap (referenced via
+  `valuesFrom`), which must exist before Flux reconciles the HelmRelease.
+  For the mgmt cluster, the values ConfigMap is created by the
+  `clusters/mgmt/sveltos.yaml` kustomization; for new management clusters
+  bootstrapped via the `capi-management` ClusterProfile, Sveltos pushes a
+  templated version with `kubernetesClusterDomain: <cluster-name>.local` and
+  `agent.managementCluster: true`.
 - `dashboard.yaml` - Sveltos dashboard (chart `sveltos-dashboard` v1.10.1).
   Configured for **OIDC** (Authorization Code Flow + PKCE, public client) against
   the **shared Zitadel `kubernetes` client** — the SAME public/native client the
@@ -482,6 +486,22 @@ files). Deployed only on mgmt for now.
   **`auth.oidc.clientId` is a placeholder** — must be set to the Zitadel
   `kubernetes` client ID (same value copied into the `Cluster` CR's
   `oidc.clientID`) once known; `redirectUri`/`issuer` likewise.
+  Values are provided by the same `sveltos-core-values` ConfigMap as the
+  core HelmRelease (via `valuesFrom`).
+- `core/` - **Reusable Sveltos core install** (Flux Kustomization source). A
+  self-contained subset of the parent `sveltos/` directory containing only the
+  pieces needed to run Sveltos on a single cluster: `namespace.yaml`,
+  `helmrepo.yaml`, `helmrelease.yaml` (values via `valuesFrom` referencing a
+  `sveltos-core-values` ConfigMap), `dashboard.yaml` (same `valuesFrom`), `rbac.yaml`
+  (base addon-controller RBAC only — no capi-management-specific RBAC), and
+  `gateway/` (dashboard HTTPRoute). The HelmReleases do NOT carry hardcoded
+  values — per-cluster configuration (domain, managementCluster flag) is injected
+  by a Sveltos-templated `sveltos-core-values` ConfigMap pushed alongside the Flux
+  Kustomization CR. Used by the `capi-management` ClusterProfile to deploy
+  Sveltos onto new management clusters via a Flux `Kustomization` CR pointing at
+  `./infrastructure/sveltos/core` in Git. The main `sveltos/kustomization.yaml`
+  still references the parent directory files directly (not `core/`) — `core/` is
+  a Flux sync source, not a nested kustomize reference.
 - `clusterprofiles/oidc-rbac.yaml` - **OIDC user RBAC pushed to the CHILD (CAPI
   workload) clusters** (the focus of this install). A Sveltos `ClusterProfile`
   (`syncMode: ContinuousWithDriftDetection`) + a `policyRefs` `ConfigMap` holding
@@ -567,19 +587,30 @@ matchLabels: {type: workload, sveltos.argus.rpcu.io/cilium: enabled}`) that push
 - `clusterprofiles/capi-management.yaml` - **CAPI/CAPO management cluster
   bootstrap for OPT-IN workload clusters**. A Sveltos `ClusterProfile`
   (`syncMode: ContinuousWithDriftDetection`, `dependsOn: flux-instance`) that
-  deploys the full Cluster API + CAPO stack onto a workload cluster so it can
-  become a new management cluster. Components are delivered as **Flux
-  Kustomization CRs** (GitOps-managed, drift-corrected) — Sveltos pushes the
-  CRs; Flux on the target cluster reconciles them from the central repo.
+  deploys the full Cluster API + CAPO stack AND Sveltos (with all
+  ClusterProfiles) onto a workload cluster so it can become a new management
+  cluster. Components are delivered as **Flux Kustomization CRs**
+  (GitOps-managed, drift-corrected) — Sveltos pushes the CRs; Flux on the
+  target cluster reconciles them from the central repo.
 
   **What is deployed** (in dependency order via Flux `dependsOn`):
-  1. cert-manager (v1.19.2) — TLS certificate management
-  2. external-secrets (v2.3.0) — credential syncing
-  3. cluster-api-operator (v0.27.0) — declarative CAPI provider lifecycle
-  4. ORC (v2.5.0) — OpenStack Resource Controller (CAPO image resolution)
-  5. cluster-api-providers — CAPI core + kubeadm bootstrap/control-plane + CAPO
-  6. capo-identity — ESO: `capo-variables` (capo-system) → `mgmt-cloud-config`
-  7. cluster-api-templates — ClusterClass `openstack-default` + versioned templates
+  1. Sveltos core (Flux Kustomization → `infrastructure/sveltos/core`) — multi-cluster add-on manager
+  2. Sveltos ClusterProfiles + backing ConfigMaps — pushed as raw manifests
+  3. cert-manager (v1.19.2) — TLS certificate management
+  4. external-secrets (v2.3.0) — credential syncing
+  5. cluster-api-operator (v0.27.0) — declarative CAPI provider lifecycle
+  6. ORC (v2.5.0) — OpenStack Resource Controller (CAPO image resolution)
+  7. cluster-api-providers — CAPI core + kubeadm bootstrap/control-plane + CAPO
+  8. capo-identity — ESO: `capo-variables` (capo-system) → `mgmt-cloud-config`
+  9. cluster-api-templates — ClusterClass `openstack-default` + versioned templates
+
+  **Sveltos deployment**: Sveltos is deployed via a Flux Kustomization CR
+  (not inline `helmCharts`) pointing at `./infrastructure/sveltos/core` in Git.
+  A templated `sveltos-core-values` ConfigMap provides per-cluster values
+  (`kubernetesClusterDomain: <cluster-name>.local`, `managementCluster: true`).
+  This is consistent with how other profiles (openstack-ccm, cinder-csi,
+  external-snapshotter) push Flux Kustomization CRs for GitOps-managed
+  deployment.
 
   **Credential transfer**: the `capo-variables` secret (OpenStack admin
   `clouds.yaml` in `capo-system`) is read from the **current** management
@@ -596,14 +627,17 @@ sveltos.argus.rpcu.io/capi-management: enabled}`. A cluster only receives the
 
   **RBAC**: the addon-controller needs read access to the `capo-variables`
   secret in `capo-system` on the management cluster (granted by the
-  `addon-controller-capo-variables-reader` Role/RoleBinding in `rbac.yaml`).
+  `capi-management-capo-rbac` ConfigMap deployed alongside the profile).
 
 - `gateway/httproute-dashboard.yaml` - kgateway `HTTPRoute` exposing the dashboard
   at `sveltos.mgmt.rpcu.lan` via the `https` Gateway (TLS terminates at the
   Gateway; backend `dashboard:80`). Hostname must match the dashboard
   `redirectUri`.
 - `kustomization.yaml` - Kustomization manifest (namespace, helmrepo, core
-  helmrelease, dashboard, clusterprofiles/, gateway/).
+  helmrelease, dashboard, clusterprofiles/, gateway/). The main
+  `sveltos/kustomization.yaml` references the parent directory files directly;
+  the `core/` subdirectory is a separate Flux sync source used by the
+  `capi-management` ClusterProfile.
 
 > Deployed by `clusters/mgmt/sveltos.yaml` with `dependsOn: kgateway` (the
 > dashboard HTTPRoute attaches to the `https` Gateway) and `wait: false` (the

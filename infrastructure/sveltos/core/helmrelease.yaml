@@ -1,0 +1,23 @@
+# Sveltos core controllers (addon-controller, classifier, sveltos-manager,
+# event-manager, etc.). The mgmt cluster is registered as a managed cluster of
+# itself (managementCluster: true) so Sveltos can drive add-ons onto the
+# workload clusters CAPI provisions, and onto the mgmt cluster directly.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: projectsveltos
+  namespace: projectsveltos
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: projectsveltos
+      version: 1.10.0
+      interval: 5m
+      sourceRef:
+        kind: HelmRepository
+        name: projectsveltos
+        namespace: projectsveltos
+  valuesFrom:
+    - kind: ConfigMap
+      name: sveltos-core-values

@@ -1,37 +1,37 @@
 # CAPI/CAPO management cluster bootstrap for OPT-IN workload clusters.
 #
-# Deploys the full Cluster API + CAPO stack onto a workload cluster so it can
-# become a new management cluster capable of provisioning further clusters via
-# CAPI. Components are delivered as Flux Kustomization CRs (GitOps-managed,
-# drift-corrected) — Sveltos pushes the CRs; Flux on the target cluster
-# reconciles them from the central repo.
+# Deploys the full Cluster API + CAPO stack AND Sveltos (with all
+# ClusterProfiles) onto a workload cluster so it can become a new management
+# cluster capable of provisioning further clusters via CAPI and managing them
+# via Sveltos.
 #
 # What is deployed (in dependency order):
-#   1. cert-manager           — TLS certificate management (CAPI operator prereq)
-#   2. external-secrets       — credential syncing (CAPO identity prereq)
-#   3. cluster-api-operator   — declarative CAPI provider lifecycle manager
-#   4. ORC                    — OpenStack Resource Controller (CAPO image resolution)
-#   5. cluster-api-providers  — CAPI core + kubeadm + CAPO provider CRs
-#   6. capo-identity          — ESO: capo-variables → mgmt-cloud-config (identityRef)
-#   7. cluster-api-templates  — ClusterClass + versioned OpenStack templates
+#   1. Sveltos core controllers (Flux Kustomization -> infrastructure/sveltos/core)
+#   2. Sveltos ClusterProfiles + backing ConfigMaps — pushed as raw manifests
+#      so the new mgmt cluster can manage its own workload clusters
+#   3. cert-manager           — TLS certificate management (CAPI operator prereq)
+#   4. external-secrets       — credential syncing (CAPO identity prereq)
+#   5. cluster-api-operator   — declarative CAPI provider lifecycle manager
+#   6. ORC                    — OpenStack Resource Controller (CAPO image resolution)
+#   7. cluster-api-providers  — CAPI core + kubeadm + CAPO provider CRs
+#   8. capo-identity          — ESO: capo-variables -> mgmt-cloud-config (identityRef)
+#   9. cluster-api-templates  — ClusterClass + versioned OpenStack templates
 #
 # Credential transfer:
 #   The capo-variables secret (OpenStack admin clouds.yaml in capo-system) is
 #   read from the current management cluster via templateResourceRefs and pushed
-#   to the target cluster. This is the same credential source CAPO, the CCM,
-#   and the Cinder CSI all share. On the new management cluster, it must exist
-#   in capo-system before CAPO can provision infrastructure.
+#   to the target cluster.
 #
 # Prerequisites on the target cluster:
-#   - Cilium (CNI) — pods must schedule
-#   - Flux (GitOps) — reconciles the Kustomization CRs pushed by this profile
+#   - Cilium (CNI) -- pods must schedule
+#   - Flux (GitOps) -- reconciles the Kustomization CRs pushed by this profile
 #   Both are delivered by the cilium and flux/flux-instance ClusterProfiles.
 #
 # Gated by the opt-in label sveltos.argus.rpcu.io/capi-management: enabled.
 #
-# dependsOn the `flux-instance` ClusterProfile: this profile pushes Flux
-# Kustomization CRs that reference the `flux-system` GitRepository and are
-# reconciled by the kustomize/helm controllers — all of which only exist once
+# dependsOn the flux-instance ClusterProfile: this profile pushes Flux
+# Kustomization CRs that reference the flux-system GitRepository and are
+# reconciled by the kustomize/helm controllers -- all of which only exist once
 # the Flux Operator + FluxInstance have deployed the Flux controllers, CRDs,
 # and the GitRepository source.
 apiVersion: config.projectsveltos.io/v1beta1
@@ -47,9 +47,6 @@ spec:
     matchLabels:
       type: workload
       sveltos.argus.rpcu.io/capi-management: enabled
-  # Read the capo-variables secret from the CURRENT management cluster so it
-  # can be pushed to the target cluster. The addon-controller SA needs read
-  # access to secrets in capo-system (granted by rbac.yaml).
   templateResourceRefs:
     - resource:
         apiVersion: v1
@@ -58,24 +55,63 @@ spec:
         name: capo-variables
       identifier: CapoVariables
   policyRefs:
-    # Transfer the capo-variables secret to the target cluster
     - name: capi-management-capo-variables
       namespace: projectsveltos
       kind: ConfigMap
-    # Flux Kustomization CRs for the CAPI/CAPO stack
+    - name: capi-management-sveltos-core
+      namespace: projectsveltos
+      kind: ConfigMap
     - name: capi-management-flux-kustomizations
       namespace: projectsveltos
       kind: ConfigMap
+    - name: capi-management-sveltos-profiles
+      namespace: projectsveltos
+      kind: ConfigMap
+    - name: capi-management-capo-rbac
+      namespace: projectsveltos
+      kind: ConfigMap
 ---
-# Transfer the capo-variables secret from the current mgmt cluster to the
-# target cluster. Sveltos instantiates the {{ .CapoVariables }} template from
-# the templateResourceRefs above and deploys the resulting Secret to capo-system
-# on the target cluster.
+# RBAC for the capi-management ClusterProfile: grant the addon-controller read
+# access to the capo-variables Secret in the capo-system namespace on the
+# management cluster. The templateResourceRefs in the capi-management profile
+# read this secret and push it to target clusters as part of the CAPI/CAPO
+# bootstrap.
 #
-# This contains the OpenStack admin clouds.yaml that CAPO reads via its
-# configSecret (infrastructure-openstack.yaml spec.configSecret). Without it,
-# the cluster-api-providers Kustomization will apply but CAPO will not be able
-# to authenticate to OpenStack.
+# Uses a namespace-scoped Role (not the ClusterRole) because the ClusterRole
+# has resourceNames restrictions that prevent listing secrets in arbitrary
+# namespaces. The Role allows get/list on the capo-system namespace.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: capi-management-capo-rbac
+  namespace: projectsveltos
+data:
+  capo-system-role.yaml: |
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      name: addon-controller-capo-variables-reader
+      namespace: capo-system
+    rules:
+      - apiGroups: [""]
+        resources: ["secrets"]
+        resourceNames: ["capo-variables"]
+        verbs: ["get", "list", "watch"]
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: addon-controller-capo-variables-reader
+      namespace: capo-system
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: Role
+      name: addon-controller-capo-variables-reader
+    subjects:
+      - kind: ServiceAccount
+        name: addon-controller
+        namespace: projectsveltos
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -99,22 +135,57 @@ data:
     data:
       clouds.yaml: {{ index (getResource "CapoVariables").data "clouds.yaml" }}
 ---
-# Flux Kustomization CRs for the CAPI/CAPO management stack, pushed to the
-# target cluster. Each Kustomization points at a path in the central Git repo
-# and is reconciled by Flux's kustomize/helm controllers.
-#
-# Ordering is enforced via Flux dependsOn between the Kustomizations:
-#   cert-manager → cluster-api-operator → cluster-api-providers
-#   external-secrets → cluster-api-providers, capo-identity
-#   cluster-api-providers → capo-identity, cluster-api-templates
-#   (ORC and cluster-api-templates have no inter-dependencies beyond providers)
+# Sveltos core controllers deployed via Flux Kustomization pointing at the
+# shared infrastructure/sveltos/core base. The Flux Kustomization CR is applied
+# directly by Sveltos; Flux on the target cluster then reconciles the core
+# manifests from Git. The sveltos-core-values ConfigMap provides per-cluster
+# values (domain, managementCluster) referenced by the HelmReleases in core/.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: capi-management-sveltos-core
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/template: "true"
+data:
+  sveltos-core-values.yaml: |
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: sveltos-core-values
+      namespace: projectsveltos
+    data:
+      values.yaml: |
+        kubernetesClusterDomain: "{{ .Cluster.metadata.name }}.local"
+        agent:
+          managementCluster: true
+        registerMgmtClusterJob:
+          registerMgmtCluster:
+            args:
+              - --labels=type=mgmt
+  sveltos-core-flux-kustomization.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: sveltos-core
+      namespace: flux-system
+    spec:
+      interval: 10m
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/sveltos/core
+      prune: true
+      wait: true
+      timeout: 5m
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: capi-management-flux-kustomizations
   namespace: projectsveltos
 data:
-  # --- cert-manager (v1.19.2) ---
   cert-manager.yaml: |
     apiVersion: kustomize.toolkit.fluxcd.io/v1
     kind: Kustomization
@@ -131,7 +202,6 @@ data:
       prune: true
       wait: true
       timeout: 5m
-  # --- external-secrets (v2.3.0) ---
   external-secrets.yaml: |
     apiVersion: kustomize.toolkit.fluxcd.io/v1
     kind: Kustomization
@@ -148,7 +218,6 @@ data:
       prune: true
       wait: true
       timeout: 5m
-  # --- cluster-api-operator (v0.27.0) — depends on cert-manager ---
   cluster-api-operator.yaml: |
     apiVersion: kustomize.toolkit.fluxcd.io/v1
     kind: Kustomization
@@ -167,7 +236,6 @@ data:
       timeout: 5m
       dependsOn:
         - name: cert-manager
-  # --- ORC (v2.5.0) — OpenStack Resource Controller, CAPO image resolution ---
   orc.yaml: |
     apiVersion: kustomize.toolkit.fluxcd.io/v1
     kind: Kustomization
@@ -184,9 +252,6 @@ data:
       prune: true
       wait: true
       timeout: 5m
-  # --- cluster-api-providers — CAPI core + kubeadm + CAPO CRs ---
-  # depends on: cluster-api-operator (CRDs), external-secrets (credential
-  # plumbing), orc (image resolution dependency for CAPO v0.14.x)
   cluster-api-providers.yaml: |
     apiVersion: kustomize.toolkit.fluxcd.io/v1
     kind: Kustomization
@@ -207,11 +272,6 @@ data:
         - name: cluster-api-operator
         - name: external-secrets
         - name: orc
-  # --- capo-identity — ESO: capo-variables (capo-system) → mgmt-cloud-config ---
-  # Split from cluster-api-templates so an ESO failure can't abort the
-  # ClusterClass apply. wait:false because the ExternalSecret only becomes
-  # Ready once capo-variables exists (transferred by this profile's
-  # capi-management-capo-variables ConfigMap).
   capo-identity.yaml: |
     apiVersion: kustomize.toolkit.fluxcd.io/v1
     kind: Kustomization
@@ -231,9 +291,6 @@ data:
       dependsOn:
         - name: external-secrets
         - name: cluster-api-providers
-  # --- cluster-api-templates — ClusterClass + versioned OpenStack templates ---
-  # wait intentionally omitted: health-gating on the ClusterClass during
-  # template rotation can wedge the Kustomization (see clusters/mgmt comment).
   cluster-api-templates.yaml: |
     apiVersion: kustomize.toolkit.fluxcd.io/v1
     kind: Kustomization
@@ -251,3 +308,522 @@ data:
       timeout: 10m
       dependsOn:
         - name: cluster-api-providers
+---
+# Sveltos ClusterProfiles + backing ConfigMaps for the new management cluster.
+# Pushed as raw manifests so the new cluster can manage its own workload
+# clusters with the same profiles the current mgmt cluster uses.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: capi-management-sveltos-profiles
+  namespace: projectsveltos
+data:
+  oidc-rbac-clusterprofile.yaml: |
+    apiVersion: config.projectsveltos.io/v1beta1
+    kind: ClusterProfile
+    metadata:
+      name: oidc-rbac
+      namespace: projectsveltos
+    spec:
+      syncMode: ContinuousWithDriftDetection
+      clusterSelector:
+        matchLabels:
+          type: workload
+          sveltos.argus.rpcu.io/oidc-rbac: enabled
+      policyRefs:
+        - name: oidc-rbac
+          namespace: projectsveltos
+          kind: ConfigMap
+  oidc-rbac-configmap.yaml: |
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: oidc-rbac
+      namespace: projectsveltos
+    data:
+      oidc-rbac.yaml: |
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata:
+          name: oidc-kube-admin
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: cluster-admin
+        subjects:
+          - apiGroup: rbac.authorization.k8s.io
+            kind: Group
+            name: kube-admin
+        ---
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata:
+          name: oidc-kube-user
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: cluster-admin
+        subjects:
+          - apiGroup: rbac.authorization.k8s.io
+            kind: Group
+            name: kube-user
+        ---
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRole
+        metadata:
+          name: system:kube-apiserver-to-kubelet
+        rules:
+          - apiGroups: [""]
+            resources:
+              - nodes/proxy
+              - nodes/log
+              - nodes/spec
+              - nodes/metrics
+              - pods/log
+              - pods/exec
+              - pods/portforward
+            verbs: ["*"]
+          - apiGroups: ["metrics.k8s.io"]
+            resources:
+              - nodes
+              - pods
+            verbs: ["get", "list"]
+        ---
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata:
+          name: system:kube-apiserver-kubelet
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: system:kube-apiserver-to-kubelet
+        subjects:
+          - apiGroup: rbac.authorization.k8s.io
+            kind: User
+            name: kube-apiserver-kubelet-client
+  cilium-clusterprofile.yaml: |
+    apiVersion: config.projectsveltos.io/v1beta1
+    kind: ClusterProfile
+    metadata:
+      name: cilium
+      namespace: projectsveltos
+    spec:
+      syncMode: ContinuousWithDriftDetection
+      clusterSelector:
+        matchLabels:
+          type: workload
+          sveltos.argus.rpcu.io/cilium: enabled
+      helmCharts:
+        - repositoryURL: https://helm.cilium.io/
+          repositoryName: cilium
+          chartName: cilium/cilium
+          # renovate: datasource=helm depName=cilium registryUrl=https://helm.cilium.io/
+          chartVersion: "1.18.6"
+          releaseName: cilium
+          releaseNamespace: kube-system
+          helmChartAction: Install
+          values: |
+            k8sServiceHost: "{{ .Cluster.spec.controlPlaneEndpoint.host }}"
+            k8sServicePort: "{{ .Cluster.spec.controlPlaneEndpoint.port }}"
+            kubeProxyReplacement: true
+            l2announcements:
+              enabled: false
+            socketLB:
+              hostNamespaceOnly: false
+            envoy:
+              enabled: false
+            cni:
+              exclusive: false
+            ipam:
+              operator:
+                clusterPoolIPv4PodCIDRList:
+                  - "{{ (index .Cluster.spec.clusterNetwork.pods.cidrBlocks 0) }}"
+                clusterPoolIPv4MaskSize: 23
+            clusterDomain: "{{ .Cluster.metadata.name }}.local"
+  flux-clusterprofile.yaml: |
+    apiVersion: config.projectsveltos.io/v1beta1
+    kind: ClusterProfile
+    metadata:
+      name: flux
+      namespace: projectsveltos
+    spec:
+      syncMode: OneTime
+      clusterSelector:
+        matchLabels:
+          type: workload
+      helmCharts:
+        - repositoryURL: oci://ghcr.io/controlplaneio-fluxcd/charts
+          repositoryName: flux-operator
+          chartName: flux-operator
+          # renovate: datasource=docker depName=ghcr.io/controlplaneio-fluxcd/charts/flux-operator
+          chartVersion: "0.40.0"
+          releaseName: flux-operator
+          releaseNamespace: flux-system
+          helmChartAction: Install
+          values: |
+            installCRDs: true
+  flux-instance-clusterprofile.yaml: |
+    apiVersion: config.projectsveltos.io/v1beta1
+    kind: ClusterProfile
+    metadata:
+      name: flux-instance
+      namespace: projectsveltos
+    spec:
+      syncMode: ContinuousWithDriftDetection
+      dependsOn:
+        - flux
+      clusterSelector:
+        matchLabels:
+          type: workload
+      policyRefs:
+        - name: flux-sources
+          namespace: projectsveltos
+          kind: ConfigMap
+  flux-sources-configmap.yaml: |
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: flux-sources
+      namespace: projectsveltos
+      annotations:
+        projectsveltos.io/template: "true"
+    data:
+      flux-instance.yaml: |
+        apiVersion: fluxcd.controlplane.io/v1
+        kind: FluxInstance
+        metadata:
+          name: flux
+          namespace: flux-system
+        spec:
+          distribution:
+            version: "2.x"
+            registry: "ghcr.io/fluxcd"
+          components:
+            - source-controller
+            - kustomize-controller
+            - helm-controller
+            - notification-controller
+          cluster:
+            type: kubernetes
+            multitenant: false
+            networkPolicy: true
+            domain: "{{ .Cluster.metadata.name }}.local"
+          kustomize:
+            patches:
+              - target:
+                  kind: Deployment
+                  name: "(kustomize-controller|helm-controller)"
+                patch: |
+                  - op: add
+                    path: /spec/template/spec/containers/0/args/-
+                    value: --concurrent=42
+          sync:
+            kind: GitRepository
+            url: "https://github.com/RPCU/argus.git"
+            ref: "refs/heads/main"
+            path: "./infrastructure/fluxcd/operator"
+            interval: "1m"
+  openstack-ccm-clusterprofile.yaml: |
+    apiVersion: config.projectsveltos.io/v1beta1
+    kind: ClusterProfile
+    metadata:
+      name: openstack-ccm
+      namespace: projectsveltos
+    spec:
+      syncMode: ContinuousWithDriftDetection
+      dependsOn:
+        - flux-instance
+      clusterSelector:
+        matchLabels:
+          type: workload
+          sveltos.argus.rpcu.io/openstack-integration: enabled
+      templateResourceRefs:
+        - resource:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            kind: OpenStackCluster
+            namespace: "{{ .Cluster.metadata.namespace }}"
+            name: "{{ .Cluster.spec.infrastructureRef.name }}"
+          identifier: OpenStackCluster
+        - resource:
+            apiVersion: v1
+            kind: Secret
+            namespace: mgmt
+            name: cloud-controller-app-creds
+          identifier: AppCreds
+      policyRefs:
+        - name: openstack-ccm-clouds
+          namespace: projectsveltos
+          kind: ConfigMap
+        - name: openstack-ccm-workload-values
+          namespace: projectsveltos
+          kind: ConfigMap
+        - name: openstack-ccm-flux-kustomization
+          namespace: projectsveltos
+          kind: ConfigMap
+  openstack-ccm-clouds-configmap.yaml: |
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: openstack-ccm-clouds
+      namespace: projectsveltos
+      annotations:
+        projectsveltos.io/template: "true"
+    data:
+      openstack-ccm-clouds.yaml: |
+        {{- $cloudName := (getField "OpenStackCluster" "spec.identityRef.cloudName") }}
+        {{- $cloudsYaml := index (getResource "AppCreds").data (printf "%s-clouds.yaml" $cloudName) | b64dec | fromYaml }}
+        {{- $auth := $cloudsYaml.clouds.openstack.auth }}
+        {{- $region := $cloudsYaml.clouds.openstack.region_name }}
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: cloud-controller-clouds
+          namespace: kube-system
+        type: Opaque
+        stringData:
+          cloud.conf: |
+            [Global]
+            use-clouds=true
+            clouds-file=/etc/config/clouds.yaml
+            cloud=openstack
+            tls-insecure=true
+
+            [LoadBalancer]
+            enabled=true
+            floating-network-id=1cfd69da-057c-4748-a0d4-de5b0ca77db2
+            create-monitor=true
+            lb-provider=ovn
+            lb-method=SOURCE_IP_PORT
+          clouds.yaml: |
+            clouds:
+              openstack:
+                auth:
+                  auth_url: {{ $auth.auth_url }}
+                  application_credential_name: "{{ $auth.application_credential_name }}"
+                  application_credential_secret: "{{ $auth.application_credential_secret }}"
+                  user_id: "{{ $auth.user_id }}"
+                  project_id: "{{ $auth.project_id }}"
+                region_name: {{ $region }}
+                verify: false
+                interface: public
+                identity_api_version: 3
+  openstack-ccm-workload-values-configmap.yaml: |
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: openstack-ccm-workload-values
+      namespace: projectsveltos
+    data:
+      openstack-ccm-workload-values.yaml: |
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: openstack-ccm-workload-values
+          namespace: kube-system
+        data:
+          values.yaml: |
+            secret:
+              enabled: true
+              create: false
+              name: cloud-controller-clouds
+            tolerations:
+              - key: node.cloudprovider.kubernetes.io/uninitialized
+                value: "true"
+                effect: NoSchedule
+              - key: node-role.kubernetes.io/control-plane
+                effect: NoSchedule
+              - key: node-role.kubernetes.io/master
+                effect: NoSchedule
+  openstack-ccm-flux-kustomization-configmap.yaml: |
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: openstack-ccm-flux-kustomization
+      namespace: projectsveltos
+    data:
+      openstack-ccm-flux-kustomization.yaml: |
+        apiVersion: kustomize.toolkit.fluxcd.io/v1
+        kind: Kustomization
+        metadata:
+          name: openstack-ccm
+          namespace: kube-system
+        spec:
+          interval: 10m
+          sourceRef:
+            kind: GitRepository
+            name: flux-system
+            namespace: flux-system
+          path: ./infrastructure/openstack-ccm
+          prune: false
+          patches:
+            - patch: |
+                apiVersion: helm.toolkit.fluxcd.io/v2
+                kind: HelmRelease
+                metadata:
+                  name: openstack-cloud-controller-manager
+                spec:
+                  valuesFrom:
+                    - kind: ConfigMap
+                      name: openstack-ccm-values
+                    - kind: ConfigMap
+                      name: openstack-ccm-workload-values
+                  postRenderers:
+                    - kustomize:
+                        patches:
+                          - target:
+                              kind: DaemonSet
+                              name: openstack-cloud-controller-manager
+                            patch: |
+                              apiVersion: apps/v1
+                              kind: DaemonSet
+                              metadata:
+                                name: openstack-cloud-controller-manager
+                              spec:
+                                template:
+                                  spec:
+                                    nodeSelector:
+                                      $patch: replace
+                                      kubernetes.io/os: linux
+              target:
+                kind: HelmRelease
+                name: openstack-cloud-controller-manager
+  openstack-cinder-csi-clusterprofile.yaml: |
+    apiVersion: config.projectsveltos.io/v1beta1
+    kind: ClusterProfile
+    metadata:
+      name: openstack-cinder-csi
+      namespace: projectsveltos
+    spec:
+      syncMode: ContinuousWithDriftDetection
+      dependsOn:
+        - flux-instance
+        - openstack-ccm
+        - external-snapshotter
+      clusterSelector:
+        matchLabels:
+          type: workload
+          sveltos.argus.rpcu.io/openstack-integration: enabled
+      policyRefs:
+        - name: openstack-cinder-csi-workload-values
+          namespace: projectsveltos
+          kind: ConfigMap
+        - name: openstack-cinder-csi-flux-kustomization
+          namespace: projectsveltos
+          kind: ConfigMap
+  openstack-cinder-csi-workload-values-configmap.yaml: |
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: openstack-cinder-csi-workload-values
+      namespace: projectsveltos
+      annotations:
+        projectsveltos.io/template: "true"
+    data:
+      openstack-cinder-csi-workload-values.yaml: |
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: openstack-cinder-csi-workload-values
+          namespace: kube-system
+        data:
+          values.yaml: |
+            secret:
+              enabled: true
+              hostMount: false
+              create: false
+              name: cloud-controller-clouds
+              filename: cloud.conf
+            clusterID: "{{ .Cluster.metadata.name }}"
+  openstack-cinder-csi-flux-kustomization-configmap.yaml: |
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: openstack-cinder-csi-flux-kustomization
+      namespace: projectsveltos
+    data:
+      openstack-cinder-csi-flux-kustomization.yaml: |
+        apiVersion: kustomize.toolkit.fluxcd.io/v1
+        kind: Kustomization
+        metadata:
+          name: openstack-cinder-csi
+          namespace: kube-system
+        spec:
+          interval: 10m
+          dependsOn:
+            - name: external-snapshotter-crds
+          sourceRef:
+            kind: GitRepository
+            name: flux-system
+            namespace: flux-system
+          path: ./infrastructure/openstack-cinder-csi
+          prune: false
+          patches:
+            - patch: |
+                apiVersion: helm.toolkit.fluxcd.io/v2
+                kind: HelmRelease
+                metadata:
+                  name: openstack-cinder-csi
+                spec:
+                  valuesFrom:
+                    - kind: ConfigMap
+                      name: openstack-cinder-csi-values
+                    - kind: ConfigMap
+                      name: openstack-cinder-csi-workload-values
+              target:
+                kind: HelmRelease
+                name: openstack-cinder-csi
+  external-snapshotter-clusterprofile.yaml: |
+    apiVersion: config.projectsveltos.io/v1beta1
+    kind: ClusterProfile
+    metadata:
+      name: external-snapshotter
+      namespace: projectsveltos
+    spec:
+      syncMode: ContinuousWithDriftDetection
+      dependsOn:
+        - flux-instance
+      clusterSelector:
+        matchLabels:
+          type: workload
+          sveltos.argus.rpcu.io/openstack-integration: enabled
+      policyRefs:
+        - name: external-snapshotter-flux-kustomization
+          namespace: projectsveltos
+          kind: ConfigMap
+  external-snapshotter-flux-kustomization-configmap.yaml: |
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: external-snapshotter-flux-kustomization
+      namespace: projectsveltos
+    data:
+      external-snapshotter-crds.yaml: |
+        apiVersion: kustomize.toolkit.fluxcd.io/v1
+        kind: Kustomization
+        metadata:
+          name: external-snapshotter-crds
+          namespace: kube-system
+        spec:
+          interval: 10m
+          sourceRef:
+            kind: GitRepository
+            name: flux-system
+            namespace: flux-system
+          path: ./infrastructure/external-snapshotter/crds
+          prune: false
+      external-snapshotter-controller.yaml: |
+        apiVersion: kustomize.toolkit.fluxcd.io/v1
+        kind: Kustomization
+        metadata:
+          name: external-snapshotter-controller
+          namespace: kube-system
+        spec:
+          interval: 10m
+          dependsOn:
+            - name: external-snapshotter-crds
+          sourceRef:
+            kind: GitRepository
+            name: flux-system
+            namespace: flux-system
+          path: ./infrastructure/external-snapshotter/controller
+          prune: false

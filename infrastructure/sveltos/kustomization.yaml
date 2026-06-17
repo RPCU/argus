@@ -6,13 +6,16 @@
 #   helmrelease.yaml  - Sveltos core controllers
 #   dashboard.yaml    - Sveltos dashboard (OIDC, PKCE public client)
 #   rbac.yaml         - extra RBAC for addon-controller templateResourceRefs
-#                       (read OpenStackCluster + mgmt-cloud-config)
+#                       (read OpenStackCluster + cloud-controller-app-creds;
+#                        read capo-variables in capo-system for capi-management)
 #   clusterprofiles/  - ClusterProfiles Sveltos pushes to child clusters
 #                       (oidc-rbac: kube-admin/kube-user -> cluster-admin)
-#                       (cilium: OneTime CNI bootstrap)
-#                       (flux: Flux operator + reconciles Cilium from repo)
+#                       (cilium: CNI via ContinuousWithDriftDetection)
+#                       (flux: Flux operator bootstrap + FluxInstance reconcile)
 #                       (openstack-ccm: OpenStack CCM for workload clusters)
-#                       (openstack-cinder-csi: Cinder CSI + VolumeSnapshot for workload clusters)
+#                       (openstack-cinder-csi: Cinder CSI + VolumeSnapshot)
+#                       (external-snapshotter: VolumeSnapshot CRDs + controller)
+#                       (capi-management: CAPI/CAPO stack for new mgmt clusters)
 #   gateway/          - kgateway HTTPRoute exposing the dashboard
 resources:
   - namespace.yaml

@@ -1,6 +1,4 @@
 # Cluster API providers, installed declaratively via the Cluster API Operator.
-# clusterctl-providers.yaml also creates clusterctl.cluster.x-k8s.io/v1alpha3
-# Provider inventory CRs so that `clusterctl move` can discover providers.
 # Resources span multiple namespaces, so no top-level namespace is set.
 #
 # NOTE: the CAPO `capo-variables` secret (clouds.yaml) is created manually on
@@ -12,7 +10,6 @@ resources:
   - control-plane-kubeadm.yaml
   - infrastructure-openstack.yaml
   - control-plane-kamaji.yaml
-  - clusterctl-providers.yaml
 #
 # NOTE: ORC (openstack-resource-controller) is a hard dependency of CAPO
 # v0.14.x (OpenStackMachine images resolve through ORC Image resources), but it

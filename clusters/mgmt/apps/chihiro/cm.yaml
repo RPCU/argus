@@ -173,6 +173,8 @@ data:
           false_value: disabled
           editable: true
           path: "metadata.labels.'sveltos.argus.rpcu.io/oidc-rbac'"
+          visible_groups:
+            - kube-admin
         openstack:
           label: "Openstack Integration"
           description: "Enable Service Type LB using Octavia and CSI using Cinder"

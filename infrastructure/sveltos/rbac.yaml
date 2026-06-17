@@ -41,3 +41,37 @@ subjects:
   - kind: ServiceAccount
     name: addon-controller
     namespace: projectsveltos
+---
+# RBAC for the capi-management ClusterProfile: grant the addon-controller read
+# access to the capo-variables Secret in the capo-system namespace on the
+# management cluster. The templateResourceRefs in the capi-management profile
+# read this secret and push it to target clusters as part of the CAPI/CAPO
+# bootstrap.
+#
+# Uses a namespace-scoped Role (not the ClusterRole) because the ClusterRole
+# has resourceNames restrictions that prevent listing secrets in arbitrary
+# namespaces. The Role allows get/list on the capo-system namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: addon-controller-capo-variables-reader
+  namespace: capo-system
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["capo-variables"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: addon-controller-capo-variables-reader
+  namespace: capo-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: addon-controller-capo-variables-reader
+subjects:
+  - kind: ServiceAccount
+    name: addon-controller
+    namespace: projectsveltos

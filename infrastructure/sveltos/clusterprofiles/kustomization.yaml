@@ -5,3 +5,4 @@ resources:
   - external-snapshotter.yaml
   - openstack-ccm.yaml
   - openstack-cinder-csi.yaml
+  - capi-management.yaml

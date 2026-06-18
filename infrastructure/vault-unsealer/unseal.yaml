@@ -1,0 +1,12 @@
+apiVersion: platform.didactiklabs.io/v1alpha1
+kind: Unseal
+metadata:
+  name: internal-vault
+  namespace: vault-unseal-controller-system
+spec:
+  vaultNodes:
+    - http://vault.vault.svc:8200
+  unsealKeysSecretRef:
+    name: thresholdkeys
+    namespace: vault-unseal-controller-system
+  retryCount: 3

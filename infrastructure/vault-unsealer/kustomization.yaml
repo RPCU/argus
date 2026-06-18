@@ -1,0 +1,3 @@
+resources:
+  - https://github.com/didactiklabs/vault-unseal-controller/releases/download/v0.1.3/bundle.yaml
+  - unseal.yaml

@@ -1,0 +1,82 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: vault
+  namespace: vault
+spec:
+  interval: 1h0m0s
+  chart:
+    spec:
+      chart: vault
+      version: 0.30.0
+      sourceRef:
+        kind: HelmRepository
+        name: hashicorp
+        namespace: vault
+  values:
+    global:
+      tlsDisable: true
+    server:
+      # dataStorage backs the Raft integrated storage: one PVC per replica
+      # (3x 10Gi on cinder-delete). mgmt has no default StorageClass, so it must
+      # be requested explicitly.
+      dataStorage:
+        enabled: true
+        size: 10Gi
+        mountPath: "/vault/data"
+        accessMode: ReadWriteOnce
+      # Standalone (single-pod, file storage) is disabled in favour of HA Raft.
+      standalone:
+        enabled: false
+      # High-availability with Vault's integrated Raft storage (no external
+      # Consul). 3 replicas form a Raft quorum and coordinate leader election /
+      # failover internally. The chart provisions a StatefulSet plus the
+      # leader-aware `vault-active` / `vault-standby` services.
+      #
+      # NOTE: the chart's server podAntiAffinity is
+      # requiredDuringSchedulingIgnoredDuringExecution on hostname, so the 3
+      # replicas REQUIRE 3 distinct schedulable nodes — otherwise the extra pods
+      # stay Pending. Reduce replicas (and quorum) if mgmt has fewer nodes.
+      ha:
+        enabled: true
+        replicas: 3
+        raft:
+          enabled: true
+          setNodeId: true
+          config: |
+            ui = true
+            listener "tcp" {
+              tls_disable = true
+              address = "0.0.0.0:8200"
+              cluster_address = "0.0.0.0:8201"
+            }
+            storage "raft" {
+              path = "/vault/data"
+            }
+            service_registration "kubernetes" {}
+      # Readiness is enabled so the Service only routes to unsealed/active pods
+      # (the probe reports NotReady while a pod is sealed). Liveness stays
+      # DISABLED: a sealed pod (normal after any restart, before unseal) must not
+      # be killed, or it would crash-loop during bootstrap/unseal.
+      readinessProbe:
+        enabled: true
+      livenessProbe:
+        enabled: false
+      # The chart's bundled Ingress is disabled: this cluster routes ingress via
+      # the Gateway API (kgateway), not an Ingress controller. External access is
+      # provided by the HTTPRoute (httproute.yaml) at vault.mgmt.rpcu.lan, with
+      # TLS terminated at the shared `https` Gateway using the rpcu-lan-wildcard
+      # cert (root-mgmt CA).
+      ingress:
+        enabled: false
+    ui:
+      enabled: true
+      publishNotReadyAddresses: true
+      activeVaultPodOnly: false
+      serviceType: "ClusterIP"
+      externalPort: 8200
+      targetPort: 8200
+    injector:
+      enabled: false
+    csi:
+      enabled: false

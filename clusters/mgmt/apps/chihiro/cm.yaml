@@ -82,6 +82,7 @@ data:
             sveltos.argus.rpcu.io/oidc-rbac: {{ chihiro.oidcRbac }}
             sveltos.argus.rpcu.io/cilium: {{ chihiro.cilium }}
             sveltos.argus.rpcu.io/openstack-integration: {{ chihiro.openstack }}
+            sveltos.argus.rpcu.io/capi-management: {{ chihiro.mgmt }}
             type: workload
         spec:
           clusterNetwork:

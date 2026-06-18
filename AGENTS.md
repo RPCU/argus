@@ -563,7 +563,8 @@ matchLabels: {type: workload, sveltos.argus.rpcu.io/cilium: enabled}`) that push
     `FluxInstance` CRD ships with the operator, so the operator must land first.
 
   The FluxInstance mirrors `infrastructure/fluxcd/instances/flux.yaml` (all four
-  components incl. `notification-controller`, the `concurrent=42` patch) with
+  components incl. `notification-controller`, the `--concurrent=4` +
+  `--kube-api-qps=50`/`--kube-api-burst=100` throttle patch) with
   `cluster.domain` patched per-cluster to `{{ .Cluster.metadata.name }}.local` and
   a **real `sync` block** pointing at `https://github.com/RPCU/argus.git`
   `refs/heads/main` path **`./infrastructure/fluxcd/operator`** — so **Flux
@@ -859,7 +860,7 @@ _fluxcd/operator/_ - Operator installation
 
 _fluxcd/instances/_ - Instance configuration
 
-- `flux.yaml` - FluxInstance CRD (Flux 2.x, 42 concurrent operations)
+- `flux.yaml` - FluxInstance CRD (Flux 2.x, kustomize/helm controllers patched to `--concurrent=4` + `--kube-api-qps=50`/`--kube-api-burst=100` to bound etcd load)
 - `kustomization.yaml` - Manifest collection
 
 ---
@@ -967,7 +968,7 @@ _fluxcd/instances/_ - Instance configuration
 - **Git Repository**: <https://github.com/RPCU/argus.git>
 - **Branch**: main
 - **Path**: ./clusters/PLACEHOLDER (cluster-specific override)
-- **Concurrency**: 42 operations per controller
+- **Concurrency**: 4 operations per controller (kustomize/helm), throttled with `--kube-api-qps=50`/`--kube-api-burst=100` to bound apiserver/etcd load
 - **Interval**: 1 minute
 
 ### Cluster Network Configuration (clusters/openstack/)

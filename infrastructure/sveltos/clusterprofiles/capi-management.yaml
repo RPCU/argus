@@ -7,6 +7,7 @@
 #
 # What is deployed (in dependency order):
 #   1. Sveltos core controllers (Flux Kustomization -> infrastructure/sveltos/core)
+#      CRDs installed by the HelmRelease once Flux reconciles the Kustomization
 #   2. Sveltos ClusterProfiles + backing ConfigMaps — pushed as raw manifests
 #      so the new mgmt cluster can manage its own workload clusters
 #   3. cert-manager           — TLS certificate management (CAPI operator prereq)
@@ -177,7 +178,7 @@ data:
         namespace: flux-system
       path: ./infrastructure/sveltos/core
       prune: true
-      wait: true
+      wait: false
       timeout: 5m
 ---
 apiVersion: v1

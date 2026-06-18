@@ -1,0 +1,5 @@
+resources:
+  - namespace.yaml
+  - helmrepo.yaml
+  - helmrelease.yaml
+  - httproute.yaml

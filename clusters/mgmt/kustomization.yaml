@@ -25,6 +25,8 @@ resources:
   - crossplane-resources.yaml
   - dragonfly-operator.yaml
   - chihiro.yaml
+  - vault.yaml
+  - vault-unsealer.yaml
   - sveltos.yaml
   - flux-operator.yaml
   - kamaji.yaml

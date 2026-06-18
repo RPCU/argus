@@ -511,13 +511,22 @@ data:
             domain: "{{ .Cluster.metadata.name }}.local"
           kustomize:
             patches:
+              # Tuned down from --concurrent=42 (~10x default) which overloaded
+              # etcd. Reset to the Flux default concurrency (4) and cap the
+              # per-controller apiserver request rate to bound etcd load.
               - target:
                   kind: Deployment
                   name: "(kustomize-controller|helm-controller)"
                 patch: |
                   - op: add
                     path: /spec/template/spec/containers/0/args/-
-                    value: --concurrent=42
+                    value: --concurrent=4
+                  - op: add
+                    path: /spec/template/spec/containers/0/args/-
+                    value: --kube-api-qps=50
+                  - op: add
+                    path: /spec/template/spec/containers/0/args/-
+                    value: --kube-api-burst=100
           sync:
             kind: GitRepository
             url: "https://github.com/RPCU/argus.git"

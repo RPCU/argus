@@ -6,3 +6,4 @@ resources:
   - openstack-ccm.yaml
   - openstack-cinder-csi.yaml
   - capi-management.yaml
+  - vault-auth.yaml

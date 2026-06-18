@@ -21,13 +21,19 @@ rules:
   - apiGroups: ["infrastructure.cluster.x-k8s.io"]
     resources: ["openstackclusters"]
     verbs: ["get", "list", "watch"]
-  # Read the cloud-controller-app-creds Secret so the per-cluster CCM credentials
-  # can be rendered. Scoped to the mgmt namespace (get by name; no broad
-  # list/watch on secrets).
+  # Read Secrets for templateResourceRefs, across consumers:
+  #   - cloud-controller-app-creds (mgmt ns) for the openstack-ccm profile;
+  #   - CAPI cluster CA secrets <cluster-name>-ca (key tls.crt) and the
+  #     root-mgmt CA (cert-manager ns) for the vault-auth profile
+  #     (clusterprofiles/vault-auth.yaml) — used to configure each workload
+  #     cluster's Vault Kubernetes auth backend and to push the root-mgmt CA
+  #     bundle to the workload cluster.
+  # The <name>-ca secret name is per-cluster, so it can't be pinned via
+  # resourceNames; this grants get/list/watch on secrets (the addon-controller
+  # already has broad cluster access for add-on delivery).
   - apiGroups: [""]
     resources: ["secrets"]
-    resourceNames: ["cloud-controller-app-creds"]
-    verbs: ["get"]
+    verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

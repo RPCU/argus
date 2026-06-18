@@ -34,7 +34,11 @@ spec:
   provider:
     vault:
       server: "http://vault.vault.svc:8200"
-      path: "secrets"
+      # Per-cluster KV-v2 mount convention: the mgmt cluster reads from its own
+      # `secrets-mgmt` mount, matching the `secrets-<cluster>` mounts the Sveltos
+      # vault-auth add-on provisions for workload clusters
+      # (infrastructure/sveltos/clusterprofiles/vault-auth.yaml).
+      path: "secrets-mgmt"
       version: "v2"
       auth:
         kubernetes:

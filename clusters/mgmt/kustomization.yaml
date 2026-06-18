@@ -21,6 +21,7 @@ resources:
   - crossplane-compositions.yaml
   - crossplane-zitadel.yaml
   - crossplane-openstack.yaml
+  - crossplane-vault.yaml
   - crossplane-providers.yaml
   - crossplane-resources.yaml
   - dragonfly-operator.yaml

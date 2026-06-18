@@ -51,3 +51,67 @@ join + unseal the rest.
 
 Every pod starts sealed again after any restart and must be re-unsealed
 (manually with the recorded keys, or via an auto-unseal mechanism).
+
+## Crossplane bootstrap (one-time manual)
+
+After Vault is initialised and unsealed, run these once:
+
+```bash
+export VAULT_POD="kubectl -n vault exec -it vault-0 --"
+
+# Enable KV v2 at secrets/
+$VAULT_POD vault secrets enable -path=secrets kv-v2
+
+# Enable Kubernetes auth (for ESO)
+$VAULT_POD vault auth enable kubernetes
+$VAULT_POD vault write auth/kubernetes/config \
+  kubernetes_host="https://kubernetes.default.svc"
+
+# Create policy for Crossplane
+$VAULT_POD vault policy write crossplane - <<'EOF'
+path "secrets/data/mgmt/crossplane" {
+  capabilities = ["read"]
+}
+path "secrets/data/mgmt/crossplane/*" {
+  capabilities = ["read", "list"]
+}
+path "secrets/metadata/mgmt/crossplane/*" {
+  capabilities = ["list"]
+}
+path "auth/approle/login" {
+  capabilities = ["create", "update"]
+}
+path "pki-int/*" {
+  capabilities = ["create", "read", "update", "delete", "list"]
+}
+path "pki/*" {
+  capabilities = ["create", "read", "update", "delete", "list"]
+}
+EOF
+
+# Create AppRole for Crossplane
+$VAULT_POD vault write auth/approle/role/crossplane \
+  token_policies=crossplane \
+  token_ttl=1h
+
+# Get credentials and seed them
+ROLE_ID=$($VAULT_POD vault read -field=role_id auth/approle/role/crossplane/role-id)
+SECRET_ID=$($VAULT_POD vault write -f -field=secret_id auth/approle/role/crossplane/secret-id)
+
+$VAULT_POD vault write auth/kubernetes/role/external-secrets \
+  bound_service_account_names=vault-auth \
+  bound_service_account_namespaces=external-secrets \
+  policies=crossplane \
+  ttl=1h
+
+$VAULT_POD vault kv put secrets/mgmt/crossplane \
+  role-id="$ROLE_ID" \
+  secret-id="$SECRET_ID"
+```
+
+Once done, the Crossplane resources in `clusters/mgmt/crossplane/vault/` take over:
+
+- `vault-backend` ClusterSecretStore (ESO reads from Vault via K8s auth)
+- `vault-creds` ExternalSecret (renders AppRole credentials for Crossplane)
+- `default` ProviderConfig (Crossplane Vault provider authenticates)
+- `cert-manager` AppRole (Crossplane creates per-cluster cert auth)

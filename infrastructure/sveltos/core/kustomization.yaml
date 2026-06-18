@@ -1,11 +1,10 @@
 # Core Sveltos install for a management cluster.
 #
 # Contains only the pieces needed to run Sveltos on a single cluster:
-# namespace, Helm repository, Helm releases (core + dashboard), extra RBAC,
-# and the kgateway HTTPRoute for the dashboard.
+# namespace, Helm repository, Helm release, and extra RBAC.
 #
-# The HelmReleases use valuesFrom referencing a sveltos-core-values ConfigMap
-# that must exist before Flux reconciles them. Sveltos pushes this ConfigMap
+# The HelmRelease uses valuesFrom referencing a sveltos-core-values ConfigMap
+# that must exist before Flux reconciles it. Sveltos pushes this ConfigMap
 # (templated per-cluster) alongside the Flux Kustomization CR.
 #
 # Does NOT include clusterprofiles/ — those are pushed to child clusters by
@@ -14,6 +13,4 @@ resources:
   - namespace.yaml
   - helmrepo.yaml
   - helmrelease.yaml
-  - dashboard.yaml
   - rbac.yaml
-  - gateway/

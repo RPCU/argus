@@ -4,7 +4,6 @@
 #   namespace.yaml    - projectsveltos namespace
 #   helmrepo.yaml     - projectsveltos Helm repository
 #   helmrelease.yaml  - Sveltos core controllers
-#   dashboard.yaml    - Sveltos dashboard (OIDC, PKCE public client)
 #   rbac.yaml         - extra RBAC for addon-controller templateResourceRefs
 #                       (read OpenStackCluster + cloud-controller-app-creds;
 #                        read capo-variables in capo-system for capi-management)
@@ -16,12 +15,9 @@
 #                       (openstack-cinder-csi: Cinder CSI + VolumeSnapshot)
 #                       (external-snapshotter: VolumeSnapshot CRDs + controller)
 #                       (capi-management: CAPI/CAPO stack for new mgmt clusters)
-#   gateway/          - kgateway HTTPRoute exposing the dashboard
 resources:
   - namespace.yaml
   - helmrepo.yaml
   - helmrelease.yaml
-  - dashboard.yaml
   - rbac.yaml
   - clusterprofiles/
-  - gateway/

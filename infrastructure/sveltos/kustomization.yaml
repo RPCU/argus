@@ -15,6 +15,8 @@
 #                       (openstack-cinder-csi: Cinder CSI + VolumeSnapshot)
 #                       (external-snapshotter: VolumeSnapshot CRDs + controller)
 #                       (capi-management: CAPI/CAPO stack for new mgmt clusters)
+#                       (vault-auth: per-child Vault k8s auth backend + ESO
+#                        ClusterSecretStore against the shared mgmt Vault)
 resources:
   - namespace.yaml
   - helmrepo.yaml

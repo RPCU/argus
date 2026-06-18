@@ -1,0 +1,384 @@
+# Vault auth add-on for OPT-IN workload (child) clusters.
+#
+# Adapted and improved from the bealv flux-mgmt repo
+# (gitops/apps/sveltos/clusterprofiles/external-secret.yaml). This add-on lets a
+# workload cluster consume secrets from the SHARED mgmt Vault (the HA Raft
+# instance at infrastructure/vault, reachable at https://vault.mgmt.rpcu.lan)
+# via External Secrets Operator, without ever sharing static Vault tokens: each
+# cluster authenticates to Vault using ITS OWN Kubernetes ServiceAccount tokens,
+# validated by a per-cluster Vault Kubernetes auth backend.
+#
+# Two halves wired together by an EventTrigger:
+#
+#   A. ON the management cluster (instantiated per workload cluster by Sveltos
+#      templating, applied by Crossplane's provider-vault against the mgmt Vault):
+#        - a Vault KV-v2-scoped read Policy   secrets-<cluster>
+#        - a Kubernetes auth Backend          mounted at clusters/<cluster>
+#        - an AuthBackendConfig               (the workload cluster's API host +
+#                                              CA, so Vault can verify its SA
+#                                              tokens via TokenReview)
+#        - an AuthBackendRole  external-secrets  bound to the ESO `vault-auth`
+#                                              ServiceAccount, granting the
+#                                              secrets-<cluster> policy
+#
+#   B. ON the workload cluster (pushed by a per-cluster ClusterProfile):
+#        - External Secrets Operator (Flux Kustomization -> infrastructure/external-secrets)
+#        - a `vault-auth` ServiceAccount + bound token + system:auth-delegator
+#          (so Vault's TokenReview against this cluster succeeds)
+#        - a `vault-backend` ClusterSecretStore pointed at the mgmt Vault over
+#          the clusters/<cluster> Kubernetes auth mount
+#
+# IMPROVEMENTS over the flux-mgmt source:
+#   - Uses the argus `flux-system` GitRepository (not bealv `infra`) and the
+#     argus ESO base (infrastructure/external-secrets) for the workload-cluster
+#     ESO install, instead of a bealv-specific setup path.
+#   - Points the ClusterSecretStore + Vault server at https://vault.mgmt.rpcu.lan
+#     (the kgateway `https` Gateway) and supplies the root-mgmt CA bundle via
+#     caProvider, instead of the bealv ingress host / no CA. mgmt Vault has
+#     tlsDisable in-cluster but is TLS-terminated at the Gateway for off-cluster
+#     access, so workload clusters must trust root-mgmt.
+#   - Drops the flux-mgmt cert-manager-via-Vault-PKI path (cert-vault.yaml):
+#     argus child clusters get certs from their own cert-manager self-signed CA
+#     (clusters/mgmt/cert-manager-issuer), NOT a shared Vault PKI, so that half
+#     does not apply here.
+#   - Opt-in gated by sveltos.argus.rpcu.io/vault-auth: enabled (consistent with
+#     the other argus add-on ClusterProfiles) and dependsOn flux-instance.
+#
+# PREREQUISITES on the mgmt cluster (already present):
+#   - Crossplane + provider-vault (infrastructure/crossplane-vault) with a
+#     working ProviderConfig `default` (clusters/mgmt/crossplane/vault) — the
+#     same provider that creates the cert-manager approle today.
+#   - The mgmt Vault must have the KV-v2 secrets engine for secrets-<cluster>
+#     paths. (The Backend/Policy/Role created here only wire up AUTH; the actual
+#     secrets-<cluster> KV mount + secret data are provisioned out of band, same
+#     as the mgmt `secrets` mount.)
+---
+# EventSource: fires when a workload cluster reports ESO is installed (the
+# external-secrets controller Deployment exists). Until ESO is up, there is no
+# `vault-auth` SA / token on the workload cluster for Vault to validate, so
+# there is nothing to authorize — we provision the Vault auth backend reactively
+# once ESO is present. (collectResources so the EventTrigger can template off the
+# cluster.)
+apiVersion: lib.projectsveltos.io/v1beta1
+kind: EventSource
+metadata:
+  name: vault-auth-eso-ready
+  namespace: projectsveltos
+spec:
+  collectResources: true
+  resourceSelectors:
+    - group: "apps"
+      version: "v1"
+      kind: "Deployment"
+      name: "external-secrets"
+      namespace: "external-secrets"
+---
+# EventTrigger: for each OPT-IN workload cluster whose ESO is ready, instantiate
+# (on the mgmt cluster, destinationClusterSelector type: mgmt) the per-cluster
+# Vault auth Backend / Policy / AuthBackendConfig / AuthBackendRole, plus the
+# nested ClusterProfile that pushes the ClusterSecretStore back to the workload
+# cluster. Sveltos templates the policyRefs ConfigMaps per matching source
+# cluster (instantiate: "true").
+apiVersion: lib.projectsveltos.io/v1beta1
+kind: EventTrigger
+metadata:
+  name: vault-auth
+  namespace: projectsveltos
+spec:
+  sourceClusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/vault-auth: enabled
+  destinationClusterSelector:
+    matchLabels:
+      type: mgmt
+  eventSourceName: vault-auth-eso-ready
+  syncMode: ContinuousWithDriftDetection
+  reloader: true
+  policyRefs:
+    - kind: ConfigMap
+      name: vault-auth-backend
+      namespace: projectsveltos
+    - kind: ConfigMap
+      name: vault-auth-backendconfig-cp
+      namespace: projectsveltos
+---
+# Crossplane MRs created on the mgmt Vault, instantiated per workload cluster.
+# Backend (the kubernetes auth mount) + Policy (KV-v2 read on secrets-<cluster>).
+# The AuthBackendConfig + AuthBackendRole live in the nested ClusterProfile below
+# because they need the workload cluster's CA secret (templateResourceRefs).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-auth-backend
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/instantiate: "true"
+data:
+  backend.yaml: |
+    apiVersion: auth.vault.upbound.io/v1alpha1
+    kind: Backend
+    metadata:
+      name: {{ .Cluster.metadata.name }}
+    spec:
+      forProvider:
+        path: clusters/{{ .Cluster.metadata.name }}
+        type: kubernetes
+      providerConfigRef:
+        name: default
+  policy.yaml: |
+    apiVersion: vault.vault.upbound.io/v1alpha1
+    kind: Policy
+    metadata:
+      name: secrets-{{ .Cluster.metadata.name }}
+    spec:
+      forProvider:
+        name: secrets-{{ .Cluster.metadata.name }}
+        policy: |
+          path "secrets-{{ .Cluster.metadata.name }}/data/*" {
+            capabilities = ["read"]
+          }
+      providerConfigRef:
+        name: default
+---
+# Nested ClusterProfile (created on mgmt) that resolves the workload cluster's
+# API endpoint + CA bundle (from the CAPI <cluster>-ca secret) and renders the
+# AuthBackendConfig + AuthBackendRole. Sveltos applies these LOCALLY on mgmt
+# (deploymentType: Local) — they are Crossplane MRs, not workload-cluster
+# objects.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-auth-backendconfig-cp
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/instantiate: "true"
+data:
+  cp.yaml: |
+    apiVersion: config.projectsveltos.io/v1beta1
+    kind: ClusterProfile
+    metadata:
+      name: "vault-auth-backendconfig-{{ .Cluster.metadata.name }}"
+    spec:
+      reloader: true
+      syncMode: ContinuousWithDriftDetection
+      clusterRefs:
+        - apiVersion: cluster.x-k8s.io/v1beta1
+          kind: Cluster
+          name: "{{ .Cluster.metadata.name }}"
+          namespace: "{{ .Cluster.metadata.namespace }}"
+      templateResourceRefs:
+        - resource:
+            apiVersion: v1
+            kind: Secret
+            name: "{{ .Cluster.metadata.name }}-ca"
+            namespace: "{{ .Cluster.metadata.namespace }}"
+          identifier: kubeCaSecret
+      policyRefs:
+        - kind: ConfigMap
+          name: vault-auth-backendconfig
+          namespace: projectsveltos
+          deploymentType: Local
+---
+# The actual AuthBackendConfig + AuthBackendRole, templated with the workload
+# cluster's API host/port and CA (resolved via the kubeCaSecret
+# templateResourceRef above). disableIssValidation + disableLocalCaJwt are set
+# because Vault runs in the mgmt cluster and validates a DIFFERENT cluster's
+# tokens (cross-cluster TokenReview).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-auth-backendconfig
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/instantiate: "true"
+    projectsveltos.io/template: "true"
+data:
+  authbackendconfig.yaml: |
+    apiVersion: kubernetes.vault.upbound.io/v1alpha1
+    kind: AuthBackendConfig
+    metadata:
+      name: {{ .Cluster.metadata.name }}
+    spec:
+      forProvider:
+        backendRef:
+          name: {{ .Cluster.metadata.name }}
+        kubernetesHost: https://{{ .Cluster.spec.controlPlaneEndpoint.host }}:{{ .Cluster.spec.controlPlaneEndpoint.port }}
+        kubernetesCaCert: |
+          {{ index (getResource "kubeCaSecret").data "tls.crt" | b64dec | nindent 10 }}
+        disableIssValidation: true
+        disableLocalCaJwt: true
+      providerConfigRef:
+        name: default
+  authbackendrole.yaml: |
+    apiVersion: kubernetes.vault.upbound.io/v1alpha1
+    kind: AuthBackendRole
+    metadata:
+      name: {{ .Cluster.metadata.name }}
+    spec:
+      forProvider:
+        backendRef:
+          name: {{ .Cluster.metadata.name }}
+        roleName: external-secrets
+        boundServiceAccountNames:
+          - vault-auth
+        boundServiceAccountNamespaces:
+          - external-secrets
+        tokenPolicies:
+          - secrets-{{ .Cluster.metadata.name }}
+      providerConfigRef:
+        name: default
+---
+# Workload-cluster half: install ESO and push the vault-auth ServiceAccount +
+# token + system:auth-delegator + the ClusterSecretStore. This ClusterProfile
+# targets the workload cluster directly (clusterSelector), and its ESO Deployment
+# coming up is what fires the EventSource above to provision the mgmt-side auth
+# backend.
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: vault-auth
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  reloader: true
+  dependsOn:
+    # Pushes a Flux Kustomization CR (ESO) reconciled by the workload cluster's
+    # kustomize-controller, which only exists after flux/flux-instance.
+    - flux-instance
+  clusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/vault-auth: enabled
+  # Read the mgmt root CA (root-mgmt, cert-manager ns) so the CA bundle Secret
+  # below can be rendered with it — the workload cluster must trust root-mgmt to
+  # connect to https://vault.mgmt.rpcu.lan (TLS-terminated at the kgateway
+  # `https` Gateway with the rpcu-lan-wildcard-tls cert chained to root-mgmt).
+  templateResourceRefs:
+    - resource:
+        apiVersion: v1
+        kind: Secret
+        name: root-mgmt
+        namespace: cert-manager
+      identifier: rootMgmtCA
+  policyRefs:
+    - kind: ConfigMap
+      name: vault-auth-eso-install
+      namespace: projectsveltos
+    - kind: Secret
+      name: vault-auth-ca-bundle
+      namespace: projectsveltos
+    - kind: ConfigMap
+      name: vault-auth-workload-store
+      namespace: projectsveltos
+---
+# The root-mgmt CA bundle, read from the mgmt cert-manager `root-mgmt` Secret and
+# pushed to the workload cluster as `root-mgmt-ca-bundle` (external-secrets ns).
+# The ClusterSecretStore's caProvider references this so ESO trusts the mgmt
+# Vault's Gateway TLS. Distributed this way (rather than via trust-manager on the
+# workload cluster) to keep the add-on self-contained.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vault-auth-ca-bundle
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/template: "true"
+type: addons.projectsveltos.io/cluster-profile
+stringData:
+  ca-bundle.yaml: |
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: root-mgmt-ca-bundle
+      namespace: external-secrets
+    data:
+      ca.crt: {{ index (getResource "rootMgmtCA").data "ca.crt" }}
+---
+# Flux Kustomization CR (pushed to the workload cluster) installing the argus ESO
+# base. Same pattern as the external-snapshotter / openstack-ccm ClusterProfiles.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-auth-eso-install
+  namespace: projectsveltos
+data:
+  external-secrets.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: external-secrets
+      namespace: external-secrets
+    spec:
+      interval: 10m
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/external-secrets
+      prune: false
+---
+# The vault-auth ServiceAccount (+ bound token + system:auth-delegator) and the
+# vault-backend ClusterSecretStore, applied on the workload cluster. The store
+# authenticates via the clusters/<cluster> Kubernetes auth mount on the mgmt
+# Vault using this cluster's own vault-auth SA token. Templated so path/mountPath
+# carry the cluster name.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-auth-workload-store
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/template: "true"
+data:
+  vault-auth-sa.yaml: |
+    apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: vault-auth
+      namespace: external-secrets
+    ---
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: vault-auth-token
+      namespace: external-secrets
+      annotations:
+        kubernetes.io/service-account.name: vault-auth
+    type: kubernetes.io/service-account-token
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: role-tokenreview-binding
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: "system:auth-delegator"
+    subjects:
+      - kind: ServiceAccount
+        name: vault-auth
+        namespace: external-secrets
+  vault-store.yaml: |
+    apiVersion: external-secrets.io/v1
+    kind: ClusterSecretStore
+    metadata:
+      name: vault-backend
+    spec:
+      provider:
+        vault:
+          server: "https://vault.mgmt.rpcu.lan"
+          path: "secrets-{{ .Cluster.metadata.name }}"
+          version: "v2"
+          caProvider:
+            name: root-mgmt-ca-bundle
+            namespace: external-secrets
+            key: ca.crt
+            type: Secret
+          auth:
+            kubernetes:
+              mountPath: "clusters/{{ .Cluster.metadata.name }}"
+              role: "external-secrets"
+              serviceAccountRef:
+                name: "vault-auth"
+                namespace: "external-secrets"

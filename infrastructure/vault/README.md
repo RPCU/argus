@@ -59,33 +59,32 @@ After Vault is initialised and unsealed, run these once:
 ```bash
 export VAULT_POD="kubectl -n vault exec -it vault-0 --"
 
-# Enable KV v2 at secrets/
-$VAULT_POD vault secrets enable -path=secrets kv-v2
+# Enable a per-cluster KV v2 mount for the mgmt cluster (secrets-mgmt).
+# Per-cluster mount convention: each cluster reads from its own secrets-<cluster>
+# mount. The Sveltos vault-auth add-on
+# (infrastructure/sveltos/clusterprofiles/vault-auth.yaml) provisions the
+# equivalent secrets-<cluster> mounts/policies/auth-backends for workload
+# clusters; this is the manual equivalent for mgmt itself.
+$VAULT_POD vault secrets enable -path=secrets-mgmt kv-v2
 
 # Enable Kubernetes auth (for ESO)
 $VAULT_POD vault auth enable kubernetes
 $VAULT_POD vault write auth/kubernetes/config \
   kubernetes_host="https://kubernetes.default.svc"
 
-# Create policy for Crossplane
+# Create policy for Crossplane (reads its AppRole creds from secrets-mgmt/crossplane)
 $VAULT_POD vault policy write crossplane - <<'EOF'
-path "secrets/data/mgmt/crossplane" {
+path "secrets-mgmt/data/crossplane" {
   capabilities = ["read"]
 }
-path "secrets/data/mgmt/crossplane/*" {
+path "secrets-mgmt/data/crossplane/*" {
   capabilities = ["read", "list"]
 }
-path "secrets/metadata/mgmt/crossplane/*" {
+path "secrets-mgmt/metadata/crossplane/*" {
   capabilities = ["list"]
 }
 path "auth/approle/login" {
   capabilities = ["create", "update"]
-}
-path "pki-int/*" {
-  capabilities = ["create", "read", "update", "delete", "list"]
-}
-path "pki/*" {
-  capabilities = ["create", "read", "update", "delete", "list"]
 }
 EOF
 
@@ -104,7 +103,7 @@ $VAULT_POD vault write auth/kubernetes/role/external-secrets \
   policies=crossplane \
   ttl=1h
 
-$VAULT_POD vault kv put secrets/mgmt/crossplane \
+$VAULT_POD vault kv put secrets-mgmt/crossplane \
   role-id="$ROLE_ID" \
   secret-id="$SECRET_ID"
 ```

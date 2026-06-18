@@ -83,7 +83,7 @@ data:
             sveltos.argus.rpcu.io/cilium: {{ chihiro.cilium }}
             sveltos.argus.rpcu.io/openstack-integration: {{ chihiro.openstack }}
             sveltos.argus.rpcu.io/capi-management: {{ chihiro.mgmt }}
-            sveltos.argus.rpcu.io/vault-secret: {{ chihiro.vault }}
+            sveltos.argus.rpcu.io/vault-auth: {{ chihiro.vault }}
             type: workload
         spec:
           clusterNetwork:
@@ -209,4 +209,4 @@ data:
           true_value: enabled
           false_value: disabled
           editable: true
-          path: "metadata.labels.'sveltos.argus.rpcu.io/vault-secret'"
+          path: "metadata.labels.'sveltos.argus.rpcu.io/vault-auth'"

@@ -190,3 +190,12 @@ data:
           false_value: disabled
           editable: true
           path: "metadata.labels.'sveltos.argus.rpcu.io/openstack-integration'"
+        mgmt:
+          label: "Management Cluster"
+          description: "Enable CAPI Operator and make this a Cluster Generator"
+          type: boolean
+          default: true
+          true_value: enabled
+          false_value: disabled
+          editable: true
+          path: "metadata.labels.'sveltos.argus.rpcu.io/capi-management'"

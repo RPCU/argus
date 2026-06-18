@@ -116,12 +116,16 @@ data:
             version: "0.0.0"
       parameters:
         cloudName:
-          label: "Cloud"
+          label: "Openstack Project"
           description: "OpenStack cloud project to provision into"
           type: select
           options:
-            - production
-            - lab
+            - value: "openstack"
+              label: "admin"
+            - value: "lab"
+              label: "lab"
+            - value: "production"
+              label: "production"
           default: lab
         podCIDR:
           label: "Pod CIDR"

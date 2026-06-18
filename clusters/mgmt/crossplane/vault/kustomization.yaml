@@ -1,0 +1,5 @@
+resources:
+  - vault-store.yaml
+  - provider-config.yaml
+  - approles.yaml
+  - external-secret.yaml

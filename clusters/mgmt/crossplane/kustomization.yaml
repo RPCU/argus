@@ -2,3 +2,4 @@ resources:
   - zitadel/
   - openstack/
   - cloud-controller-eso/
+  - vault/

@@ -167,7 +167,7 @@ Key files:
 - `chihiro.yaml` - chihiro app (path `./clusters/mgmt/apps/chihiro`, dependsOn cert-manager-issuer + kgateway + dragonfly-operator + external-secrets + crossplane-resources). The added `apps/chihiro/oidc.yaml` is an ESO `SecretStore` + `ExternalSecret` that remaps `chihiro-oidc-conn`'s `attribute.client_id`/`attribute.client_secret` into the `chihiro-oidc` secret (keys `clientId`/`clientSecret`) consumed by `deploy.yaml`.
 - `dragonfly-operator.yaml` - Dragonfly (Redis-compatible) operator for chihiro's session store
 - `kubernetes-rbac.yaml` - Flux Kustomization (path `./clusters/mgmt/apps/kubernetes-rbac`, no dependsOn) applying the OIDC group → RBAC bindings on the workload cluster: `apps/kubernetes-rbac/crb.yaml` binds the **bare** `kube-admin` Group → `cluster-admin` and `kube-user` Group → `view`. The bare group names match the shared Zitadel `groupsClaim` Action output and the ClusterClass's empty `groupsPrefix`. Mirrors the bealv reference (`gitops/apps/kubernetes/crb.yaml`). Harmless before OIDC is enabled (the groups simply never appear in any token).
-- `sveltos.yaml` - Flux Kustomization (path `./infrastructure/sveltos`, dependsOn kgateway, `prune: true`, `wait: false`) deploying the shared `infrastructure/sveltos` base (Sveltos core + dashboard + OIDC RBAC). `wait: false` because the dashboard HelmRelease ships a placeholder OIDC `clientId` (must be filled in once the shared Zitadel `kubernetes` client ID is known) — health-gating would otherwise block the Kustomization.
+- `sveltos.yaml` - Flux Kustomization (path `./infrastructure/sveltos`, `prune: true`) deploying the shared `infrastructure/sveltos` base (Sveltos core + OIDC RBAC).
 - `flux-operator.yaml` - Flux operator deployment
 - `fluxcd/` - Flux CD configuration
   - `flux-instance-patch.yaml` - Flux instance patch (sync path ./clusters/mgmt, domain mgmt.local)
@@ -476,29 +476,17 @@ files). Deployed only on mgmt for now.
   bootstrapped via the `capi-management` ClusterProfile, Sveltos pushes a
   templated version with `kubernetesClusterDomain: <cluster-name>.local` and
   `agent.managementCluster: true`.
-- `dashboard.yaml` - Sveltos dashboard (chart `sveltos-dashboard` v1.10.1).
-  Configured for **OIDC** (Authorization Code Flow + PKCE, public client) against
-  the **shared Zitadel `kubernetes` client** — the SAME public/native client the
-  workload clusters' kube-apiserver trusts (`clusters/openstack/crossplane/zitadel/oidc-apps.yaml`).
-  The dashboard only obtains an ID token and forwards it to the apiserver, so
-  authorization is driven entirely by apiserver OIDC + the RBAC in `rbac.yaml`.
-  `chart Ingress` disabled (exposed via the kgateway HTTPRoute instead).
-  **`auth.oidc.clientId` is a placeholder** — must be set to the Zitadel
-  `kubernetes` client ID (same value copied into the `Cluster` CR's
-  `oidc.clientID`) once known; `redirectUri`/`issuer` likewise.
-  Values are provided by the same `sveltos-core-values` ConfigMap as the
-  core HelmRelease (via `valuesFrom`).
 - `core/` - **Reusable Sveltos core install** (Flux Kustomization source). A
   self-contained subset of the parent `sveltos/` directory containing only the
   pieces needed to run Sveltos on a single cluster: `namespace.yaml`,
   `helmrepo.yaml`, `helmrelease.yaml` (values via `valuesFrom` referencing a
-  `sveltos-core-values` ConfigMap), `dashboard.yaml` (same `valuesFrom`), `rbac.yaml`
-  (base addon-controller RBAC only — no capi-management-specific RBAC), and
-  `gateway/` (dashboard HTTPRoute). The HelmReleases do NOT carry hardcoded
-  values — per-cluster configuration (domain, managementCluster flag) is injected
-  by a Sveltos-templated `sveltos-core-values` ConfigMap pushed alongside the Flux
-  Kustomization CR. Used by the `capi-management` ClusterProfile to deploy
-  Sveltos onto new management clusters via a Flux `Kustomization` CR pointing at
+  `sveltos-core-values` ConfigMap), and `rbac.yaml` (base addon-controller
+  RBAC only — no capi-management-specific RBAC). The HelmRelease does NOT
+  carry hardcoded values — per-cluster configuration (domain,
+  managementCluster flag) is injected by a Sveltos-templated
+  `sveltos-core-values` ConfigMap pushed alongside the Flux Kustomization CR.
+  Used by the `capi-management` ClusterProfile to deploy Sveltos onto new
+  management clusters via a Flux `Kustomization` CR pointing at
   `./infrastructure/sveltos/core` in Git. The main `sveltos/kustomization.yaml`
   still references the parent directory files directly (not `core/`) — `core/` is
   a Flux sync source, not a nested kustomize reference.
@@ -629,25 +617,18 @@ sveltos.argus.rpcu.io/capi-management: enabled}`. A cluster only receives the
   secret in `capo-system` on the management cluster (granted by the
   `capi-management-capo-rbac` ConfigMap deployed alongside the profile).
 
-- `gateway/httproute-dashboard.yaml` - kgateway `HTTPRoute` exposing the dashboard
-  at `sveltos.mgmt.rpcu.lan` via the `https` Gateway (TLS terminates at the
-  Gateway; backend `dashboard:80`). Hostname must match the dashboard
-  `redirectUri`.
 - `kustomization.yaml` - Kustomization manifest (namespace, helmrepo, core
-  helmrelease, dashboard, clusterprofiles/, gateway/). The main
-  `sveltos/kustomization.yaml` references the parent directory files directly;
-  the `core/` subdirectory is a separate Flux sync source used by the
-  `capi-management` ClusterProfile.
+  helmrelease, rbac, clusterprofiles/). The main `sveltos/kustomization.yaml`
+  references the parent directory files directly; the `core/` subdirectory is
+  a separate Flux sync source used by the `capi-management` ClusterProfile.
 
-> Deployed by `clusters/mgmt/sveltos.yaml` with `dependsOn: kgateway` (the
-> dashboard HTTPRoute attaches to the `https` Gateway) and `wait: false` (the
-> dashboard's placeholder OIDC `clientId` would otherwise fail health-gating).
-> The `oidc-rbac` ClusterProfile only takes effect on a child cluster once that
-> cluster is Sveltos-registered, **carries the opt-in label
-> `sveltos.argus.rpcu.io/oidc-rbac: enabled`**, AND its kube-apiserver OIDC is
-> enabled (the `oidc` ClusterClass variable); it is harmless before then (the
-> groups simply never appear in any token). Both `kube-admin` and `kube-user`
-> map to `cluster-admin` on the labelled child clusters.
+> Deployed by `clusters/mgmt/sveltos.yaml` (no `dependsOn` required; basic
+> Sveltos core install). The `oidc-rbac` ClusterProfile only takes effect on a
+> child cluster once that cluster is Sveltos-registered, **carries the opt-in
+> label `sveltos.argus.rpcu.io/oidc-rbac: enabled`**, AND its kube-apiserver
+> OIDC is enabled (the `oidc` ClusterClass variable); it is harmless before then
+> (the groups simply never appear in any token). Both `kube-admin` and
+> `kube-user` map to `cluster-admin` on the labelled child clusters.
 
 **cluster-api-operator/** - Cluster API Operator (v0.27.0)
 
@@ -1101,9 +1082,8 @@ CAPI management cluster (self-management target via `clusterctl move`):
     workload cluster (bare `kube-admin` → `cluster-admin`, `kube-user` → `view`).
     Matches the Zitadel `groupsClaim` Action's bare group names and the
     ClusterClass empty `groupsPrefix`; harmless before OIDC is enabled.
-23. **sveltos** (dependsOn kgateway, `wait: false`) → basic Sveltos install
-    (`infrastructure/sveltos`): core controllers + dashboard (OIDC/PKCE against
-    the shared Zitadel `kubernetes` client) + ClusterProfiles pushed to opt-in
+23. **sveltos** (`prune: true`) → basic Sveltos install
+    (`infrastructure/sveltos`): core controllers + ClusterProfiles pushed to opt-in
     child clusters:
     - `oidc-rbac` (label `sveltos.argus.rpcu.io/oidc-rbac: enabled`) — binds
       `kube-admin`/`kube-user` to `cluster-admin`

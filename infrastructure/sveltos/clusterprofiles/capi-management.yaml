@@ -30,6 +30,15 @@
 #
 # Gated by the opt-in label sveltos.argus.rpcu.io/capi-management: enabled.
 #
+# Per-cluster CAPO version override:
+#   Set the annotation sveltos.argus.rpcu.io/capo-version on the CAPI Cluster CR
+#   (e.g. "v0.14.4") to override the repo-pinned CAPO InfrastructureProvider
+#   version on the target cluster. The capi-management-flux-kustomizations
+#   ConfigMap is Sveltos-templated: when the annotation is present, the
+#   cluster-api-providers Flux Kustomization gets a patch repointing the CAPO
+#   InfrastructureProvider .spec.version; when absent, no patch is emitted and
+#   the default from infrastructure/cluster-api-providers applies unchanged.
+#
 # dependsOn the flux-instance ClusterProfile: this profile pushes Flux
 # Kustomization CRs that reference the flux-system GitRepository and are
 # reconciled by the kustomize/helm controllers -- all of which only exist once
@@ -186,6 +195,14 @@ kind: ConfigMap
 metadata:
   name: capi-management-flux-kustomizations
   namespace: projectsveltos
+  # Templated so the CAPO provider version can be overridden per workload
+  # cluster from the CAPI Cluster annotation
+  # sveltos.argus.rpcu.io/capo-version (see cluster-api-providers.yaml below).
+  # When the annotation is absent, no patch is emitted and the repo-pinned
+  # CAPO version (infrastructure/cluster-api-providers/infrastructure-openstack.yaml)
+  # applies unchanged.
+  annotations:
+    projectsveltos.io/template: "true"
 data:
   cert-manager.yaml: |
     apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -273,6 +290,28 @@ data:
         - name: cluster-api-operator
         - name: external-secrets
         - name: orc
+      {{- $capoVersion := index (.Cluster.metadata.annotations | default dict) "sveltos.argus.rpcu.io/capo-version" }}
+      {{- if and $capoVersion (ne $capoVersion "default") }}
+      # Per-cluster CAPO version override. Set the annotation
+      # sveltos.argus.rpcu.io/capo-version on the CAPI Cluster CR (e.g.
+      # "v0.14.4") to pin the CAPO InfrastructureProvider to a specific version
+      # on this workload-turned-management cluster, overriding the repo-pinned
+      # default. When the annotation is unset, empty, or the literal sentinel
+      # "default" (the value chihiro writes when no override is chosen), this
+      # patch is omitted entirely and the repo-pinned CAPO version applies.
+      patches:
+        - target:
+            kind: InfrastructureProvider
+            name: openstack
+          patch: |
+            apiVersion: operator.cluster.x-k8s.io/v1alpha2
+            kind: InfrastructureProvider
+            metadata:
+              name: openstack
+              namespace: capo-system
+            spec:
+              version: {{ $capoVersion }}
+      {{- end }}
   capo-identity.yaml: |
     apiVersion: kustomize.toolkit.fluxcd.io/v1
     kind: Kustomization

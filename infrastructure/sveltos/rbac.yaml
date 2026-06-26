@@ -8,6 +8,10 @@
 #       - the OpenStackCluster (to read spec.identityRef.cloudName = the project);
 #       - the cloud-controller-app-creds Secret (mgmt namespace) — the multi-project
 #         Application Credential clouds.yaml rendered by ESO on mgmt.
+#   - The capi-management ClusterProfile (clusterprofiles/capi-management.yaml)
+#     uses templateResourceRefs to fetch the workload CAPI Cluster and read its
+#     sveltos.argus.rpcu.io/capo-version annotation (per-cluster CAPO version
+#     override).
 #   - The vault-auth EventTrigger + nested ClusterProfile
 #     (clusterprofiles/vault-auth.yaml) deploys Crossplane MRs LOCALLY on mgmt:
 #       - Backend (auth.vault.upbound.io) — kubernetes auth mount per cluster
@@ -28,6 +32,13 @@ rules:
   # (spec.identityRef.cloudName).
   - apiGroups: ["infrastructure.cluster.x-k8s.io"]
     resources: ["openstackclusters"]
+    verbs: ["get", "list", "watch"]
+  # Read the CAPI Cluster itself for templateResourceRefs in the capi-management
+  # ClusterProfile (clusterprofiles/capi-management.yaml), which reads the
+  # per-cluster CAPO version override annotation
+  # (sveltos.argus.rpcu.io/capo-version) off the workload Cluster.
+  - apiGroups: ["cluster.x-k8s.io"]
+    resources: ["clusters"]
     verbs: ["get", "list", "watch"]
   # Read Secrets for templateResourceRefs, across consumers:
   #   - cloud-controller-app-creds (mgmt ns) for the openstack-ccm profile;

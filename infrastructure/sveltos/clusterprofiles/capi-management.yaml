@@ -64,6 +64,16 @@ spec:
         namespace: capo-system
         name: capo-variables
       identifier: CapoVariables
+    # The workload CAPI Cluster itself, so templates can read its annotations
+    # (e.g. the per-cluster CAPO version override). .Cluster.metadata.* is only
+    # reliably exposed for name/namespace/kind; arbitrary annotations are read
+    # via getResource on an explicitly-registered resource.
+    - resource:
+        apiVersion: cluster.x-k8s.io/v1beta2
+        kind: Cluster
+        namespace: "{{ .Cluster.metadata.namespace }}"
+        name: "{{ .Cluster.metadata.name }}"
+      identifier: WorkloadCluster
   policyRefs:
     - name: capi-management-capo-variables
       namespace: projectsveltos
@@ -290,7 +300,7 @@ data:
         - name: cluster-api-operator
         - name: external-secrets
         - name: orc
-      {{- $capoVersion := index (.Cluster.metadata.annotations | default dict) "sveltos.argus.rpcu.io/capo-version" }}
+      {{- $capoVersion := index ((getResource "WorkloadCluster").metadata.annotations | default dict) "sveltos.argus.rpcu.io/capo-version" }}
       {{- if and $capoVersion (ne $capoVersion "default") }}
       # Per-cluster CAPO version override. Set the annotation
       # sveltos.argus.rpcu.io/capo-version on the CAPI Cluster CR (e.g.

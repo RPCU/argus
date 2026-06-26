@@ -78,6 +78,13 @@ data:
         kind: Cluster
         metadata:
           namespace: mgmt
+          # The capo-version annotation lets the management-cluster addon pin a
+          # specific CAPO provider version. The sentinel "default" means "no
+          # override" — the Sveltos capi-management ClusterProfile then leaves
+          # the repo-pinned CAPO version in place. Any real version (e.g.
+          # v0.14.4) overrides it.
+          annotations:
+            sveltos.argus.rpcu.io/capo-version: {{ chihiro.capoVersion }}
           labels:
             sveltos.argus.rpcu.io/oidc-rbac: {{ chihiro.oidcRbac }}
             sveltos.argus.rpcu.io/cilium: {{ chihiro.cilium }}
@@ -201,6 +208,27 @@ data:
           false_value: disabled
           editable: true
           path: "metadata.labels.'sveltos.argus.rpcu.io/capi-management'"
+        # CAPO (OpenStack infrastructure provider) version override for a cluster
+        # that is itself a management cluster (mgmt: enabled). The "default"
+        # sentinel means "leave the repo-pinned version" — the Sveltos
+        # capi-management ClusterProfile only patches the provider version when
+        # this is a real version string. Editable so it can be changed later.
+        capoVersion:
+          label: "CAPO Version"
+          description: "OpenStack provider (CAPO) version when this is a management cluster; 'default' keeps the repo-pinned version"
+          type: select
+          options:
+            - value: "default"
+              label: "Default (repo-pinned)"
+            - value: "v0.10.5"
+              label: "v0.10.5"
+            - value: "v0.14.4"
+              label: "v0.14.4"
+          default: "default"
+          editable: true
+          path: "metadata.annotations.'sveltos.argus.rpcu.io/capo-version'"
+          visible_groups:
+            - kube-admin
         vault:
           label: "Vault Secret Integration"
           description: "Enable Vault Secret store"

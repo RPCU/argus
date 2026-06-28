@@ -10,6 +10,18 @@ spec:
     matchLabels:
       type: workload
       sveltos.argus.rpcu.io/oidc-rbac: enabled
+  # Register the workload CAPI Cluster itself so the templated ConfigMap below
+  # can read its annotations. .Cluster.metadata.* only reliably exposes
+  # name/namespace/kind in Sveltos templates; arbitrary annotations (e.g.
+  # chihiro.io/groups) must be read via getResource on an explicitly-registered
+  # resource.
+  templateResourceRefs:
+    - resource:
+        apiVersion: cluster.x-k8s.io/v1beta2
+        kind: Cluster
+        namespace: "{{ .Cluster.metadata.namespace }}"
+        name: "{{ .Cluster.metadata.name }}"
+      identifier: WorkloadCluster
   policyRefs:
     - name: oidc-rbac
       namespace: projectsveltos
@@ -21,6 +33,9 @@ kind: ConfigMap
 metadata:
   name: oidc-rbac
   namespace: projectsveltos
+  annotations:
+    # Render this ConfigMap as a Sveltos template per matched cluster.
+    projectsveltos.io/template: "true"
 data:
   oidc-rbac.yaml: |
     apiVersion: rbac.authorization.k8s.io/v1
@@ -35,11 +50,20 @@ data:
       - apiGroup: rbac.authorization.k8s.io
         kind: Group
         name: kube-admin
+    {{- /*
+      One cluster-admin ClusterRoleBinding per group name listed in the
+      workload Cluster's `chihiro.io/groups` annotation (comma-separated).
+      Whitespace around each name is trimmed; empty entries are skipped.
+    */ -}}
+    {{- $groups := index ((getResource "WorkloadCluster").metadata.annotations | default dict) "chihiro.io/groups" | default "" }}
+    {{- range (splitList "," $groups) }}
+    {{- $group := trim . }}
+    {{- if $group }}
     ---
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:
-      name: oidc-kube-user
+      name: oidc-group-{{ $group }}
     roleRef:
       apiGroup: rbac.authorization.k8s.io
       kind: ClusterRole
@@ -47,7 +71,9 @@ data:
     subjects:
       - apiGroup: rbac.authorization.k8s.io
         kind: Group
-        name: kube-user
+        name: {{ $group }}
+    {{- end }}
+    {{- end }}
     # ---------------------------------------------------------------
     # Kamaji kube-apiserver -> kubelet RBAC (workaround).
     # Kamaji does not call kubeadm's AllowAPIServerToAccessKubeletAPI

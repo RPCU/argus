@@ -1,0 +1,38 @@
+---
+# OIDC group -> RBAC bindings on the mgmt cluster itself.
+#
+# The shared Zitadel groupsClaim Action injects each user's granted project
+# role keys into the token's `groups` claim as BARE names (kube-admin /
+# kube-user, no prefix), matching the ClusterClass empty --oidc-groups-prefix.
+#
+# These are applied directly by Flux (not via Sveltos): Sveltos only pushes
+# the equivalent bindings to opt-in WORKLOAD clusters; the mgmt cluster keeps
+# its own local bindings here.
+#
+# Harmless before OIDC is enabled on the mgmt kube-apiserver (the groups
+# simply never appear in any token).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: oidc-kube-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: kube-admin
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: oidc-kube-user
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: kube-user

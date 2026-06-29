@@ -1,0 +1,63 @@
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: Cluster
+metadata:
+  name: production
+  namespace: mgmt
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    type: workload
+    sveltos.argus.rpcu.io/cilium: enabled
+    sveltos.argus.rpcu.io/oidc-rbac: enabled
+    sveltos.argus.rpcu.io/vault-auth: enabled
+    sveltos.argus.rpcu.io/openstack-integration: enabled
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+        - 10.208.0.0/16
+    services:
+      cidrBlocks:
+        - 10.108.0.0/16
+    serviceDomain: production.local
+  topology:
+    classRef:
+      name: openstack-kamaji
+    version: v1.36.1
+    controlPlane:
+      replicas: 1
+    workers:
+      machineDeployments:
+        - class: default-worker
+          name: worker
+          replicas: 3
+          variables:
+            overrides:
+              - name: workerFlavor
+                value: xmedium
+    variables:
+      - name: identityRef
+        value:
+          name: mgmt-cloud-config
+          cloudName: production
+      - name: externalNetworkId
+        value: 1cfd69da-057c-4748-a0d4-de5b0ca77db2
+      - name: imageName
+        value: hephaestus-kaas-26.05-v1.36.1
+      - name: managedSubnetCIDR
+        value: 192.168.8.0/24
+      - name: dataStoreName
+        value: default
+      - name: sshKeyName
+        value: ""
+      - name: workerFlavor
+        value: xmedium
+      - name: oidc
+        value:
+          enabled: true
+          issuerURL: https://rpcu-gabeck.eu1.zitadel.cloud
+          clientID: "377050089077613929"
+          usernameClaim: sub
+          usernamePrefix: ""
+          groupsClaim: groups
+          groupsPrefix: ""

@@ -67,11 +67,8 @@ spec:
     "create_floatingip": "rule:context_is_admin or role:member"
     "create_floatingip:floating_ip_address": "rule:context_is_admin or role:member"
     "update_floatingip": "rule:context_is_admin or role:member"
-    "update_floatingip:floating_ip_address": "rule:context_is_admin or role:member"
     "delete_floatingip": "rule:context_is_admin or role:member"
     "get_floatingip": ""
-    "get_floatingip:floating_ip_address": ""
-    "list_floatingip": ""
   region:
     name: hetzner
   setup:

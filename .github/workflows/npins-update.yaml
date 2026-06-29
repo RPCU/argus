@@ -1,0 +1,78 @@
+name: npins update
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */6 * * *" # every 6 hours
+permissions:
+  contents: "write"
+  pull-requests: "write"
+jobs:
+  npins-upgrade:
+    # Keeps the npins lock format in sync with the npins version shipped by the
+    # pinned nixpkgs. When npins bumps the sources.json format version (e.g. v7 -> v8),
+    # the vendored npins/default.nix can no longer read it and every build fails with
+    # "Version N is too old, you need to run upgrade". This job regenerates both
+    # npins/default.nix and sources.json to the current format and opens a single PR.
+    # It is a no-op (no PR) when the format is already up to date.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            fallback = true
+            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+            substituters = https://cache.nixos.org/
+      - name: Upgrade npins lock format
+        run: nix run nixpkgs#npins -- upgrade
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(deps): upgrade npins lock format"
+          title: "chore(deps): upgrade npins lock format"
+          body: "This PR runs `npins upgrade` to keep `npins/default.nix` and `npins/sources.json` on the format version expected by the current npins release."
+          branch: "npins-upgrade-format"
+          delete-branch: true
+  get-pins:
+    needs: npins-upgrade
+    runs-on: ubuntu-latest
+    outputs:
+      pins: ${{ steps.set-pins.outputs.pins }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - id: set-pins
+        run: |
+          PINS=$(jq -c '.pins | keys' npins/sources.json)
+          echo "pins=$PINS" >> "$GITHUB_OUTPUT"
+  npins-update:
+    needs: get-pins
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        pin: ${{ fromJson(needs.get-pins.outputs.pins) }}
+      fail-fast: false
+      max-parallel: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            fallback = true
+            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+            substituters = https://cache.nixos.org/
+      - name: Update npins
+        run: nix run nixpkgs#npins -- update ${{ matrix.pin }}
+      - name: Create Pull Request
+        id: cpr
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(deps): update ${{ matrix.pin }}"
+          title: "chore(deps): update ${{ matrix.pin }}"
+          body: "This PR updates the pinned source `${{ matrix.pin }}` using `npins update ${{ matrix.pin }}`."
+          branch: "npins-update-${{ matrix.pin }}"
+          delete-branch: true

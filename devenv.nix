@@ -20,6 +20,7 @@ let
     kubernetes-helm
     kube-capacity
     openstackclient
+    npins
     customPkgs.sveltosctl
   ];
 

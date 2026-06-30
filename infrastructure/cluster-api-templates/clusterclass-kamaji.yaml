@@ -36,7 +36,7 @@ spec:
     templateRef:
       apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
       kind: OpenStackClusterTemplate
-      name: openstack-kamaji-cluster-v3
+      name: openstack-kamaji-cluster-v4
 
   # ---------------------------------------------------------------------------
   # Worker topology — same as openstack-default

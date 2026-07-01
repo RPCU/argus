@@ -37,7 +37,7 @@ spec:
     templateRef:
       apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
       kind: OpenStackClusterTemplate
-      name: openstack-default-cluster-v2
+      name: openstack-default-cluster-v3
 
   # ---------------------------------------------------------------------------
   # Worker topology

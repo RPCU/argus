@@ -19,6 +19,13 @@
 # FluxInstance sync path — they are pushed per-cluster by their own Sveltos
 # ClusterProfiles, gated by labels, so a shared Git path can't force an addon
 # onto every workload cluster.
+#
+# `flux` dependsOn `cilium`: the Flux Operator (and every controller it later
+# deploys) is an ordinary pod that cannot schedule until a CNI is present.
+# Cilium must be fully installed FIRST — so the Flux install waits on the
+# `cilium` ClusterProfile. This makes the whole spine linear:
+#   cilium -> flux -> flux-instance -> (all other add-ons dependsOn flux-instance)
+# i.e. Cilium up first, then Flux, then everything else once Flux is active.
 apiVersion: config.projectsveltos.io/v1beta1
 kind: ClusterProfile
 metadata:
@@ -26,6 +33,8 @@ metadata:
   namespace: projectsveltos
 spec:
   syncMode: OneTime
+  dependsOn:
+    - cilium
   clusterSelector:
     matchLabels:
       type: workload

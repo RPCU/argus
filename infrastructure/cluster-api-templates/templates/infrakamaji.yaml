@@ -363,6 +363,105 @@ spec:
             remoteIPPrefix: 0.0.0.0/0
 ---
 # -----------------------------------------------------------------------------
+# openstack-kamaji-cluster-v5
+#
+# Identical to -v4 (kubelet 10250 + NodePort range) but with the redundant
+# remoteManagedGroups Cilium data-plane rules (VXLAN 8472 / health 4240 /
+# Hubble 4244 / ICMP) REMOVED.
+#
+# WHY: those four rules set remoteManagedGroups: [controlplane, worker] — they
+# open ports (and, for ICMP, ALL ICMP) between the managed node security groups.
+# But allowAllInClusterTraffic: true ALREADY opens ALL node-to-node traffic on
+# every port/protocol between those same groups. Each of those rules therefore
+# normalizes to a Neutron rule tuple allowAllInClusterTraffic also creates, and
+# on a fresh cluster CAPO POSTs both — the second collides with:
+#
+#   409 SecurityGroupRuleExists ("Security group rule already exists")
+#
+# aborting the whole managedSecurityGroups reconcile and wedging the
+# OpenStackCluster. Only rules scoped to 0.0.0.0/0 (SSH, DNS egress, NodePort,
+# kubelet 10250) are kept — they are NOT covered by the in-cluster allow-all and
+# so never collide.
+#
+# IMMUTABILITY: this is a NEW template (not an in-place edit of -v4). The Kamaji
+# ClusterClass infrastructure.templateRef is repointed to -v5; -v4 is deleted
+# once the rotation is confirmed (see README "-vN rotation workflow"). An
+# OpenStackClusterTemplate rotation reconciles the SGs onto the live
+# OpenStackCluster without rolling machines.
+# -----------------------------------------------------------------------------
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: OpenStackClusterTemplate
+metadata:
+  name: openstack-kamaji-cluster-v5
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      apiServerLoadBalancer:
+        enabled: false
+      disableAPIServerFloatingIP: true
+      identityRef:
+        name: mgmt-cloud-config
+        cloudName: openstack
+      managedSecurityGroups:
+        # allowAllInClusterTraffic already opens ALL node-to-node traffic, so the
+        # Cilium overlay (VXLAN/health/Hubble/ICMP) is covered without enumerating
+        # ports — and enumerating them here would 409 as duplicates. Only rules
+        # scoped to 0.0.0.0/0 (not covered by the in-cluster allow-all) remain:
+        # SSH, DNS egress, kubelet 10250 (Kamaji CP proxy) and the NodePort range.
+        allowAllInClusterTraffic: true
+        allNodesSecurityGroupRules:
+          - description: Allow SSH ingress from anywhere
+            direction: ingress
+            etherType: IPv4
+            name: SSH ingress
+            portRangeMax: 22
+            portRangeMin: 22
+            protocol: tcp
+            remoteIPPrefix: 0.0.0.0/0
+          - description: Allow DNS egress (UDP) to anywhere
+            direction: egress
+            etherType: IPv4
+            name: DNS egress (UDP)
+            portRangeMax: 53
+            portRangeMin: 53
+            protocol: udp
+            remoteIPPrefix: 0.0.0.0/0
+          - description: Allow DNS egress (TCP) to anywhere
+            direction: egress
+            etherType: IPv4
+            name: DNS egress (TCP)
+            portRangeMax: 53
+            portRangeMin: 53
+            protocol: tcp
+            remoteIPPrefix: 0.0.0.0/0
+          # ---------------------------------------------------------------
+          # Kubelet API (10250) — REQUIRED for the Kamaji hosted control
+          # plane. (See -v3 for full rationale.)
+          # ---------------------------------------------------------------
+          - description: Kubelet API (Kamaji control-plane logs/exec/port-forward)
+            direction: ingress
+            etherType: IPv4
+            name: Kubelet API (TCP 10250)
+            portRangeMax: 10250
+            portRangeMin: 10250
+            protocol: tcp
+            remoteIPPrefix: 0.0.0.0/0
+          # ---------------------------------------------------------------
+          # Kubernetes NodePort range — REQUIRED for external `type:
+          # LoadBalancer` Services routed via the OpenStack CCM + Octavia.
+          # (See -v4 for full rationale.)
+          # ---------------------------------------------------------------
+          - description: Kubernetes NodePort services (Octavia LoadBalancer backends)
+            direction: ingress
+            etherType: IPv4
+            name: NodePort range (TCP)
+            portRangeMax: 32767
+            portRangeMin: 30000
+            protocol: tcp
+            remoteIPPrefix: 0.0.0.0/0
+---
+# -----------------------------------------------------------------------------
 # openstack-kamaji-cluster-v2
 #
 # Identical to -v1 but WITHOUT apiServerFixedIP. The Kamaji control plane

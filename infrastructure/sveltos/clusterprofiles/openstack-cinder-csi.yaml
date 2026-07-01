@@ -84,6 +84,14 @@ data:
           name: cloud-controller-clouds
           filename: cloud.conf
         clusterID: "{{ .Cluster.metadata.name }}"
+        storageClass:
+          enabled: true
+          delete:
+            isDefault: true
+            allowVolumeExpansion: true
+          retain:
+            isDefault: false
+            allowVolumeExpansion: true
 ---
 apiVersion: v1
 kind: ConfigMap

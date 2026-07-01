@@ -32,7 +32,7 @@ clusterID: "mgmt"
 storageClass:
   enabled: true
   delete:
-    isDefault: false
+    isDefault: true
     allowVolumeExpansion: true
   retain:
     isDefault: false

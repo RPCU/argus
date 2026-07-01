@@ -91,6 +91,7 @@ data:
             sveltos.argus.rpcu.io/openstack-integration: {{ chihiro.openstack }}
             sveltos.argus.rpcu.io/capi-management: {{ chihiro.mgmt }}
             sveltos.argus.rpcu.io/vault-auth: {{ chihiro.vault }}
+            sveltos.argus.rpcu.io/cert-manager: {{ chihiro.certManager }}
             type: workload
         spec:
           clusterNetwork:
@@ -240,3 +241,12 @@ data:
           false_value: disabled
           editable: true
           path: "metadata.labels.'sveltos.argus.rpcu.io/vault-auth'"
+        certManager:
+          label: "Cert-Manager Vault Issuer"
+          description: "Enable cert-manager + a vault-issuer ClusterIssuer backed by the shared mgmt Vault PKI (subdomain-isolated to <cluster>.rpcu.lan)"
+          type: boolean
+          default: true
+          true_value: enabled
+          false_value: disabled
+          editable: true
+          path: "metadata.labels.'sveltos.argus.rpcu.io/cert-manager'"

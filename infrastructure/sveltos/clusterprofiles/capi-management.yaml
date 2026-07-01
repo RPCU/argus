@@ -572,6 +572,13 @@ data:
       namespace: projectsveltos
     spec:
       syncMode: OneTime
+      # dependsOn cilium: Flux's pods can't schedule without a CNI, so Cilium
+      # must be fully installed first (spine: cilium -> flux -> flux-instance ->
+      # add-ons). A cluster that opts OUT of the Sveltos-managed Cilium
+      # (cilium != enabled) simply isn't matched by the cilium profile, so the
+      # dependency is treated as satisfied and Flux still deploys.
+      dependsOn:
+        - cilium
       clusterSelector:
         matchLabels:
           type: workload

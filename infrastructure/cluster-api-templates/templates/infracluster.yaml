@@ -246,3 +246,94 @@ spec:
             portRangeMin: 30000
             protocol: tcp
             remoteIPPrefix: 0.0.0.0/0
+---
+# -----------------------------------------------------------------------------
+# openstack-default-cluster-v3
+#
+# Identical to -v2 but with the redundant remoteManagedGroups Cilium data-plane
+# rules (VXLAN 8472 / health 4240 / Hubble 4244 / ICMP) REMOVED.
+#
+# WHY: those four rules set remoteManagedGroups: [controlplane, worker], i.e.
+# they open specific ports (and, for ICMP, ALL ICMP) between the managed node
+# security groups. But allowAllInClusterTraffic: true ALREADY opens ALL
+# node-to-node traffic on every port/protocol between those same managed groups.
+# So each of those rules normalizes to a Neutron rule tuple that
+# allowAllInClusterTraffic also produces. On a fresh cluster, CAPO POSTs both
+# and the second collides:
+#
+#   409 SecurityGroupRuleExists ("Security group rule already exists")
+#
+# which aborts the entire managedSecurityGroups reconcile and wedges the
+# OpenStackCluster (seen on new cluster "testb"). The comment in -v1/-v2 claimed
+# these were "redundant but harmless" — they are redundant AND harmful: a
+# duplicate rule is a hard 409, not a silent no-op.
+#
+# The rules that are NOT covered by allowAllInClusterTraffic are KEPT: the
+# from-anywhere ingress (SSH, NodePort) and the to-anywhere egress (DNS), since
+# those have remoteIPPrefix: 0.0.0.0/0 (not a managed group) and so do not
+# collide with the in-cluster allow-all.
+#
+# IMMUTABILITY: this is a NEW template (not an in-place edit of -v2). The
+# ClusterClass infrastructure.templateRef is repointed to -v3; -v2 is deleted
+# once the rotation is confirmed (see README "-vN rotation workflow"). An
+# OpenStackClusterTemplate rotation reconciles the SGs onto the live
+# OpenStackCluster without rolling machines.
+# -----------------------------------------------------------------------------
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: OpenStackClusterTemplate
+metadata:
+  name: openstack-default-cluster-v3
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      apiServerLoadBalancer:
+        enabled: true
+      identityRef:
+        name: mgmt-cloud-config
+        cloudName: openstack
+      managedSecurityGroups:
+        # allowAllInClusterTraffic already opens ALL node-to-node traffic, so the
+        # Cilium overlay (VXLAN/health/Hubble/ICMP) is covered without enumerating
+        # ports — and enumerating them here would 409 as duplicates. Only rules
+        # scoped to 0.0.0.0/0 (not covered by the in-cluster allow-all) remain.
+        allowAllInClusterTraffic: true
+        allNodesSecurityGroupRules:
+          - description: Allow SSH ingress from anywhere
+            direction: ingress
+            etherType: IPv4
+            name: SSH ingress
+            portRangeMax: 22
+            portRangeMin: 22
+            protocol: tcp
+            remoteIPPrefix: 0.0.0.0/0
+          - description: Allow DNS egress (UDP) to anywhere
+            direction: egress
+            etherType: IPv4
+            name: DNS egress (UDP)
+            portRangeMax: 53
+            portRangeMin: 53
+            protocol: udp
+            remoteIPPrefix: 0.0.0.0/0
+          - description: Allow DNS egress (TCP) to anywhere
+            direction: egress
+            etherType: IPv4
+            name: DNS egress (TCP)
+            portRangeMax: 53
+            portRangeMin: 53
+            protocol: tcp
+            remoteIPPrefix: 0.0.0.0/0
+          # ---------------------------------------------------------------
+          # Kubernetes NodePort range — REQUIRED for external `type:
+          # LoadBalancer` Services routed via the OpenStack CCM + Octavia.
+          # The Octavia VIP forwards to <node IP>:<nodePort>; without this
+          # ingress the managed SG drops it and the LB times out.
+          # ---------------------------------------------------------------
+          - description: Kubernetes NodePort services (Octavia LoadBalancer backends)
+            direction: ingress
+            etherType: IPv4
+            name: NodePort range (TCP)
+            portRangeMax: 32767
+            portRangeMin: 30000
+            protocol: tcp
+            remoteIPPrefix: 0.0.0.0/0

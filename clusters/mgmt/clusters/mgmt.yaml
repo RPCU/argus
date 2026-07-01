@@ -15,7 +15,7 @@ spec:
     serviceDomain: mgmt.local
   topology:
     classRef:
-      name: openstack-default-v1
+      name: openstack-default
     version: v1.36.1
     controlPlane:
       replicas: 3

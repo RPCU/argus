@@ -22,7 +22,7 @@ spec:
     serviceDomain: production.local
   topology:
     classRef:
-      name: openstack-kamaji-v1
+      name: openstack-kamaji
     version: v1.36.1
     controlPlane:
       replicas: 1

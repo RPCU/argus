@@ -1,0 +1,438 @@
+# Per-cluster cert-manager + Vault-PKI ClusterIssuer add-on for OPT-IN workload
+# clusters.
+#
+# GOAL (improving on the bealv flux-mgmt cert-vault.yaml): give each workload
+# cluster a cert-manager ClusterIssuer that mints certs from the SHARED mgmt
+# Vault PKI intermediate (`pki-int`, chained under the cert-manager `root-mgmt`
+# root — see clusters/mgmt/crossplane/vault/pki-int.yaml), while GUARANTEEING a
+# cluster can only issue certificates for ITS OWN subdomain `<cluster>.rpcu.lan`
+# and can never usurp another cluster's subdomain.
+#
+# WHY THIS IS MORE SECURE THAN flux-mgmt:
+#   - flux-mgmt used a single shared Vault PKI role/AppRole; any cluster holding
+#     the role could sign for any name the role allowed. Here the enforcement
+#     boundary is the Vault PKI *Role* itself: per cluster we create a
+#     SecretBackendRole on pki-int with `allowedDomains: ["<cluster>.rpcu.lan"]`,
+#     `allowSubdomains: true`, `allowBareDomains: true`, and NO glob/any-name.
+#     Vault refuses to issue a cert whose CN/SANs fall outside that domain, so
+#     even a fully-compromised workload cluster cannot mint `foo.other.rpcu.lan`.
+#   - Each cluster authenticates to Vault with its OWN Kubernetes SA tokens
+#     (cross-cluster TokenReview via a per-cluster kubernetes auth mount), bound
+#     to a policy that grants ONLY `pki-int/issue/<role>` + `pki-int/sign/<role>`
+#     — not the whole mount, and not any other cluster's role.
+#   - No static Vault tokens or AppRole secret-IDs are distributed to workload
+#     clusters (flux-mgmt shipped an AppRole secret-id).
+#
+# TOPOLOGY (mirrors the vault-auth add-on):
+#
+#   A. ON the mgmt cluster (Crossplane provider-vault MRs, applied locally):
+#        - SecretBackendRole  cm-<cluster>   on pki-int, allowedDomains locked
+#        - Policy             pki-cm-<cluster>   issue/sign on that role only
+#        - Backend (kubernetes auth)  pki-clusters/<cluster>   (reuses the same
+#          per-cluster kubernetes auth mount idea as vault-auth, separate mount
+#          path so the two add-ons don't collide)
+#        - AuthBackendConfig  (workload cluster API host + CA)
+#        - AuthBackendRole    cert-manager   bound to the workload cluster's
+#          cert-manager SA, granting pki-cm-<cluster>
+#
+#   B. ON the workload cluster (pushed by a per-cluster ClusterProfile):
+#        - cert-manager (Flux Kustomization -> infrastructure/cert-manager)
+#        - the root-mgmt CA bundle (so the Vault issuer's caBundle validates the
+#          chain the mgmt Vault presents)
+#        - a `vault-auth` SA (+ token + system:auth-delegator) in cert-manager ns
+#        - a `vault-issuer` ClusterIssuer pointing at https://vault.mgmt.rpcu.lan
+#          pki-int, role cm-<cluster>, authenticating via the per-cluster
+#          kubernetes auth mount
+#
+# PREREQUISITES on mgmt (already present / added alongside this add-on):
+#   - Crossplane + provider-vault with a working `default` ProviderConfig
+#     (infrastructure/crossplane-vault, clusters/mgmt/crossplane/vault).
+#   - The pki-int intermediate CA must be bootstrapped + signed by root-mgmt
+#     (clusters/mgmt/crossplane/vault/pki-int.yaml + the README manual step).
+#     Until then the per-cluster Roles exist but issuance fails.
+#   - The mgmt Vault must have the kubernetes auth method available for the
+#     per-cluster pki-clusters/<cluster> mounts (the Backend MR enables it).
+---
+# EventSource: fires when a workload cluster reports cert-manager is installed
+# (the cert-manager controller Deployment exists). Until cert-manager is up there
+# is no `vault-auth` SA / token for Vault to validate, so we provision the
+# mgmt-side Vault PKI auth backend reactively once cert-manager is present.
+apiVersion: lib.projectsveltos.io/v1beta1
+kind: EventSource
+metadata:
+  name: cert-manager-ready
+  namespace: projectsveltos
+spec:
+  collectResources: true
+  resourceSelectors:
+    - group: "apps"
+      version: "v1"
+      kind: "Deployment"
+      name: "cert-manager"
+      namespace: "cert-manager"
+---
+# EventTrigger: for each OPT-IN workload cluster whose cert-manager is ready,
+# instantiate (LOCALLY on the mgmt cluster) the per-cluster Vault PKI Role +
+# Policy + kubernetes auth Backend, plus the nested ClusterProfile that renders
+# the AuthBackendConfig/AuthBackendRole (which need the workload cluster's CA).
+apiVersion: lib.projectsveltos.io/v1beta1
+kind: EventTrigger
+metadata:
+  name: cert-manager-vault-pki
+  namespace: projectsveltos
+spec:
+  sourceClusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/cert-manager: enabled
+  destinationClusterSelector:
+    matchLabels:
+      type: mgmt
+  eventSourceName: cert-manager-ready
+  syncMode: ContinuousWithDriftDetection
+  reloader: true
+  policyRefs:
+    - kind: ConfigMap
+      name: cert-manager-vault-role
+      namespace: projectsveltos
+    - kind: ConfigMap
+      name: cert-manager-vault-authconfig-cp
+      namespace: projectsveltos
+---
+# Crossplane MRs created on the mgmt Vault, instantiated per workload cluster:
+#   - SecretBackendRole cm-<cluster> on pki-int — THE subdomain isolation
+#     boundary. allowedDomains is locked to <cluster>.rpcu.lan; allowSubdomains +
+#     allowBareDomains let it sign e.g. app.<cluster>.rpcu.lan and
+#     <cluster>.rpcu.lan; allowWildcardCertificates lets it sign
+#     *.<cluster>.rpcu.lan; everything else is refused BY VAULT.
+#   - Policy pki-cm-<cluster> — grants issue/sign ONLY on this role.
+#   - Backend pki-clusters/<cluster> — a per-cluster kubernetes auth mount so
+#     the workload cluster's cert-manager SA tokens can be validated.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cert-manager-vault-role
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/instantiate: "true"
+data:
+  role.yaml: |
+    apiVersion: pki.vault.upbound.io/v1alpha1
+    kind: SecretBackendRole
+    metadata:
+      name: cm-{{ .Cluster.metadata.name }}
+    spec:
+      forProvider:
+        backend: pki-int
+        name: cm-{{ .Cluster.metadata.name }}
+        # --- subdomain isolation: this cluster's domain ONLY ---
+        allowedDomains:
+          - {{ .Cluster.metadata.name }}.rpcu.lan
+        allowSubdomains: true
+        allowBareDomains: true
+        allowWildcardCertificates: true
+        allowGlobDomains: false
+        allowAnyName: false
+        allowLocalhost: false
+        allowIpSans: false
+        enforceHostnames: true
+        # ---
+        serverFlag: true
+        clientFlag: true
+        keyType: rsa
+        keyBits: 2048
+        # 90-day leaf certs (cert-manager renews at 2/3 lifetime).
+        ttl: "7776000"
+        maxTtl: "7776000"
+      providerConfigRef:
+        name: default
+  policy.yaml: |
+    apiVersion: vault.vault.upbound.io/v1alpha1
+    kind: Policy
+    metadata:
+      name: pki-cm-{{ .Cluster.metadata.name }}
+    spec:
+      forProvider:
+        name: pki-cm-{{ .Cluster.metadata.name }}
+        policy: |
+          path "pki-int/issue/cm-{{ .Cluster.metadata.name }}" {
+            capabilities = ["create", "update", "read"]
+          }
+          path "pki-int/sign/cm-{{ .Cluster.metadata.name }}" {
+            capabilities = ["create", "update", "read"]
+          }
+      providerConfigRef:
+        name: default
+  backend.yaml: |
+    apiVersion: auth.vault.upbound.io/v1alpha1
+    kind: Backend
+    metadata:
+      name: pki-cm-{{ .Cluster.metadata.name }}
+    spec:
+      forProvider:
+        path: pki-clusters/{{ .Cluster.metadata.name }}
+        type: kubernetes
+      providerConfigRef:
+        name: default
+---
+# Nested ClusterProfile (created on mgmt) that resolves the workload cluster's API
+# endpoint + CA bundle (from the CAPI <cluster>-ca secret) and renders the
+# AuthBackendConfig + AuthBackendRole. Applied LOCALLY on mgmt (Crossplane MRs).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cert-manager-vault-authconfig-cp
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/instantiate: "true"
+data:
+  cp.yaml: |
+    apiVersion: config.projectsveltos.io/v1beta1
+    kind: ClusterProfile
+    metadata:
+      name: "cert-manager-vault-authconfig-{{ .Cluster.metadata.name }}"
+    spec:
+      reloader: true
+      syncMode: ContinuousWithDriftDetection
+      clusterRefs:
+        - apiVersion: cluster.x-k8s.io/v1beta1
+          kind: Cluster
+          name: "{{ .Cluster.metadata.name }}"
+          namespace: "{{ .Cluster.metadata.namespace }}"
+      templateResourceRefs:
+        - resource:
+            apiVersion: v1
+            kind: Secret
+            name: "{{ .Cluster.metadata.name }}-ca"
+            namespace: "{{ .Cluster.metadata.namespace }}"
+          identifier: kubeCaSecret
+      policyRefs:
+        - kind: ConfigMap
+          name: cert-manager-vault-authconfig
+          namespace: projectsveltos
+          deploymentType: Local
+---
+# The AuthBackendConfig + AuthBackendRole, templated with the workload cluster's
+# API host/port and CA (resolved via kubeCaSecret). disableIssValidation +
+# disableLocalCaJwt are set because Vault runs in the mgmt cluster and validates a
+# DIFFERENT cluster's tokens (cross-cluster TokenReview). The role binds the
+# workload cluster's cert-manager `vault-auth` SA to the pki-cm-<cluster> policy.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cert-manager-vault-authconfig
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/instantiate: "true"
+    projectsveltos.io/template: "true"
+data:
+  authbackendconfig.yaml: |
+    apiVersion: kubernetes.vault.upbound.io/v1alpha1
+    kind: AuthBackendConfig
+    metadata:
+      name: pki-cm-{{ .Cluster.metadata.name }}
+    spec:
+      forProvider:
+        backendRef:
+          name: pki-cm-{{ .Cluster.metadata.name }}
+        kubernetesHost: https://{{ .Cluster.spec.controlPlaneEndpoint.host }}:{{ .Cluster.spec.controlPlaneEndpoint.port }}
+        kubernetesCaCert: |
+          {{ index (getResource "kubeCaSecret").data "tls.crt" | b64dec | nindent 10 }}
+        disableIssValidation: true
+        disableLocalCaJwt: true
+      providerConfigRef:
+        name: default
+  authbackendrole.yaml: |
+    apiVersion: kubernetes.vault.upbound.io/v1alpha1
+    kind: AuthBackendRole
+    metadata:
+      name: pki-cm-{{ .Cluster.metadata.name }}
+    spec:
+      forProvider:
+        backendRef:
+          name: pki-cm-{{ .Cluster.metadata.name }}
+        roleName: cert-manager
+        boundServiceAccountNames:
+          - vault-auth
+        boundServiceAccountNamespaces:
+          - cert-manager
+        tokenPolicies:
+          - pki-cm-{{ .Cluster.metadata.name }}
+      providerConfigRef:
+        name: default
+---
+# Workload-cluster half: install cert-manager and push the vault-auth SA + token +
+# system:auth-delegator, the root-mgmt CA bundle, and the vault-issuer
+# ClusterIssuer. This ClusterProfile targets the workload cluster directly; its
+# cert-manager Deployment coming up is what fires the EventSource above.
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: cert-manager
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  reloader: true
+  dependsOn:
+    # Pushes a Flux Kustomization CR (cert-manager) reconciled by the workload
+    # cluster's kustomize-controller, which only exists after flux/flux-instance.
+    - flux-instance
+  clusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/cert-manager: enabled
+  # Read the mgmt root CA (root-mgmt, cert-manager ns) so the CA bundle Secret
+  # below can be rendered with it — the workload cluster's Vault issuer must trust
+  # the chain the mgmt Vault presents (leaf -> pki-int -> root-mgmt), and it
+  # connects to https://vault.mgmt.rpcu.lan (TLS-terminated at the kgateway
+  # `https` Gateway with the rpcu-lan-wildcard-tls cert chained to root-mgmt).
+  templateResourceRefs:
+    - resource:
+        apiVersion: v1
+        kind: Secret
+        name: root-mgmt
+        namespace: cert-manager
+      identifier: rootMgmtCA
+  policyRefs:
+    - kind: ConfigMap
+      name: cert-manager-install
+      namespace: projectsveltos
+    - kind: Secret
+      name: cert-manager-vault-issuer
+      namespace: projectsveltos
+---
+# Flux Kustomization CR (pushed to the workload cluster) installing the argus
+# cert-manager base. Same pattern as the vault-auth ESO install.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cert-manager-install
+  namespace: projectsveltos
+data:
+  cert-manager.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: cert-manager
+      namespace: cert-manager
+    spec:
+      interval: 10m
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/cert-manager
+      prune: false
+---
+# The vault-auth ServiceAccount (+ bound token + system:auth-delegator), the
+# root-mgmt CA bundle, and the vault-issuer ClusterIssuer, applied on the workload
+# cluster. Templated so path/role/mountPath carry the cluster name and the CA is
+# injected inline.
+#
+# Delivered as a Secret (type addons.projectsveltos.io/cluster-profile) rather
+# than a ConfigMap because the rendered ClusterIssuer embeds the root-mgmt CA
+# (read from the rootMgmtCA templateResourceRef).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cert-manager-vault-issuer
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/template: "true"
+type: addons.projectsveltos.io/cluster-profile
+stringData:
+  vault-issuer.yaml: |
+    apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: vault-auth
+      namespace: cert-manager
+    ---
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: vault-auth-token
+      namespace: cert-manager
+      annotations:
+        kubernetes.io/service-account.name: vault-auth
+    type: kubernetes.io/service-account-token
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: cert-manager-vault-tokenreview-binding
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: "system:auth-delegator"
+    subjects:
+      - kind: ServiceAccount
+        name: vault-auth
+        namespace: cert-manager
+    ---
+    # cert-manager's ServiceAccount must be allowed to create a token for the
+    # vault-auth SA (cert-manager >= 1.5 uses TokenRequest for Vault K8s auth).
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      name: cert-manager-vault-tokenrequest
+      namespace: cert-manager
+    rules:
+      - apiGroups: [""]
+        resources: ["serviceaccounts/token"]
+        resourceNames: ["vault-auth"]
+        verbs: ["create"]
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: cert-manager-vault-tokenrequest
+      namespace: cert-manager
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: Role
+      name: cert-manager-vault-tokenrequest
+    subjects:
+      - kind: ServiceAccount
+        name: cert-manager
+        namespace: cert-manager
+    ---
+    apiVersion: cert-manager.io/v1
+    kind: ClusterIssuer
+    metadata:
+      name: vault-issuer
+    spec:
+      vault:
+        server: https://vault.mgmt.rpcu.lan
+        path: pki-int/sign/cm-{{ .Cluster.metadata.name }}
+        caBundle: {{ index (getResource "rootMgmtCA").data "ca.crt" }}
+        auth:
+          kubernetes:
+            role: cert-manager
+            mountPath: /v1/auth/pki-clusters/{{ .Cluster.metadata.name }}
+            serviceAccountRef:
+              name: vault-auth
+              # cert-manager ALWAYS forces the issuer audience `vault://<ns>/<name>`
+              # into the projected token it presents to Vault. Vault validates that
+              # token via a cross-cluster TokenReview against the workload cluster's
+              # apiserver, which only accepts an audience equal to the apiserver's
+              # `--service-account-issuer` (when `--api-audiences` is unset). A token
+              # carrying ONLY the `vault://` audience is therefore rejected with
+              # `403 permission denied` at `.../login`. `serviceAccountRef.audiences`
+              # is ADDITIVE (the issuer default is always kept), so listing the
+              # apiserver SA-issuer audience here makes the token carry BOTH —
+              # TokenReview then passes on the SA-issuer audience while Vault still
+              # binds the role. Without this the vault-issuer never initializes (the
+              # ESO vault-auth add-on works unpatched only because ESO requests the
+              # default apiserver audience, not a `vault://` one).
+              #
+              # NOTE: this is the apiserver SA-issuer, NOT the cluster DNS domain.
+              # Both the kamaji and kubeadm (`openstack-default`) control planes pin
+              # `--service-account-issuer=https://kubernetes.default.svc.cluster.local`
+              # regardless of the per-cluster `clusterNetwork.serviceDomain`
+              # (`<cluster>.local`), so this literal is correct for every argus
+              # workload cluster. If a future control plane is ever provisioned with
+              # a custom `--service-account-issuer`, this audience must be updated to
+              # match it (or that apiserver given `--api-audiences` including this).
+              audiences:
+                - https://kubernetes.default.svc.cluster.local

@@ -114,3 +114,66 @@ Once done, the Crossplane resources in `clusters/mgmt/crossplane/vault/` take ov
 - `vault-creds` ExternalSecret (renders AppRole credentials for Crossplane)
 - `default` ProviderConfig (Crossplane Vault provider authenticates)
 - `cert-manager` AppRole (Crossplane creates per-cluster cert auth)
+
+## Vault PKI intermediate bootstrap (one-time manual)
+
+`clusters/mgmt/crossplane/vault/pki-int.yaml` chains a Vault PKI **intermediate
+CA** (`pki-int` mount) under the cert-manager **`root-mgmt`** self-signed root.
+This intermediate is the shared signer for the per-cluster cert-manager add-on
+(`infrastructure/sveltos/clusterprofiles/cert-manager.yaml`): each opt-in
+workload cluster gets a Vault PKI _Role_ on this mount whose `allowedDomains` is
+locked to `<cluster>.rpcu.lan`, so Vault enforces subdomain isolation between
+clusters even though they share one intermediate.
+
+Crossplane creates the `pki-int` mount and asks Vault to generate the
+intermediate key + CSR internally (`SecretBackendIntermediateCertRequest`, key
+`pki-int`; the private key never leaves Vault). The CSR is written to
+`crossplane-system/pki-int-csr` (key `csr`). Signing that CSR with `root-mgmt`
+is the one step cert-manager cannot do declaratively (it signs
+`CertificateRequest`s that reference an Issuer, not an arbitrary CSR), so do it
+once by hand:
+
+1. Extract the Vault-generated CSR:
+
+   ```bash
+   kubectl -n crossplane-system get secret pki-int-csr \
+     -o jsonpath='{.data.csr}' | base64 -d > /tmp/pki-int.csr
+   ```
+
+2. Sign it with the `root-mgmt` CA (private key + cert live in the
+   `cert-manager/root-mgmt` secret). Extract them and sign the CSR with openssl
+   (CA:TRUE intermediate, pathlen 0, 5-year validity):
+
+   ```bash
+   kubectl -n cert-manager get secret root-mgmt \
+     -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/root-mgmt.crt
+   kubectl -n cert-manager get secret root-mgmt \
+     -o jsonpath='{.data.tls\.key}' | base64 -d > /tmp/root-mgmt.key
+
+   cat > /tmp/int-ext.cnf <<'EOF'
+   basicConstraints = critical, CA:TRUE, pathlen:0
+   keyUsage = critical, digitalSignature, cRLSign, keyCertSign
+   EOF
+
+   openssl x509 -req -in /tmp/pki-int.csr \
+     -CA /tmp/root-mgmt.crt -CAkey /tmp/root-mgmt.key -CAcreateserial \
+     -days 1825 -sha256 -extfile /tmp/int-ext.cnf \
+     -out /tmp/pki-int.crt
+   ```
+
+3. Build the PEM bundle (intermediate first, then the root) and set it back into
+   Vault. Either paste it into the `SecretBackendConfigCa` `pemBundle` in
+   `pki-int.yaml` and flip `crossplane.io/paused` to `"false"`, or apply it
+   directly:
+
+   ```bash
+   cat /tmp/pki-int.crt /tmp/root-mgmt.crt > /tmp/pki-int-bundle.pem
+   kubectl -n vault exec -i vault-0 -- \
+     vault write pki-int/intermediate/set-signed \
+     certificate=- < /tmp/pki-int-bundle.pem
+   ```
+
+After the signed intermediate is set, the `pki-int` mount can issue certs and
+the Sveltos `cert-manager` ClusterProfile's per-cluster PKI Roles become
+functional. Clean up `/tmp/root-mgmt.*` afterwards — it is the root CA private
+key.

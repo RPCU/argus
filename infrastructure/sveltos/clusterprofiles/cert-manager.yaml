@@ -136,6 +136,9 @@ data:
         allowLocalhost: false
         allowIpSans: false
         enforceHostnames: true
+        # cert-manager's gateway-shim issues SAN-only CSRs (no CN); the Vault
+        # default require_cn=true rejects them. Allow SAN-only leaf certs.
+        requireCn: false
         # ---
         serverFlag: true
         clientFlag: true

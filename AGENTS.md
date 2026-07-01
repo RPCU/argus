@@ -1738,6 +1738,10 @@ below the corrected VM MTU automatically.
 - Ensure YAML syntax is valid (use yamllint if available)
 - Test Kustomize builds: `kustomize build clusters/openstack/`
 
+### Kubeconfigs
+
+The cluster kubeconfigs are stored in `~/.kube/configs/rpcu/`.
+
 ### Helpful Commands
 
 ```bash

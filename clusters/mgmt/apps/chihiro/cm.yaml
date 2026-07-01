@@ -103,7 +103,7 @@ data:
                 - {{ chihiro.serviceCIDR }}
           topology:
             classRef:
-              name: openstack-kamaji
+              name: openstack-kamaji-v1
             controlPlane:
               replicas: 0
             variables:

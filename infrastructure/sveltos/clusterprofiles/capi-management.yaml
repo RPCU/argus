@@ -14,9 +14,12 @@
 #   4. external-secrets       — credential syncing (CAPO identity prereq)
 #   5. cluster-api-operator   — declarative CAPI provider lifecycle manager
 #   6. ORC                    — OpenStack Resource Controller (CAPO image resolution)
-#   7. cluster-api-providers  — CAPI core + kubeadm + CAPO provider CRs
+#   7. cluster-api-providers  — CAPI core + kubeadm + kamaji + CAPO provider CRs
 #   8. capo-identity          — ESO: capo-variables -> mgmt-cloud-config (identityRef)
 #   9. cluster-api-templates  — ClusterClass + versioned OpenStack templates
+#  10. kamaji                  — Kamaji hosted control-plane manager (Helm + etcd
+#                               datastore); the openstack-kamaji ClusterClass runs
+#                               each workload apiserver as pods here
 #
 # Credential transfer:
 #   The capo-variables secret (OpenStack admin clouds.yaml in capo-system) is
@@ -82,6 +85,9 @@ spec:
       namespace: projectsveltos
       kind: ConfigMap
     - name: capi-management-flux-kustomizations
+      namespace: projectsveltos
+      kind: ConfigMap
+    - name: capi-management-kamaji-values
       namespace: projectsveltos
       kind: ConfigMap
     - name: capi-management-sveltos-profiles
@@ -358,6 +364,74 @@ data:
       timeout: 10m
       dependsOn:
         - name: cluster-api-providers
+  kamaji.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: kamaji
+      namespace: flux-system
+    spec:
+      interval: 10m
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/kamaji
+      prune: true
+      # wait: false — kamaji deploys its own etcd whose PVCs request the
+      # csi-cinder-sc-delete StorageClass, provided by the openstack-cinder-csi
+      # install (the separate openstack-integration ClusterProfile). Don't block
+      # this Kustomization on those PVCs binding.
+      wait: false
+      timeout: 10m
+      dependsOn:
+        # The kamaji ControlPlaneProvider CR lives in cluster-api-providers; the
+        # Helm install is the runtime it manages.
+        - name: cluster-api-providers
+      # Override the base's hardcoded kamaji-etcd.clusterDomain (mgmt.local) with
+      # this cluster's domain via an extra valuesFrom ConfigMap.
+      patches:
+        - patch: |
+            apiVersion: helm.toolkit.fluxcd.io/v2
+            kind: HelmRelease
+            metadata:
+              name: kamaji
+            spec:
+              valuesFrom:
+                - kind: ConfigMap
+                  name: kamaji-values
+                - kind: ConfigMap
+                  name: kamaji-workload-values
+          target:
+            kind: HelmRelease
+            name: kamaji
+---
+# Per-cluster kamaji Helm values overriding the base's hardcoded
+# kamaji-etcd.clusterDomain (mgmt.local) with this cluster's <name>.local, so the
+# bundled etcd's in-cluster DNS names resolve on the new management cluster.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: capi-management-kamaji-values
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/template: "true"
+data:
+  kamaji-workload-values.yaml: |
+    apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: kamaji-system
+    ---
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: kamaji-workload-values
+      namespace: kamaji-system
+    data:
+      values.yaml: |
+        kamaji-etcd:
+          clusterDomain: "{{ .Cluster.metadata.name }}.local"
 ---
 # Sveltos ClusterProfiles + backing ConfigMaps for the new management cluster.
 # Pushed as raw manifests so the new cluster can manage its own workload

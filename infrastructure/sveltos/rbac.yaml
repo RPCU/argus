@@ -54,11 +54,17 @@ rules:
     resources: ["secrets"]
     verbs: ["get", "list", "watch"]
   # Manage Vault Crossplane MRs deployed locally on mgmt by the vault-auth
-  # EventTrigger + nested ClusterProfile (clusterprofiles/vault-auth.yaml):
+  # EventTrigger + nested ClusterProfile (clusterprofiles/vault-auth.yaml) and the
+  # cert-manager EventTrigger + nested ClusterProfile
+  # (clusterprofiles/cert-manager.yaml):
   #   - Backend (auth.vault.upbound.io) — kubernetes auth mount per cluster
-  #   - Policy (vault.vault.upbound.io) — KV-v2 read per cluster
+  #       (vault-auth: clusters/<cluster>; cert-manager: pki-clusters/<cluster>)
+  #   - Policy (vault.vault.upbound.io) — KV-v2 read (vault-auth) / PKI
+  #       issue+sign (cert-manager) per cluster
   #   - AuthBackendConfig (kubernetes.vault.upbound.io) — workload cluster API host + CA
-  #   - AuthBackendRole (kubernetes.vault.upbound.io) — ESO SA binding
+  #   - AuthBackendRole (kubernetes.vault.upbound.io) — ESO / cert-manager SA binding
+  #   - SecretBackendRole (pki.vault.upbound.io) — cert-manager: the per-cluster
+  #       pki-int Role whose allowedDomains enforces subdomain isolation
   - apiGroups: ["auth.vault.upbound.io"]
     resources: ["backends"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -67,6 +73,9 @@ rules:
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["kubernetes.vault.upbound.io"]
     resources: ["authbackendconfigs", "authbackendroles"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["pki.vault.upbound.io"]
+    resources: ["secretbackendroles"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

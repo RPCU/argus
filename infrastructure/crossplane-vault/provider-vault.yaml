@@ -3,4 +3,4 @@ kind: Provider
 metadata:
   name: provider-vault
 spec:
-  package: xpkg.upbound.io/upbound/provider-vault:v2
+  package: xpkg.upbound.io/upbound/provider-vault:v4.0.0

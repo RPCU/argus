@@ -3,3 +3,4 @@ resources:
   - provider-config.yaml
   - approles.yaml
   - external-secret.yaml
+  - pki-int.yaml

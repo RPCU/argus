@@ -222,6 +222,8 @@ data:
               label: "Default (repo-pinned)"
             - value: "v0.10.5"
               label: "v0.10.5"
+            - value: "v0.11.3"
+              label: "v0.11.3"
             - value: "v0.14.4"
               label: "v0.14.4"
           default: "default"

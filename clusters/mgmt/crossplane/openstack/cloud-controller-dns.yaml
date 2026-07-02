@@ -22,7 +22,6 @@ metadata:
 spec:
   forProvider:
     name: dns_manager
-    description: "Narrow DNS management role: recordset CRUD + zone/recordset read (no zone write/delete, no lb/member/reader)"
   providerConfigRef:
     name: default
     kind: ClusterProviderConfig

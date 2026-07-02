@@ -128,7 +128,7 @@ data:
               auth_url: https://keystone.rpcu.vpn
               application_credential_id: "{{ $appCredId }}"
               application_credential_secret: "{{ $appCredSecretVal }}"
-            region_name: eu-central
+              region_name: hetzner
             verify: false
             interface: public
             identity_api_version: 3

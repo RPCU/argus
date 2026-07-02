@@ -1,7 +1,19 @@
 # No global namespace override — resources explicitly declare their namespaces.
 # The Namespace resource creates external-dns; the Role/RoleBinding live in
 # capo-system (to grant cross-namespace read access to capo-variables).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
 resources:
   - secret-credentials.yaml
   - helmrepo.yaml
   - helmrelease.yaml
+# The HelmRelease reads its values via valuesFrom (external-dns-values) instead
+# of an inline block, so workload clusters can append a per-cluster override
+# ConfigMap (Helm merges valuesFrom in order — later wins). See values.yaml.
+configMapGenerator:
+  - name: external-dns-values
+    namespace: external-dns
+    files:
+      - values.yaml
+generatorOptions:
+  disableNameSuffixHash: true

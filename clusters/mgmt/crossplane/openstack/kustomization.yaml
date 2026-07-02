@@ -6,6 +6,7 @@ resources:
   - provider-config-lab-eso.yaml
   - provider-config-production-eso.yaml
   - cloud-controller.yaml
+  - dns-manager-role.yaml
   - roleassignments-lab.yaml
   - roleassignments-production.yaml
   - ccm-credential-lab.yaml

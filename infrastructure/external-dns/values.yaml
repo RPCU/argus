@@ -1,0 +1,82 @@
+# Base ExternalDNS Helm values, consumed by the HelmRelease via valuesFrom (the
+# `external-dns-values` ConfigMap generated in kustomization.yaml).
+#
+# These defaults target the MGMT cluster (flat rpcu.lan zone, registry: noop).
+# Workload clusters override the domain scoping / registry / env via a SECOND
+# valuesFrom ConfigMap appended by the Sveltos external-dns ClusterProfile
+# (infrastructure/sveltos/clusterprofiles/external-dns.yaml) — Helm merges
+# valuesFrom in order, so the later ConfigMap's keys win.
+#
+# Don't create a ServiceAccount — the one in secret-credentials.yaml is created
+# first so ESO's SecretStore can reference it before the chart applies. On
+# workload clusters the SA is created by the Sveltos-pushed manifests instead.
+serviceAccount:
+  create: false
+  name: external-dns
+
+sources:
+  - ingress
+  - gateway-httproute
+
+# The in-tree Designate provider was removed from external-dns. Use the inovex
+# webhook (github.com/inovex/external-dns-openstack-webhook) as a sidecar
+# container instead.
+provider:
+  name: webhook
+  webhook:
+    image:
+      repository: ghcr.io/inovex/external-dns-openstack-webhook
+      tag: "2.2.0"
+    # Mount the clouds.yaml into the webhook sidecar (same path as the main
+    # container).
+    extraVolumeMounts:
+      - name: openstack-credentials
+        mountPath: /etc/openstack
+        readOnly: true
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
+
+# The rpcu.lan zone is the only Designate zone; no domain filter needed on mgmt.
+# Workload clusters override this with their own <cluster>.rpcu.lan subdomain.
+domainFilters: []
+
+policy: upsert-only
+# mgmt disables the TXT ownership registry — wildcard records (*.mgmt.rpcu.lan.)
+# produce invalid TXT names (a-*.mgmt.rpcu.lan.) that Designate rejects.
+# Workload clusters re-enable a per-cluster TXT registry (unique owner-id) via
+# the override ConfigMap so they can safely share the rpcu.lan zone.
+registry: noop
+
+env:
+  # OS_CLOUD tells the webhook which cloud entry to use in clouds.yaml. This is
+  # the ONLY OS_* env var the webhook supports for auth.
+  - name: OS_CLOUD
+    value: openstack
+
+# Mount the clouds.yaml for the main external-dns container too.
+extraVolumeMounts:
+  - name: openstack-credentials
+    mountPath: /etc/openstack
+    readOnly: true
+
+extraVolumes:
+  - name: openstack-credentials
+    secret:
+      secretName: openstack-credentials
+      items:
+        - key: clouds.yaml
+          path: clouds.yaml
+
+logLevel: info
+logFormat: text
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 128Mi

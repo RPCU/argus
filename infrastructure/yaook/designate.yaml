@@ -61,6 +61,59 @@ spec:
       priority: 1
   policy:
     admin: role:admin
+    # ---------------------------------------------------------------------
+    # ExternalDNS (workload clusters) least-privilege access.
+    #
+    # Workload clusters run ExternalDNS (inovex Designate webhook) that
+    # authenticates with a per-project `cloud-controller` Application
+    # Credential (scoped to the cluster's TENANT project) and must manage
+    # recordsets in the SHARED `rpcu.lan` zone, which is owned by the
+    # ADMIN/yaook project. The default Designate policy only allows a token
+    # to write a zone its OWN project owns (or role:admin), so a tenant token
+    # cannot touch rpcu.lan.
+    #
+    # Instead of granting admin to tenant credentials, we OR-in a narrow
+    # custom role `role:dns_manager` on ONLY the recordset CRUD + zone/
+    # recordset READ targets, regardless of zone ownership. dns_manager is
+    # assigned to the cloud-controller user per project and added to the
+    # app-cred `roles` restriction (see
+    # clusters/mgmt/crossplane/openstack/dns-manager-role.yaml and
+    # infrastructure/crossplane-compositions/composition-ccm-credential.yaml).
+    #
+    # Zone create/update/delete are intentionally NOT granted to dns_manager
+    # (ExternalDNS manages recordsets, not zones — the zone is pre-created by
+    # admin). The write rules keep the ('PRIMARY':%(zone_type)s) guard so
+    # dns_manager can only write recordsets in PRIMARY zones (rpcu.lan is
+    # PRIMARY), never SECONDARY.
+    #
+    # check_str values below mirror the upstream Designate defaults with
+    # `role:dns_manager[...]` OR-ed in (see designate/common/policies/{zone,
+    # recordset}.py).
+    # ---------------------------------------------------------------------
+    # Zone listing / read (so the webhook can discover rpcu.lan).
+    get_zones: "role:dns_manager or rule:admin_or_owner"
+    find_zones: "role:dns_manager or rule:admin_or_owner"
+    get_zone: "role:dns_manager or rule:admin_or_owner or 'True':%(zone_shared)s"
+    # Recordset listing / read.
+    find_recordsets: "role:dns_manager or rule:admin_or_owner"
+    get_recordsets: "role:dns_manager or rule:admin_or_owner"
+    get_recordset: "role:dns_manager or rule:admin_or_owner or 'True':%(zone_shared)s"
+    # Recordset CRUD (PRIMARY zones only), OR-ed onto the upstream default.
+    create_recordset: >-
+      (role:dns_manager and 'PRIMARY':%(zone_type)s)
+      or (rule:admin_or_owner and 'PRIMARY':%(zone_type)s)
+      or (is_admin:True and 'SECONDARY':%(zone_type)s)
+      or ('True':%(zone_shared)s and 'PRIMARY':%(zone_type)s)
+    update_recordset: >-
+      (role:dns_manager and 'PRIMARY':%(zone_type)s)
+      or (rule:admin_or_owner and 'PRIMARY':%(zone_type)s)
+      or (is_admin:True and 'SECONDARY':%(zone_type)s)
+      or (role:member and project_id:%(recordset_project_id)s and 'PRIMARY':%(zone_type)s)
+    delete_recordset: >-
+      (role:dns_manager and 'PRIMARY':%(zone_type)s)
+      or (rule:admin_or_owner and 'PRIMARY':%(zone_type)s)
+      or (is_admin:True and 'SECONDARY':%(zone_type)s)
+      or (role:member and project_id:%(recordset_project_id)s and 'PRIMARY':%(zone_type)s)
   powerdns:
     database:
       backup:

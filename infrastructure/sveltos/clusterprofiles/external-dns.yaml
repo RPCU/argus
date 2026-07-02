@@ -1,0 +1,253 @@
+# ExternalDNS for OPT-IN workload clusters, delivered as a Flux takeover (NO
+# Sveltos helmChart bootstrap — same rationale as openstack-ccm/openstack-cinder-csi:
+# ExternalDNS is not bootstrap-critical, and a Sveltos helmChart would fight Flux
+# over the same Helm release). Flux is the SOLE owner.
+#
+# Each opt-in workload cluster syncs its Ingress / Gateway HTTPRoute records into
+# the SHARED OpenStack Designate zone (rpcu.lan) under its OWN per-cluster
+# subdomain <cluster>.rpcu.lan, with a per-cluster TXT ownership registry
+# (txt-owner-id=<cluster>) so clusters never collide over records/ownership in
+# the flat zone. This mirrors the subdomain-isolation pattern the vault-auth /
+# cert-manager add-ons already use (<cluster>.rpcu.lan).
+#
+# Three things are pushed to each matching workload cluster:
+#   1. the "openstack-credentials" Secret (external-dns ns) — the per-project
+#      Application Credential clouds.yaml, rendered by Sveltos from the mgmt
+#      cloud-controller-app-creds Secret (the SAME multi-project source the
+#      openstack-ccm profile uses), scoped to THIS cluster's project only. The
+#      inovex Designate webhook reads it at /etc/openstack/clouds.yaml.
+#   2. the "external-dns-workload-values" ConfigMap (external-dns ns) — overrides
+#      the mgmt-specific base values.yaml: the per-cluster domainFilter
+#      (<cluster>.rpcu.lan), a real TXT registry with txt-owner-id=<cluster>
+#      (mgmt uses registry: noop), and txt-prefix to avoid wildcard TXT-name
+#      rejection by Designate.
+#   3. the Flux Kustomization CR (wrapping the SAME base infrastructure/external-dns
+#      as mgmt — no separate workload overlay), patched to (a) append that
+#      ConfigMap as a second valuesFrom (Helm merges valuesFrom in order — later
+#      wins) and (b) `$patch: delete` the four mgmt-only resources from
+#      secret-credentials.yaml that can't work on a workload cluster (the ESO
+#      SecretStore + ExternalSecret reading capo-variables, and the capo-system
+#      Role/RoleBinding — workload clusters have no capo-system/capo-variables).
+#      The Namespace + ServiceAccount from that file are kept.
+#
+# The project is resolved per-cluster from the workload cluster's OpenStackCluster
+# (spec.identityRef.cloudName), exactly like openstack-ccm. RBAC for these reads
+# is granted by addon-controller-argus-template-reader in rbac.yaml.
+#
+# Gated by the opt-in label sveltos.argus.rpcu.io/external-dns: enabled.
+#
+# dependsOn the `flux-instance` ClusterProfile (which itself dependsOn `flux`):
+# this profile pushes a Flux Kustomization CR + HelmRelease reconciled by the
+# kustomize/helm controllers, which only exist once Flux is installed.
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: external-dns
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  dependsOn:
+    - flux-instance
+  clusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/external-dns: enabled
+  # Load two management-cluster resources so the per-cluster clouds.yaml can be
+  # generated (identical pattern to the openstack-ccm ClusterProfile):
+  #   - OpenStackCluster: this cluster's OpenStack project via
+  #     spec.identityRef.cloudName (e.g. "lab"). Fetched by the CAPI
+  #     infrastructureRef name read dynamically from the Cluster CR.
+  #   - cloud-controller-app-creds Secret: the multi-project Application
+  #     Credential clouds.yaml rendered by ESO on mgmt. The template extracts
+  #     ONLY this cluster's entry, so no other project's credentials are pushed.
+  templateResourceRefs:
+    - resource:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+        kind: OpenStackCluster
+        namespace: "{{ .Cluster.metadata.namespace }}"
+        name: "{{ .Cluster.spec.infrastructureRef.name }}"
+      identifier: OpenStackCluster
+    - resource:
+        apiVersion: v1
+        kind: Secret
+        namespace: mgmt
+        name: cloud-controller-app-creds
+      identifier: AppCreds
+  policyRefs:
+    - name: external-dns-credentials
+      namespace: projectsveltos
+      kind: ConfigMap
+    - name: external-dns-workload-values
+      namespace: projectsveltos
+      kind: ConfigMap
+    - name: external-dns-flux-kustomization
+      namespace: projectsveltos
+      kind: ConfigMap
+---
+# Per-cluster ExternalDNS credentials, generated DYNAMICALLY (no per-project
+# files). Sveltos instantiates this template on the management cluster:
+#   - cloudName  = the workload cluster's OpenStack project, read from its
+#                  OpenStackCluster.spec.identityRef.cloudName (alias
+#                  OpenStackCluster).
+#   - the matching cloud entry (auth_url, application credential, user_id,
+#                  project_id, region) is extracted from the multi-project
+#                  cloud-controller-app-creds clouds.yaml (alias AppCreds) via
+#                  fromYaml — ONLY this cluster's entry is emitted.
+#
+# It deploys an Opaque Secret openstack-credentials into the workload cluster's
+# external-dns namespace with a single clouds.yaml key under the cloud name
+# "openstack" (matching OS_CLOUD=openstack in the base values). The inovex
+# Designate webhook reads it at /etc/openstack/clouds.yaml.
+#
+# IMPORTANT: auth_url must be the gateway endpoint (https://keystone.rpcu.vpn) —
+# the in-cluster Keystone is unreachable from a workload cluster. The
+# cloud-controller-app-creds entries already use the gateway auth_url.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: external-dns-credentials
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/template: "true"
+data:
+  external-dns-credentials.yaml: |
+    {{- $cloudName := (getField "OpenStackCluster" "spec.identityRef.cloudName") }}
+    {{- $cloudsYaml := index (getResource "AppCreds").data (printf "%s-clouds.yaml" $cloudName) | b64dec | fromYaml }}
+    {{- $auth := $cloudsYaml.clouds.openstack.auth }}
+    {{- $region := $cloudsYaml.clouds.openstack.region_name }}
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: openstack-credentials
+      namespace: external-dns
+    type: Opaque
+    stringData:
+      clouds.yaml: |
+        clouds:
+          openstack:
+            auth:
+              auth_url: {{ $auth.auth_url }}
+              application_credential_name: "{{ $auth.application_credential_name }}"
+              application_credential_secret: "{{ $auth.application_credential_secret }}"
+              user_id: "{{ $auth.user_id }}"
+              project_id: "{{ $auth.project_id }}"
+            region_name: {{ $region }}
+            verify: false
+            interface: public
+            identity_api_version: 3
+---
+# Per-cluster values override pushed into the workload cluster's external-dns
+# namespace. valuesFrom ConfigMaps are merged in order; the Flux Kustomization
+# patch below appends this one AFTER the base external-dns-values, so these keys
+# win. Sveltos instantiates the {{ .Cluster.metadata.name }} template.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: external-dns-workload-values
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/template: "true"
+data:
+  external-dns-workload-values.yaml: |
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: external-dns-workload-values
+      namespace: external-dns
+    data:
+      values.yaml: |
+        # Only sync records under THIS cluster's subdomain, so clusters sharing
+        # the flat rpcu.lan Designate zone never collide.
+        domainFilters:
+          - {{ .Cluster.metadata.name }}.rpcu.lan
+        # Re-enable the TXT ownership registry (mgmt uses noop). A per-cluster
+        # txt-owner-id scopes ownership so each cluster only manages its own
+        # records. txt-prefix keeps generated TXT names valid for wildcards.
+        registry: txt
+        txtOwnerId: {{ .Cluster.metadata.name }}
+        txtPrefix: "edns-"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: external-dns-flux-kustomization
+  namespace: projectsveltos
+data:
+  external-dns-flux-kustomization.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: external-dns
+      namespace: external-dns
+    spec:
+      interval: 10m
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      # Same base as mgmt — no separate workload overlay. The mgmt-only
+      # credential plumbing is stripped via $patch: delete below.
+      path: ./infrastructure/external-dns
+      prune: false
+      patches:
+        # Append the per-cluster override ConfigMap as a second valuesFrom.
+        - patch: |
+            apiVersion: helm.toolkit.fluxcd.io/v2
+            kind: HelmRelease
+            metadata:
+              name: external-dns
+            spec:
+              valuesFrom:
+                - kind: ConfigMap
+                  name: external-dns-values
+                - kind: ConfigMap
+                  name: external-dns-workload-values
+          target:
+            kind: HelmRelease
+            name: external-dns
+        # Drop the mgmt-only ESO plumbing from secret-credentials.yaml — a
+        # workload cluster has no capo-system namespace and no capo-variables
+        # secret, so these would never reconcile. The openstack-credentials
+        # Secret is instead pushed directly by this ClusterProfile
+        # (external-dns-credentials ConfigMap above). The Namespace +
+        # ServiceAccount from secret-credentials.yaml are retained.
+        - patch: |
+            $patch: delete
+            apiVersion: external-secrets.io/v1
+            kind: SecretStore
+            metadata:
+              name: capo-system-secrets
+              namespace: external-dns
+          target:
+            kind: SecretStore
+            name: capo-system-secrets
+        - patch: |
+            $patch: delete
+            apiVersion: external-secrets.io/v1
+            kind: ExternalSecret
+            metadata:
+              name: openstack-credentials
+              namespace: external-dns
+          target:
+            kind: ExternalSecret
+            name: openstack-credentials
+        - patch: |
+            $patch: delete
+            apiVersion: rbac.authorization.k8s.io/v1
+            kind: Role
+            metadata:
+              name: capo-variables-reader
+              namespace: capo-system
+          target:
+            kind: Role
+            name: capo-variables-reader
+        - patch: |
+            $patch: delete
+            apiVersion: rbac.authorization.k8s.io/v1
+            kind: RoleBinding
+            metadata:
+              name: external-dns-capo-variables-reader
+              namespace: capo-system
+          target:
+            kind: RoleBinding
+            name: external-dns-capo-variables-reader

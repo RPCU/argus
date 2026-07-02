@@ -1,0 +1,107 @@
+# =============================================================================
+# dns_manager role for ExternalDNS on workload clusters.
+#
+# ExternalDNS (inovex Designate webhook) on a workload cluster authenticates
+# with the per-project `cloud-controller` Application Credential (scoped to the
+# cluster's tenant project) and must manage recordsets in the SHARED `rpcu.lan`
+# Designate zone. That zone is owned by the ADMIN/yaook project, so under the
+# default Designate policy a tenant-project `member` token cannot touch it
+# (writes require the token's project to OWN the zone, or role:admin).
+#
+# Rather than grant admin to a tenant credential, we introduce a narrow custom
+# role `dns_manager` and override ONLY the recordset (and zone-read) Designate
+# policy targets to also accept `role:dns_manager` regardless of zone ownership
+# (see infrastructure/yaook/designate.yaml `policy:`). Zone create/delete stay
+# admin-only. This is least-privilege: dns_manager can list zones and CRUD
+# recordsets, nothing else.
+#
+# The role is assigned to:
+#   - the `cloud-controller` user in each tenant project (so its app-cred token
+#     carries role:dns_manager);
+#   - yaook-sys-maint in each tenant project — Keystone requires that an
+#     app-cred's restricted `roles` are a SUBSET of the authenticated user's
+#     roles in the scope, and the app-cred is created authenticating as
+#     yaook-sys-maint (same reason load-balancer_member/member/reader are also
+#     assigned to yaook-sys-maint).
+#
+# The app-cred `roles` restriction list gains `dns_manager` in the
+# ccm-credential Composition (infrastructure/crossplane-compositions/
+# composition-ccm-credential.yaml) and the static admin-project app-cred
+# (cloud-controller.yaml).
+# =============================================================================
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: RoleV3
+metadata:
+  name: cloud-controller-dns
+  namespace: crossplane-system
+spec:
+  forProvider:
+    name: dns_manager
+---
+# Assign dns_manager to the cloud-controller user in the lab project.
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: RoleAssignmentV3
+metadata:
+  name: cloud-controller-dns-lab
+  namespace: crossplane-system
+spec:
+  forProvider:
+    roleIdRef:
+      name: cloud-controller-dns
+    userIdRef:
+      name: cloud-controller
+    projectId: "e538e6c8466945b4bd07da85a7ee004e"
+  providerConfigRef:
+    name: default
+    kind: ClusterProviderConfig
+---
+# Assign dns_manager to yaook-sys-maint in the lab project (app-cred subset
+# requirement).
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: RoleAssignmentV3
+metadata:
+  name: yaook-sys-maint-dns-lab
+  namespace: crossplane-system
+spec:
+  forProvider:
+    roleIdRef:
+      name: cloud-controller-dns
+    userId: "44b2b48fb89d4fde9d659bf01831d3b0"
+    projectId: "e538e6c8466945b4bd07da85a7ee004e"
+  providerConfigRef:
+    name: default
+    kind: ClusterProviderConfig
+---
+# Assign dns_manager to the cloud-controller user in the production project.
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: RoleAssignmentV3
+metadata:
+  name: cloud-controller-dns-production
+  namespace: crossplane-system
+spec:
+  forProvider:
+    roleIdRef:
+      name: cloud-controller-dns
+    userIdRef:
+      name: cloud-controller
+    projectId: "75aa5d153361400488a2d43a4fe629c3"
+  providerConfigRef:
+    name: default
+    kind: ClusterProviderConfig
+---
+# Assign dns_manager to yaook-sys-maint in the production project (app-cred
+# subset requirement).
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: RoleAssignmentV3
+metadata:
+  name: yaook-sys-maint-dns-production
+  namespace: crossplane-system
+spec:
+  forProvider:
+    roleIdRef:
+      name: cloud-controller-dns
+    userId: "44b2b48fb89d4fde9d659bf01831d3b0"
+    projectId: "75aa5d153361400488a2d43a4fe629c3"
+  providerConfigRef:
+    name: default
+    kind: ClusterProviderConfig

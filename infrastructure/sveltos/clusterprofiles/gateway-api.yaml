@@ -131,16 +131,23 @@ data:
         # helmrelease.yaml so kustomize build skips gateway.yaml and
         # httplistenerpolicy.yaml.
         - patch: |
-            apiVersion: kustomize.toolkit.fluxcd.io/v1
-            kind: Kustomization
+            $patch: delete
+            apiVersion: gateway.networking.k8s.io/v1
+            kind: Gateway
             metadata:
-              name: kgateway
-            spec:
-              resources:
-                - helmrelease.yaml
+              name: https
           target:
-            kind: Kustomization
-            name: kgateway
+            kind: Gateway
+            name: https
+        - patch: |
+            $patch: delete
+            apiVersion: gateway.kgateway.dev/v1alpha1
+            kind: HTTPListenerPolicy
+            metadata:
+              name: upgrades
+          target:
+            kind: Gateway
+            name: https
 ---
 # Gateway + Certificate + HTTPListenerPolicy for the workload cluster. The
 # Gateway hostname is templated with the cluster name (*.cluster.rpcu.lan).

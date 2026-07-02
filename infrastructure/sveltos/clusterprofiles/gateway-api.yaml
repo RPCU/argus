@@ -86,7 +86,7 @@ data:
         name: flux-system
         namespace: flux-system
       path: ./infrastructure/gateway-api
-      prune: false
+      prune: true
       wait: true
       timeout: 5m
   kgateway-crds.yaml: |
@@ -104,7 +104,7 @@ data:
         name: flux-system
         namespace: flux-system
       path: ./infrastructure/kgateway/crds
-      prune: false
+      prune: true
       wait: true
       timeout: 5m
   kgateway.yaml: |
@@ -122,7 +122,7 @@ data:
         name: flux-system
         namespace: flux-system
       path: ./infrastructure/kgateway
-      prune: false
+      prune: true
       patches:
         # Strip the openstack-specific Gateway + HTTPListenerPolicy from the base
         # kustomization — workload clusters get these from the templated ConfigMap

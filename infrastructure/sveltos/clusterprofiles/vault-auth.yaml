@@ -316,7 +316,7 @@ data:
         name: flux-system
         namespace: flux-system
       path: ./infrastructure/external-secrets
-      prune: false
+      prune: true
 ---
 # The vault-auth ServiceAccount (+ bound token + system:auth-delegator) and the
 # vault-backend ClusterSecretStore, applied on the workload cluster. The store

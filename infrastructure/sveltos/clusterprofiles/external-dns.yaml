@@ -185,7 +185,7 @@ data:
       # Same base as mgmt — no separate workload overlay. The mgmt-only
       # credential plumbing is stripped via $patch: delete below.
       path: ./infrastructure/external-dns
-      prune: false
+      prune: true
       patches:
         # Append the per-cluster override ConfigMap as a second valuesFrom.
         - patch: |

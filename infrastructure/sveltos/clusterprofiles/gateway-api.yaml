@@ -1,0 +1,258 @@
+# Gateway API + kgateway for OPT-IN workload clusters, delivered as a Flux
+# takeover (same pattern as openstack-ccm/openstack-cinder-csi/external-dns).
+#
+# Deploys:
+#   1. Gateway API CRDs (upstream experimental channel)
+#   2. kgateway CRDs + controller
+#   3. A workload-cluster Gateway (*.cluster.rpcu.lan) using the vault-issuer
+#      ClusterIssuer from the cert-manager add-on for TLS
+#
+# A manually-created Certificate (wildcard-tls) in kgateway-system is signed
+# by the vault-issuer (pki-int/sign/cm-<cluster>). The per-cluster PKI role
+# allows wildcard certificates and subdomains of <cluster>.rpcu.lan, so
+# *.<cluster>.rpcu.lan is accepted. The Gateway references this Certificate's
+# TLS secret for termination.
+#
+# HTTPRoutes attached to this Gateway are synced to Designate by the external-dns
+# add-on (domainFilters scoped to <cluster>.rpcu.lan).
+#
+# Gated by the opt-in label sveltos.argus.rpcu.io/gateway-api: enabled.
+#
+# dependsOn the cert-manager ClusterProfile: the vault-issuer ClusterIssuer must
+# exist before the Gateway can be reconciled (the cert-manager.io/cluster-issuer
+# annotation references it).
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: gateway-api
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  dependsOn:
+    - cert-manager
+  clusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/gateway-api: enabled
+  policyRefs:
+    - name: gateway-api-flux-kustomizations
+      namespace: projectsveltos
+      kind: ConfigMap
+    - name: gateway-api-workload-resources
+      namespace: projectsveltos
+      kind: ConfigMap
+---
+# Flux Kustomization CRs for the Gateway API CRDs, kgateway CRDs, and
+# kgateway controller. Deployed as raw manifests (not templated) because
+# they don't need per-cluster values.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-api-flux-kustomizations
+  namespace: projectsveltos
+data:
+  gateway-api-crds.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: gateway-api
+      namespace: flux-system
+    spec:
+      interval: 10m
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/gateway-api
+      prune: false
+      wait: true
+      timeout: 5m
+  kgateway-crds.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: kgateway-crds
+      namespace: flux-system
+    spec:
+      interval: 10m
+      dependsOn:
+        - name: gateway-api
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/kgateway/crds
+      prune: false
+      wait: true
+      timeout: 5m
+  kgateway.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: kgateway
+      namespace: flux-system
+    spec:
+      interval: 10m
+      dependsOn:
+        - name: kgateway-crds
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/kgateway
+      prune: false
+      patches:
+        # Strip the openstack-specific Gateway + HTTPListenerPolicy from the base
+        # kustomization — workload clusters get these from the templated ConfigMap
+        # pushed by this ClusterProfile (hostname *<cluster>.rpcu.lan, vault-issuer,
+        # no Cilium lbipam annotation). Replace the resources list with only
+        # helmrelease.yaml so kustomize build skips gateway.yaml and
+        # httplistenerpolicy.yaml.
+        - patch: |
+            apiVersion: kustomize.toolkit.fluxcd.io/v1
+            kind: Kustomization
+            metadata:
+              name: kgateway
+            spec:
+              resources:
+                - helmrelease.yaml
+          target:
+            kind: Kustomization
+            name: kgateway
+---
+# Gateway + Certificate + HTTPListenerPolicy for the workload cluster. The
+# Gateway hostname is templated with the cluster name (*.cluster.rpcu.lan).
+# Sveltos resolves {{ .Cluster.metadata.name }} before pushing to the workload
+# cluster. A manually-created Certificate (wildcard-tls) is signed by the
+# vault-issuer; the Gateway references its TLS secret.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-api-workload-resources
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/template: "true"
+data:
+  gateway.yaml: |
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: Gateway
+    metadata:
+      name: https
+      namespace: kgateway-system
+      annotations:
+        cert-manager.io/cluster-issuer: vault-issuer
+        kgateway.dev/per-connection-buffer-limit: "128Mi"
+    spec:
+      gatewayClassName: kgateway
+      allowedListeners:
+        namespaces:
+          from: All
+      infrastructure:
+        parametersRef:
+          group: gateway.kgateway.dev
+          kind: GatewayParameters
+          name: gwp-static-ip
+      listeners:
+        - protocol: HTTP
+          port: 80
+          name: http
+          hostname: "*{{ .Cluster.metadata.name }}.rpcu.lan"
+          allowedRoutes:
+            namespaces:
+              from: All
+        - protocol: HTTPS
+          port: 443
+          name: https
+          hostname: "*{{ .Cluster.metadata.name }}.rpcu.lan"
+          allowedRoutes:
+            namespaces:
+              from: All
+          tls:
+            mode: Terminate
+            certificateRefs:
+              - name: wildcard-tls
+    ---
+    apiVersion: gateway.kgateway.dev/v1alpha1
+    kind: GatewayParameters
+    metadata:
+      name: gwp-static-ip
+      namespace: kgateway-system
+    spec:
+      kube:
+        envoyContainer:
+          resources:
+            limits:
+              memory: 4Gi
+            requests:
+              memory: 1Gi
+        service:
+          type: LoadBalancer
+    ---
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    metadata:
+      name: https-redirect
+      namespace: kgateway-system
+    spec:
+      parentRefs:
+        - name: https
+          sectionName: http
+          namespace: kgateway-system
+      rules:
+        - filters:
+            - type: RequestRedirect
+              requestRedirect:
+                scheme: https
+                statusCode: 301
+  certificate.yaml: |
+    # Wildcard certificate for the workload cluster's Gateway. Signed by the
+    # vault-issuer (pki-int/sign/cm-<cluster>). The SAN is
+    # *.<cluster>.rpcu.lan which matches the Gateway's listener hostname.
+    # cert-manager renews at 2/3 of the 90-day lifetime.
+    apiVersion: cert-manager.io/v1
+    kind: Certificate
+    metadata:
+      name: wildcard-tls
+      namespace: kgateway-system
+    spec:
+      secretName: wildcard-tls
+      issuerRef:
+        name: vault-issuer
+        kind: ClusterIssuer
+        group: cert-manager.io
+      dnsNames:
+        - "*{{ .Cluster.metadata.name }}.rpcu.lan"
+  httplistenerpolicy.yaml: |
+    apiVersion: gateway.kgateway.dev/v1alpha1
+    kind: HTTPListenerPolicy
+    metadata:
+      name: upgrades
+      namespace: kgateway-system
+    spec:
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: https
+      upgradeConfig:
+        enabledUpgrades:
+          - "websocket"
+      accessLog:
+        - fileSink:
+            path: /dev/stdout
+            jsonFormat:
+              start_time: "%START_TIME%"
+              method: "%REQ(X-ENVOY-ORIGINAL-METHOD?:METHOD)%"
+              path: "%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%"
+              protocol: "%PROTOCOL%"
+              response_code: "%RESPONSE_CODE%"
+              response_flags: "%RESPONSE_FLAGS%"
+              bytes_received: "%BYTES_RECEIVED%"
+              bytes_sent: "%BYTES_SENT%"
+              total_duration: "%DURATION%"
+              resp_backend_service_time: "%RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)%"
+              req_x_forwarded_for: "%REQ(X-FORWARDED-FOR)%"
+              user_agent: "%REQ(USER-AGENT)%"
+              request_id: "%REQ(X-REQUEST-ID)%"
+              authority: "%REQ(:AUTHORITY)%"
+              backendHost: "%UPSTREAM_HOST%"
+              backendCluster: "%UPSTREAM_CLUSTER%"

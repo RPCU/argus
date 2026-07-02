@@ -11,11 +11,13 @@
 # cert-manager add-ons already use (<cluster>.rpcu.lan).
 #
 # Three things are pushed to each matching workload cluster:
-#   1. the "openstack-credentials" Secret (external-dns ns) — the per-project
-#      Application Credential clouds.yaml, rendered by Sveltos from the mgmt
-#      cloud-controller-app-creds Secret (the SAME multi-project source the
-#      openstack-ccm profile uses), scoped to THIS cluster's project only. The
-#      inovex Designate webhook reads it at /etc/openstack/clouds.yaml.
+#   1. the "openstack-credentials" Secret (external-dns ns) — the SHARED
+#      admin-project DNS Application Credential clouds.yaml, rendered by Sveltos
+#      from the mgmt crossplane-system/cloud-controller-app-cred-dns Secret
+#      (the connection secret of the admin-project app-cred with dns_manager
+#      role only). ALL workload clusters share the same app-cred; subdomain
+#      isolation is enforced by Designate policy (dns_manager can only manage
+#      recordsets, not zones) and the per-cluster domainFilters below.
 #   2. the "external-dns-workload-values" ConfigMap (external-dns ns) — overrides
 #      the mgmt-specific base values.yaml: the per-cluster domainFilter
 #      (<cluster>.rpcu.lan), a real TXT registry with txt-owner-id=<cluster>
@@ -30,9 +32,12 @@
 #      Role/RoleBinding — workload clusters have no capo-system/capo-variables).
 #      The Namespace + ServiceAccount from that file are kept.
 #
-# The project is resolved per-cluster from the workload cluster's OpenStackCluster
-# (spec.identityRef.cloudName), exactly like openstack-ccm. RBAC for these reads
-# is granted by addon-controller-argus-template-reader in rbac.yaml.
+# The admin-project DNS app-cred (cloud-controller-dns) is created by Crossplane
+# in clusters/mgmt/crossplane/openstack/cloud-controller-dns.yaml with only
+# the dns_manager role. Its connection secret (attribute.id + attribute.secret)
+# is read by templateResourceRefs below. The clouds.yaml template hardcodes
+# auth_url (gateway endpoint, unreachable from workload clusters) and
+# region_name (single-region deployment).
 #
 # Gated by the opt-in label sveltos.argus.rpcu.io/external-dns: enabled.
 #
@@ -52,27 +57,17 @@ spec:
     matchLabels:
       type: workload
       sveltos.argus.rpcu.io/external-dns: enabled
-  # Load two management-cluster resources so the per-cluster clouds.yaml can be
-  # generated (identical pattern to the openstack-ccm ClusterProfile):
-  #   - OpenStackCluster: this cluster's OpenStack project via
-  #     spec.identityRef.cloudName (e.g. "lab"). Fetched by the CAPI
-  #     infrastructureRef name read dynamically from the Cluster CR.
-  #   - cloud-controller-app-creds Secret: the multi-project Application
-  #     Credential clouds.yaml rendered by ESO on mgmt. The template extracts
-  #     ONLY this cluster's entry, so no other project's credentials are pushed.
+  # Read the admin-project DNS app-cred connection secret from the management
+  # cluster. This contains attribute.id (app-cred ID) and attribute.secret
+  # (app-cred secret), written by Crossplane's ApplicationCredentialV3
+  # (cloud-controller-dns in crossplane-system).
   templateResourceRefs:
-    - resource:
-        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
-        kind: OpenStackCluster
-        namespace: "{{ .Cluster.metadata.namespace }}"
-        name: "{{ .Cluster.spec.infrastructureRef.name }}"
-      identifier: OpenStackCluster
     - resource:
         apiVersion: v1
         kind: Secret
-        namespace: mgmt
-        name: cloud-controller-app-creds
-      identifier: AppCreds
+        namespace: crossplane-system
+        name: cloud-controller-app-cred-dns
+      identifier: DnsAppCred
   policyRefs:
     - name: external-dns-credentials
       namespace: projectsveltos
@@ -84,15 +79,11 @@ spec:
       namespace: projectsveltos
       kind: ConfigMap
 ---
-# Per-cluster ExternalDNS credentials, generated DYNAMICALLY (no per-project
-# files). Sveltos instantiates this template on the management cluster:
-#   - cloudName  = the workload cluster's OpenStack project, read from its
-#                  OpenStackCluster.spec.identityRef.cloudName (alias
-#                  OpenStackCluster).
-#   - the matching cloud entry (auth_url, application credential, user_id,
-#                  project_id, region) is extracted from the multi-project
-#                  cloud-controller-app-creds clouds.yaml (alias AppCreds) via
-#                  fromYaml — ONLY this cluster's entry is emitted.
+# Shared admin-project DNS credentials, generated DYNAMICALLY. Sveltos
+# instantiates this template on the management cluster:
+#   - DnsAppCred: the admin-project DNS app-cred connection secret from
+#                  crossplane-system. The template extracts attribute.id
+#                  (app-cred ID) and attribute.secret (app-cred secret).
 #
 # It deploys an Opaque Secret openstack-credentials into the workload cluster's
 # external-dns namespace with a single clouds.yaml key under the cloud name
@@ -100,8 +91,7 @@ spec:
 # Designate webhook reads it at /etc/openstack/clouds.yaml.
 #
 # IMPORTANT: auth_url must be the gateway endpoint (https://keystone.rpcu.vpn) —
-# the in-cluster Keystone is unreachable from a workload cluster. The
-# cloud-controller-app-creds entries already use the gateway auth_url.
+# the in-cluster Keystone is unreachable from a workload cluster.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -111,10 +101,9 @@ metadata:
     projectsveltos.io/template: "true"
 data:
   external-dns-credentials.yaml: |
-    {{- $cloudName := (getField "OpenStackCluster" "spec.identityRef.cloudName") }}
-    {{- $cloudsYaml := index (getResource "AppCreds").data (printf "%s-clouds.yaml" $cloudName) | b64dec | fromYaml }}
-    {{- $auth := $cloudsYaml.clouds.openstack.auth }}
-    {{- $region := $cloudsYaml.clouds.openstack.region_name }}
+    {{- $appCred := getResource "DnsAppCred" }}
+    {{- $appCredId := $appCred.data.attribute.id | b64dec }}
+    {{- $appCredSecret := $appCred.data.attribute.secret | b64dec }}
     apiVersion: v1
     kind: Secret
     metadata:
@@ -126,11 +115,10 @@ data:
         clouds:
           openstack:
             auth:
-              auth_url: {{ $auth.auth_url }}
-              application_credential_name: "{{ $auth.application_credential_name }}"
-              application_credential_secret: "{{ $auth.application_credential_secret }}"
-              user_id: "{{ $auth.user_id }}"
-            region_name: {{ $region }}
+              auth_url: https://keystone.rpcu.vpn
+              application_credential_id: "{{ $appCredId }}"
+              application_credential_secret: "{{ $appCredSecret }}"
+            region_name: eu-central
             verify: false
             interface: public
             identity_api_version: 3

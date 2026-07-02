@@ -113,7 +113,7 @@ data:
     {{- $appCredSecret := getResource "DnsAppCredSecret" }}
     {{- $appCred := getResource "DnsAppCred" }}
     {{- $appCredId := $appCred.status.atProvider.id }}
-    {{- $appCredSecretVal := $appCredSecret.data.attribute.secret | b64dec }}
+    {{- $appCredSecretVal := index $appCredSecret.data "attribute.secret" | b64dec }}
     apiVersion: v1
     kind: Secret
     metadata:

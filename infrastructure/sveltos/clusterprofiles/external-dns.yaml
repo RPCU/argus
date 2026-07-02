@@ -1,6 +1,6 @@
-# ExternalDNS for OPT-IN workload clusters, delivered as a Flux takeover (NO
+# InternalDNS for OPT-IN workload clusters, delivered as a Flux takeover (NO
 # Sveltos helmChart bootstrap — same rationale as openstack-ccm/openstack-cinder-csi:
-# ExternalDNS is not bootstrap-critical, and a Sveltos helmChart would fight Flux
+# InternalDNS is not bootstrap-critical, and a Sveltos helmChart would fight Flux
 # over the same Helm release). Flux is the SOLE owner.
 #
 # Each opt-in workload cluster syncs its Ingress / Gateway HTTPRoute records into
@@ -11,14 +11,14 @@
 # cert-manager add-ons already use (<cluster>.rpcu.lan).
 #
 # Three things are pushed to each matching workload cluster:
-#   1. the "openstack-credentials" Secret (external-dns ns) — the SHARED
+#   1. the "openstack-credentials" Secret (internal-dns ns) — the SHARED
 #      admin-project DNS Application Credential clouds.yaml, rendered by Sveltos
 #      from the mgmt crossplane-system/cloud-controller-app-cred-dns Secret
 #      (the connection secret of the admin-project app-cred with dns_manager
 #      role only). ALL workload clusters share the same app-cred; subdomain
 #      isolation is enforced by Designate policy (dns_manager can only manage
 #      recordsets, not zones) and the per-cluster domainFilters below.
-#   2. the "external-dns-workload-values" ConfigMap (external-dns ns) — overrides
+#   2. the "internal-dns-workload-values" ConfigMap (internal-dns ns) — overrides
 #      the mgmt-specific base values.yaml: the per-cluster domainFilter
 #      (<cluster>.rpcu.lan), a real TXT registry with txt-owner-id=<cluster>
 #      (mgmt uses registry: noop), and txt-prefix to avoid wildcard TXT-name
@@ -69,13 +69,13 @@ spec:
         name: cloud-controller-app-cred-dns
       identifier: DnsAppCred
   policyRefs:
-    - name: external-dns-credentials
+    - name: internal-dns-credentials
       namespace: projectsveltos
       kind: ConfigMap
-    - name: external-dns-workload-values
+    - name: internal-dns-workload-values
       namespace: projectsveltos
       kind: ConfigMap
-    - name: external-dns-flux-kustomization
+    - name: internal-dns-flux-kustomization
       namespace: projectsveltos
       kind: ConfigMap
 ---
@@ -86,7 +86,7 @@ spec:
 #                  (app-cred ID) and attribute.secret (app-cred secret).
 #
 # It deploys an Opaque Secret openstack-credentials into the workload cluster's
-# external-dns namespace with a single clouds.yaml key under the cloud name
+# internal-dns namespace with a single clouds.yaml key under the cloud name
 # "openstack" (matching OS_CLOUD=openstack in the base values). The inovex
 # Designate webhook reads it at /etc/openstack/clouds.yaml.
 #
@@ -95,12 +95,12 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: external-dns-credentials
+  name: internal-dns-credentials
   namespace: projectsveltos
   annotations:
     projectsveltos.io/template: "true"
 data:
-  external-dns-credentials.yaml: |
+  internal-dns-credentials.yaml: |
     {{- $appCred := getResource "DnsAppCred" }}
     {{- $appCredId := $appCred.data.attribute.id | b64dec }}
     {{- $appCredSecret := $appCred.data.attribute.secret | b64dec }}
@@ -108,7 +108,7 @@ data:
     kind: Secret
     metadata:
       name: openstack-credentials
-      namespace: external-dns
+      namespace: internal-dns
     type: Opaque
     stringData:
       clouds.yaml: |
@@ -123,24 +123,24 @@ data:
             interface: public
             identity_api_version: 3
 ---
-# Per-cluster values override pushed into the workload cluster's external-dns
+# Per-cluster values override pushed into the workload cluster's internal-dns
 # namespace. valuesFrom ConfigMaps are merged in order; the Flux Kustomization
-# patch below appends this one AFTER the base external-dns-values, so these keys
+# patch below appends this one AFTER the base internal-dns-values, so these keys
 # win. Sveltos instantiates the {{ .Cluster.metadata.name }} template.
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: external-dns-workload-values
+  name: internal-dns-workload-values
   namespace: projectsveltos
   annotations:
     projectsveltos.io/template: "true"
 data:
-  external-dns-workload-values.yaml: |
+  internal-dns-workload-values.yaml: |
     apiVersion: v1
     kind: ConfigMap
     metadata:
-      name: external-dns-workload-values
-      namespace: external-dns
+      name: internal-dns-workload-values
+      namespace: internal-dns
     data:
       values.yaml: |
         # Only sync records under THIS cluster's subdomain, so clusters sharing
@@ -157,15 +157,15 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: external-dns-flux-kustomization
+  name: internal-dns-flux-kustomization
   namespace: projectsveltos
 data:
-  external-dns-flux-kustomization.yaml: |
+  internal-dns-flux-kustomization.yaml: |
     apiVersion: kustomize.toolkit.fluxcd.io/v1
     kind: Kustomization
     metadata:
-      name: external-dns
-      namespace: external-dns
+      name: internal-dns
+      namespace: internal-dns
     spec:
       interval: 10m
       sourceRef:
@@ -182,21 +182,21 @@ data:
             apiVersion: helm.toolkit.fluxcd.io/v2
             kind: HelmRelease
             metadata:
-              name: external-dns
+              name: internal-dns
             spec:
               valuesFrom:
                 - kind: ConfigMap
-                  name: external-dns-values
+                  name: internal-dns-values
                 - kind: ConfigMap
-                  name: external-dns-workload-values
+                  name: internal-dns-workload-values
           target:
             kind: HelmRelease
-            name: external-dns
+            name: internal-dns
         # Drop the mgmt-only ESO plumbing from secret-credentials.yaml — a
         # workload cluster has no capo-system namespace and no capo-variables
         # secret, so these would never reconcile. The openstack-credentials
         # Secret is instead pushed directly by this ClusterProfile
-        # (external-dns-credentials ConfigMap above). The Namespace +
+        # (internal-dns-credentials ConfigMap above). The Namespace +
         # ServiceAccount from secret-credentials.yaml are retained.
         - patch: |
             $patch: delete
@@ -204,7 +204,7 @@ data:
             kind: SecretStore
             metadata:
               name: capo-system-secrets
-              namespace: external-dns
+              namespace: internal-dns
           target:
             kind: SecretStore
             name: capo-system-secrets
@@ -214,7 +214,7 @@ data:
             kind: ExternalSecret
             metadata:
               name: openstack-credentials
-              namespace: external-dns
+              namespace: internal-dns
           target:
             kind: ExternalSecret
             name: openstack-credentials
@@ -233,8 +233,8 @@ data:
             apiVersion: rbac.authorization.k8s.io/v1
             kind: RoleBinding
             metadata:
-              name: external-dns-capo-variables-reader
+              name: internal-dns-capo-variables-reader
               namespace: capo-system
           target:
             kind: RoleBinding
-            name: external-dns-capo-variables-reader
+            name: internal-dns-capo-variables-reader

@@ -1,5 +1,5 @@
 # Base ExternalDNS Helm values, consumed by the HelmRelease via valuesFrom (the
-# `external-dns-values` ConfigMap generated in kustomization.yaml).
+# `internal-dns-values` ConfigMap generated in kustomization.yaml).
 #
 # These defaults target the MGMT cluster (flat rpcu.lan zone, registry: noop).
 # Workload clusters override the domain scoping / registry / env via a SECOND
@@ -12,7 +12,7 @@
 # workload clusters the SA is created by the Sveltos-pushed manifests instead.
 serviceAccount:
   create: false
-  name: external-dns
+  name: internal-dns
 
 sources:
   - ingress

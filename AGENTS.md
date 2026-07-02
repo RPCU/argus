@@ -1927,7 +1927,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 2026 (Updated `chihiro` configuration to support optional `external-dns` and `gateway-api` parameters via ConfigMap toggles. Updated all Sveltos ClusterProfiles to enable `spec.prune: true` for Flux `Kustomization` CRs to ensure proper cleanup. Updated `AGENTS.md` to reflect these changes.)
+**Last Updated**: July 2026 (Updated `chihiro` configuration to support optional `external-dns` and `gateway-api` parameters via ConfigMap toggles. Updated all Sveltos ClusterProfiles to enable `spec.prune: true` for Flux `Kustomization` CRs to ensure proper cleanup. Added `dns_manager` role to `ccm-credential` Composition to resolve 401 authentication errors for Cinder CSI. Updated `AGENTS.md` to reflect these changes.)
 **Repository**: <https://github.com/RPCU/argus.git>
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

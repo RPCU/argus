@@ -92,6 +92,8 @@ data:
             sveltos.argus.rpcu.io/capi-management: {{ chihiro.mgmt }}
             sveltos.argus.rpcu.io/vault-auth: {{ chihiro.vault }}
             sveltos.argus.rpcu.io/cert-manager: {{ chihiro.certManager }}
+            sveltos.argus.rpcu.io/external-dns: {{ chihiro.externalDns }}
+            sveltos.argus.rpcu.io/gateway-api: {{ chihiro.gatewayApi }}
             type: workload
         spec:
           clusterNetwork:
@@ -250,3 +252,21 @@ data:
           false_value: disabled
           editable: true
           path: "metadata.labels.'sveltos.argus.rpcu.io/cert-manager'"
+        externalDns:
+          label: "External DNS"
+          description: "Enable InternalDNS addon via Sveltos"
+          type: boolean
+          default: true
+          true_value: enabled
+          false_value: disabled
+          editable: true
+          path: "metadata.labels.'sveltos.argus.rpcu.io/external-dns'"
+        gatewayApi:
+          label: "Gateway API"
+          description: "Enable Gateway API and kgateway addon via Sveltos"
+          type: boolean
+          default: true
+          true_value: enabled
+          false_value: disabled
+          editable: true
+          path: "metadata.labels.'sveltos.argus.rpcu.io/gateway-api'"

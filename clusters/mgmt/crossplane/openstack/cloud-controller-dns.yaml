@@ -1,0 +1,65 @@
+# Shared admin-project DNS Application Credential for workload clusters.
+#
+# Creates a single app-cred in the ADMIN project (which owns the rpcu.lan
+# zone) with only the `dns_manager` role. Workload clusters' ExternalDNS
+# authenticates with this app-cred to manage recordsets in rpcu.lan.
+#
+# The `dns_manager` role is a narrow custom Keystone role granting only
+# recordset CRUD + zone/recordset read (see designate.yaml policy override).
+# The app-cred is unrestricted: false with roles: [dns_manager] — it cannot
+# do anything else (no lb, no member, no reader).
+#
+# The connection secret (cloud-controller-app-cred-dns) in crossplane-system
+# contains attribute.id and attribute.secret — the Sveltos external-dns
+# ClusterProfile templates the workload cluster's openstack-credentials from
+# these fields.
+# =============================================================================
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: RoleV3
+metadata:
+  name: cloud-controller-dns
+  namespace: crossplane-system
+spec:
+  forProvider:
+    name: dns_manager
+    description: "Narrow DNS management role: recordset CRUD + zone/recordset read (no zone write/delete, no lb/member/reader)"
+  providerConfigRef:
+    name: default
+    kind: ClusterProviderConfig
+---
+# RoleAssignment: yaook-sys-maint → dns_manager in admin project.
+# Required so the app-cred creation succeeds — Keystone requires the
+# app-cred's roles to be a subset of the authenticated user's roles.
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: RoleAssignmentV3
+metadata:
+  name: yaook-sys-maint-dns-admin
+  namespace: crossplane-system
+spec:
+  forProvider:
+    roleIdRef:
+      name: cloud-controller-dns
+    userId: "44b2b48fb89d4fde9d659bf01831d3b0"
+    projectId: "bae33843e66e4028b574e36cd0953fac"
+  providerConfigRef:
+    name: default
+    kind: ClusterProviderConfig
+---
+# ApplicationCredentialV3 in the admin project with dns_manager role only.
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: ApplicationCredentialV3
+metadata:
+  name: cloud-controller-dns
+  namespace: crossplane-system
+spec:
+  forProvider:
+    name: cloud-controller-dns
+    description: "Shared DNS app-cred for workload clusters' ExternalDNS (recordsets in rpcu.lan)"
+    roles:
+      - dns_manager
+    unrestricted: false
+  writeConnectionSecretToRef:
+    name: cloud-controller-app-cred-dns
+  providerConfigRef:
+    name: default
+    kind: ClusterProviderConfig

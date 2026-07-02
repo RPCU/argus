@@ -34,8 +34,9 @@
 #
 # The admin-project DNS app-cred (cloud-controller-dns) is created by Crossplane
 # in clusters/mgmt/crossplane/openstack/cloud-controller-dns.yaml with only
-# the dns_manager role. Its connection secret (attribute.id + attribute.secret)
-# is read by templateResourceRefs below. The clouds.yaml template hardcodes
+# the dns_manager role. The app-cred ID is read from the Crossplane resource's
+# status.atProvider.id; the secret is in the connection secret
+# (cloud-controller-app-cred-dns). The clouds.yaml template hardcodes
 # auth_url (gateway endpoint, unreachable from workload clusters) and
 # region_name (single-region deployment).
 #
@@ -58,15 +59,22 @@ spec:
       type: workload
       sveltos.argus.rpcu.io/external-dns: enabled
   # Read the admin-project DNS app-cred connection secret from the management
-  # cluster. This contains attribute.id (app-cred ID) and attribute.secret
-  # (app-cred secret), written by Crossplane's ApplicationCredentialV3
-  # (cloud-controller-dns in crossplane-system).
+  # cluster (contains attribute.secret — the app-cred secret). The OpenStack
+  # Crossplane provider does NOT write attribute.id to the connection secret;
+  # the app-cred ID is in the ApplicationCredentialV3's status.atProvider.id,
+  # so we also register the resource itself.
   templateResourceRefs:
     - resource:
         apiVersion: v1
         kind: Secret
         namespace: crossplane-system
         name: cloud-controller-app-cred-dns
+      identifier: DnsAppCredSecret
+    - resource:
+        apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+        kind: ApplicationCredentialV3
+        namespace: crossplane-system
+        name: cloud-controller-dns
       identifier: DnsAppCred
   policyRefs:
     - name: internal-dns-credentials
@@ -81,9 +89,10 @@ spec:
 ---
 # Shared admin-project DNS credentials, generated DYNAMICALLY. Sveltos
 # instantiates this template on the management cluster:
-#   - DnsAppCred: the admin-project DNS app-cred connection secret from
-#                  crossplane-system. The template extracts attribute.id
-#                  (app-cred ID) and attribute.secret (app-cred secret).
+#   - DnsAppCredSecret: the app-cred connection secret from crossplane-system
+#                        (contains attribute.secret).
+#   - DnsAppCred: the ApplicationCredentialV3 resource itself
+#                  (status.atProvider.id has the app-cred ID).
 #
 # It deploys an Opaque Secret openstack-credentials into the workload cluster's
 # internal-dns namespace with a single clouds.yaml key under the cloud name
@@ -101,9 +110,10 @@ metadata:
     projectsveltos.io/template: "true"
 data:
   internal-dns-credentials.yaml: |
+    {{- $appCredSecret := getResource "DnsAppCredSecret" }}
     {{- $appCred := getResource "DnsAppCred" }}
-    {{- $appCredId := $appCred.data.attribute.id | b64dec }}
-    {{- $appCredSecret := $appCred.data.attribute.secret | b64dec }}
+    {{- $appCredId := $appCred.status.atProvider.id }}
+    {{- $appCredSecretVal := $appCredSecret.data.attribute.secret | b64dec }}
     apiVersion: v1
     kind: Secret
     metadata:
@@ -117,7 +127,7 @@ data:
             auth:
               auth_url: https://keystone.rpcu.vpn
               application_credential_id: "{{ $appCredId }}"
-              application_credential_secret: "{{ $appCredSecret }}"
+              application_credential_secret: "{{ $appCredSecretVal }}"
             region_name: eu-central
             verify: false
             interface: public

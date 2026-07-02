@@ -10,9 +10,9 @@
 # do anything else (no lb, no member, no reader).
 #
 # The connection secret (cloud-controller-app-cred-dns) in crossplane-system
-# contains attribute.id and attribute.secret — the Sveltos external-dns
-# ClusterProfile templates the workload cluster's openstack-credentials from
-# these fields.
+# contains attribute.secret — the Sveltos external-dns ClusterProfile reads the
+# app-cred ID from the ApplicationCredentialV3's status.atProvider.id and the
+# secret from the connection secret.
 # =============================================================================
 apiVersion: identity.openstack.m.crossplane.io/v1alpha1
 kind: RoleV3

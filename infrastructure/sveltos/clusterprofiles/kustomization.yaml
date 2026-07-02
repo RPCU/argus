@@ -9,3 +9,4 @@ resources:
   - vault-auth.yaml
   - cert-manager.yaml
   - external-dns.yaml
+  - gateway-api.yaml

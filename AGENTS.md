@@ -806,43 +806,44 @@ sveltos.argus.rpcu.io/cert-manager: enabled}`; `dependsOn: flux-instance` (it
   as `openstack-ccm`/`openstack-cinder-csi`: not bootstrap-critical, and a
   helmChart would fight Flux over the same release; Flux is the SOLE owner).
   Three things are pushed: **(1)** the `openstack-credentials` Secret
-  (external-dns ns) — the per-project Application Credential `clouds.yaml`
-  rendered by Sveltos from the mgmt `cloud-controller-app-creds` Secret (the SAME
-  multi-project source `openstack-ccm` uses), scoped to THIS cluster's project
-  only (the project is resolved from the workload cluster's `OpenStackCluster`
-  `spec.identityRef.cloudName` via `templateResourceRefs`, identical to
-  `openstack-ccm`); the inovex Designate webhook reads it at
-  `/etc/openstack/clouds.yaml`. **(2)** the templated `external-dns-workload-values`
-  ConfigMap (external-dns ns) — overrides the mgmt base values with a per-cluster
-  `domainFilters: [<cluster>.rpcu.lan]`, and RE-ENABLES the TXT ownership
-  registry (`registry: txt`, `txtOwnerId: <cluster>`, `txtPrefix: edns-`) which
-  the mgmt base disables (`registry: noop`) — so each cluster only manages its
-  own records and clusters never collide in the flat zone. **(3)** the Flux
-  Kustomization CR wrapping the SAME base `infrastructure/external-dns` as mgmt
-  (no separate workload overlay), patched to append that ConfigMap as a SECOND
-  `valuesFrom` (Helm merges valuesFrom in order — later wins) AND to
-  `$patch: delete` the four mgmt-only resources from `secret-credentials.yaml`
-  (the ESO `SecretStore`/`ExternalSecret` reading `capo-variables` + the
-  `capo-system` Role/RoleBinding), which can't reconcile on a workload cluster;
-  the Namespace + ServiceAccount are kept. **Opt-in**:
-  `clusterSelector: matchLabels: {type: workload, sveltos.argus.rpcu.io/external-dns:
-enabled}`; `dependsOn: flux-instance` (it pushes a Flux Kustomization CR +
-  HelmRelease reconciled by the kustomize/helm controllers, which only exist once
-  Flux is installed). RBAC for the `OpenStackCluster` + `cloud-controller-app-creds`
-  reads is already granted by `addon-controller-argus-template-reader`
-  (`rbac.yaml`) for the `openstack-ccm` profile. Listed in
-  `clusterprofiles/kustomization.yaml`. **Prereqs on mgmt**: the
-  `cloud-controller-app-creds` Secret (mgmt ns) must carry a `<project>-clouds.yaml`
-  entry for the cluster's project (add it to
-  `clusters/mgmt/crossplane/cloud-controller-eso/cloud-controller-app-cred-multi.yaml`);
-  the `auth_url` there is the gateway endpoint `https://keystone.rpcu.vpn` (the
-  in-cluster Keystone is unreachable from a workload cluster). **DNS permission**:
-  workload clusters use a SHARED admin-project DNS app-cred
-  (`cloud-controller-dns` in `clusters/mgmt/crossplane/openstack/cloud-controller-dns.yaml`)
-  with only the `dns_manager` role — all clusters share the same app-cred;
-  subdomain isolation is enforced by the per-cluster `domainFilters` and the
-  Designate `policy:` block (`infrastructure/yaook/designate.yaml`) which
-  OR-s `role:dns_manager` into the recordset CRUD + zone-read targets.
+  (external-dns ns) — the SHARED admin-project DNS Application Credential
+  `clouds.yaml`, rendered by Sveltos from the mgmt
+  `crossplane-system/cloud-controller-app-cred-dns` Secret (the connection
+  secret of the admin-project app-cred with `dns_manager` role only, created
+  by Crossplane in `clusters/mgmt/crossplane/openstack/cloud-controller-dns.yaml`);
+  ALL workload clusters share the same app-cred; subdomain isolation is enforced
+  by Designate policy (`dns_manager` can only manage recordsets, not zones) and
+  the per-cluster `domainFilters` below. The inovex Designate webhook reads it
+  at `/etc/openstack/clouds.yaml`. **(2)** the templated
+  `external-dns-workload-values` ConfigMap (external-dns ns) — overrides the mgmt
+  base values with a per-cluster `domainFilters: [<cluster>.rpcu.lan]`, and
+  RE-ENABLES the TXT ownership registry (`registry: txt`,
+  `txtOwnerId: <cluster>`, `txtPrefix: edns-`) which the mgmt base disables
+  (`registry: noop`) — so each cluster only manages its own records and clusters
+  never collide in the flat zone. **(3)** the Flux Kustomization CR wrapping
+  the SAME base `infrastructure/external-dns` as mgmt (no separate workload
+  overlay), patched to append that ConfigMap as a SECOND `valuesFrom` (Helm
+  merges valuesFrom in order — later wins) AND to `$patch: delete` the four
+  mgmt-only resources from `secret-credentials.yaml` (the ESO
+  `SecretStore`/`ExternalSecret` reading `capo-variables` + the `capo-system`
+  Role/RoleBinding), which can't reconcile on a workload cluster; the Namespace
+  - ServiceAccount are kept. **Opt-in**: `clusterSelector: matchLabels:
+{type: workload, sveltos.argus.rpcu.io/external-dns: enabled}`; `dependsOn:
+flux-instance` (it pushes a Flux Kustomization CR + HelmRelease reconciled by
+    the kustomize/helm controllers, which only exist once Flux is installed). RBAC
+    for the `cloud-controller-app-cred-dns` read is already granted by
+    `addon-controller-argus-template-reader` (`rbac.yaml`) for the
+    `openstack-ccm` profile. Listed in `clusterprofiles/kustomization.yaml`.
+    **Prereqs on mgmt**: the `cloud-controller-dns` Crossplane MR
+    (`clusters/mgmt/crossplane/openstack/cloud-controller-dns.yaml`) creates the
+    admin-project app-cred with `dns_manager` role; the `dns_manager` Keystone
+    role + `yaook-sys-maint` assignment in the admin project are colocated in
+    the same file. **DNS permission**: workload clusters use a SHARED
+    admin-project DNS app-cred with only the `dns_manager` role — all clusters
+    share the same app-cred; subdomain isolation is enforced by per-cluster
+    `domainFilters` and the Designate `policy:` block
+    (`infrastructure/yaook/designate.yaml`) which OR-s `role:dns_manager` into
+    the recordset CRUD + zone-read targets.
 
 - `kustomization.yaml` - Kustomization manifest (namespace, helmrepo, core
   helmrelease, rbac, clusterprofiles/). The main `sveltos/kustomization.yaml`

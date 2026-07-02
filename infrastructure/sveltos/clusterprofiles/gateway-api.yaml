@@ -38,6 +38,28 @@ spec:
     - name: gateway-api-flux-kustomizations
       namespace: projectsveltos
       kind: ConfigMap
+---
+# Workload resources (Gateway, GatewayParameters, Certificate, HTTPRoute,
+# HTTPListenerPolicy) live in a SEPARATE ClusterProfile that dependsOn the one
+# above. This orders them after the Flux Kustomizations that install the Gateway
+# API + kgateway CRDs — deploying the Gateway/GatewayParameters CRs before their
+# CRDs exist fails with `no matches for kind "GatewayParameters"`. With
+# ContinuousWithDriftDetection + this dependency, Sveltos retries until the CRDs
+# land and then the CRs apply cleanly.
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: gateway-api-resources
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  dependsOn:
+    - gateway-api
+  clusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/gateway-api: enabled
+  policyRefs:
     - name: gateway-api-workload-resources
       namespace: projectsveltos
       kind: ConfigMap

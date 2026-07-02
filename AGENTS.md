@@ -857,16 +857,16 @@ flux-instance` (it pushes a Flux Kustomization CR + HelmRelease reconciled by
   patched to replace the base's resources list with only `helmrelease.yaml` (strips
   the openstack-specific `gateway.yaml` and `httplistenerpolicy.yaml` from the
   kustomize build). Additionally, a templated ConfigMap pushes the **Gateway**
-  (hostname `*<cluster>.rpcu.lan`, annotated `cert-manager.io/cluster-issuer:
-vault-issuer`), **GatewayParameters** (LoadBalancer via OpenStack CCM, no Cilium
+  (hostname `*.cluster.rpcu.lan`, annotated `cert-manager.io/cluster-issuer:
+  vault-issuer`), **GatewayParameters** (LoadBalancer via OpenStack CCM, no Cilium
   lbipam annotation), **HTTPRoute** (HTTPS redirect), a manually-created
-  **Certificate** (`wildcard-tls` in kgateway-system, SAN `*<cluster>.rpcu.lan`,
+  **Certificate** (`wildcard-tls` in kgateway-system, SAN `*.cluster.rpcu.lan`,
   signed by `vault-issuer`), and **HTTPListenerPolicy** (WebSocket upgrades +
   access logs) directly to the workload cluster. Sveltos resolves
   `{{ .Cluster.metadata.name }}` in the hostname/Certificate SAN before pushing.
   The Certificate is signed by the per-cluster Vault PKI intermediate
   (`pki-int/sign/cm-<cluster>`); the per-cluster PKI role allows wildcard
-  certificates and subdomains of `<cluster>.rpcu.lan`, so `*<cluster>.rpcu.lan` is
+  certificates and subdomains of `<cluster>.rpcu.lan`, so `*.<cluster>.rpcu.lan` is
   accepted. HTTPRoutes attached to this Gateway are synced to Designate by the
   external-dns add-on (`domainFilters` scoped to `<cluster>.rpcu.lan`). **Opt-in**:
   `clusterSelector: matchLabels: {type: workload,
@@ -1438,7 +1438,7 @@ CAPI management cluster (self-management target via `clusterctl move`):
       (label `sveltos.argus.rpcu.io/cert-manager: enabled`)
     - `gateway-api` (`syncMode: ContinuousWithDriftDetection`,
       `dependsOn: cert-manager`) — deploys Gateway API CRDs, kgateway CRDs +
-      controller, and a workload-cluster Gateway (hostname `*<cluster>.rpcu.lan`,
+      controller, and a workload-cluster Gateway (hostname `*.cluster.rpcu.lan`,
       `vault-issuer` for TLS). Includes a manually-created wildcard Certificate
       (`wildcard-tls`) signed by the per-cluster Vault PKI intermediate. HTTPRoutes
       attached to the Gateway are synced to Designate by the external-dns add-on
@@ -1921,7 +1921,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 2026 (Fixed external-dns add-on template: the OpenStack Crossplane provider does NOT write `attribute.id` to the connection secret — only `attribute.secret`. Added a second `templateResourceRefs` entry (`DnsAppCred`) for the `ApplicationCredentialV3` resource itself, reading the app-cred ID from `status.atProvider.id`. Added gateway-api/kgateway Sveltos add-on for workload clusters: `infrastructure/sveltos/clusterprofiles/gateway-api.yaml` ClusterProfile. Flux takeover pattern: pushes Gateway API CRDs, kgateway CRDs + controller as Flux Kustomization CRs. The kgateway Flux Kustomization patches the base to strip openstack-specific `gateway.yaml` and `httplistenerpolicy.yaml` from the resources list (replaced with only `helmrelease.yaml`). Sveltos-templated ConfigMaps push the Gateway (hostname `*<cluster>.rpcu.lan`, `vault-issuer`), GatewayParameters (OpenStack CCM), a manually-created wildcard Certificate (`wildcard-tls`, SAN `*<cluster>.rpcu.lan`, signed by vault-issuer), HTTPRoute (HTTPS redirect), and HTTPListenerPolicy. Depends on cert-manager add-on for the vault-issuer ClusterIssuer. Renamed the ExternalDNS add-on to InternalDNS: namespace `external-dns` → `internal-dns`, HelmRelease `external-dns` → `internal-dns`, ServiceAccount `external-dns` → `internal-dns`, ConfigMap generator `external-dns-values` → `internal-dns-values`, RoleBinding `external-dns-capo-variables-reader` → `internal-dns-capo-variables-reader`. The upstream HelmRepository name stays `external-dns` (chart repo). Updated across infrastructure/external-dns/ base, infrastructure/sveltos/clusterprofiles/external-dns.yaml, clusters/mgmt/external-dns.yaml Flux Kustomization name, and AGENTS.md.)
+**Last Updated**: July 2026 (Fixed OCCM/Cinder CSI app-cred 401 regression: application credentials are inherently scoped to their creation project, so specifying an explicit `project_id` in the clouds.yaml `auth` block alongside `application_credential_name` makes Keystone reject the token request with 401 `Unauthorized` (verified: same app-cred returns 201 without scope, 401 with `scope.project.id`). Removed the `project_id` line from all app-cred auth blocks — `user_id` alone is sufficient to disambiguate the app-cred by name. Reverts commit `0a5d5d9`. Fixed in `clusters/mgmt/crossplane/cloud-controller-eso/cloud-controller-app-cred-multi.yaml` (lab + production), `infrastructure/sveltos/clusterprofiles/openstack-ccm.yaml`, and `infrastructure/sveltos/clusterprofiles/capi-management.yaml`. Fixed external-dns add-on template: the OpenStack Crossplane provider does NOT write `attribute.id` to the connection secret — only `attribute.secret`. Added a second `templateResourceRefs` entry (`DnsAppCred`) for the `ApplicationCredentialV3` resource itself, reading the app-cred ID from `status.atProvider.id`. Fixed external-dns template `region_name: eu-central` → `hetzner` (service catalog endpoints are region-scoped). Fixed gateway-api template wildcard hostname from `*<cluster>.rpcu.lan` → `*.<cluster>.rpcu.lan` (Gateway API validation requires dot separator after `*`). Added gateway-api/kgateway Sveltos add-on for workload clusters: `infrastructure/sveltos/clusterprofiles/gateway-api.yaml` ClusterProfile. Flux takeover pattern: pushes Gateway API CRDs, kgateway CRDs + controller as Flux Kustomization CRs. The kgateway Flux Kustomization patches the base to strip openstack-specific `gateway.yaml` and `httplistenerpolicy.yaml` from the resources list (replaced with only `helmrelease.yaml`). Sveltos-templated ConfigMaps push the Gateway (hostname `*.<cluster>.rpcu.lan`, `vault-issuer`), GatewayParameters (OpenStack CCM), a manually-created wildcard Certificate (`wildcard-tls`, SAN `*.<cluster>.rpcu.lan`, signed by vault-issuer), HTTPRoute (HTTPS redirect), and HTTPListenerPolicy. Depends on cert-manager add-on for the vault-issuer ClusterIssuer. Renamed the ExternalDNS add-on to InternalDNS: namespace `external-dns` → `internal-dns`, HelmRelease `external-dns` → `internal-dns`, ServiceAccount `external-dns` → `internal-dns`, ConfigMap generator `external-dns-values` → `internal-dns-values`, RoleBinding `external-dns-capo-variables-reader` → `internal-dns-capo-variables-reader`. The upstream HelmRepository name stays `external-dns` (chart repo). Updated across infrastructure/external-dns/ base, infrastructure/sveltos/clusterprofiles/external-dns.yaml, clusters/mgmt/external-dns.yaml Flux Kustomization name, and AGENTS.md.)
 **Repository**: <https://github.com/RPCU/argus.git>
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

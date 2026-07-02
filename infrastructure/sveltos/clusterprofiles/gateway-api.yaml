@@ -104,7 +104,7 @@ data:
       patches:
         # Strip the openstack-specific Gateway + HTTPListenerPolicy from the base
         # kustomization — workload clusters get these from the templated ConfigMap
-        # pushed by this ClusterProfile (hostname *<cluster>.rpcu.lan, vault-issuer,
+        # pushed by this ClusterProfile (hostname *.<cluster>.rpcu.lan, vault-issuer,
         # no Cilium lbipam annotation). Replace the resources list with only
         # helmrelease.yaml so kustomize build skips gateway.yaml and
         # httplistenerpolicy.yaml.
@@ -156,14 +156,14 @@ data:
         - protocol: HTTP
           port: 80
           name: http
-          hostname: "*{{ .Cluster.metadata.name }}.rpcu.lan"
+          hostname: "*.{{ .Cluster.metadata.name }}.rpcu.lan"
           allowedRoutes:
             namespaces:
               from: All
         - protocol: HTTPS
           port: 443
           name: https
-          hostname: "*{{ .Cluster.metadata.name }}.rpcu.lan"
+          hostname: "*.{{ .Cluster.metadata.name }}.rpcu.lan"
           allowedRoutes:
             namespaces:
               from: All
@@ -221,7 +221,7 @@ data:
         kind: ClusterIssuer
         group: cert-manager.io
       dnsNames:
-        - "*{{ .Cluster.metadata.name }}.rpcu.lan"
+        - "*.{{ .Cluster.metadata.name }}.rpcu.lan"
   httplistenerpolicy.yaml: |
     apiVersion: gateway.kgateway.dev/v1alpha1
     kind: HTTPListenerPolicy

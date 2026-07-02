@@ -208,7 +208,7 @@ data:
         name: flux-system
         namespace: flux-system
       path: ./infrastructure/openstack-ccm
-      prune: false
+      prune: true
       patches:
         - patch: |
             apiVersion: helm.toolkit.fluxcd.io/v2

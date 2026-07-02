@@ -61,7 +61,7 @@ data:
         name: flux-system
         namespace: flux-system
       path: ./infrastructure/external-snapshotter/crds
-      prune: false
+      prune: true
   external-snapshotter-controller.yaml: |
     apiVersion: kustomize.toolkit.fluxcd.io/v1
     kind: Kustomization
@@ -77,4 +77,4 @@ data:
         name: flux-system
         namespace: flux-system
       path: ./infrastructure/external-snapshotter/controller
-      prune: false
+      prune: true

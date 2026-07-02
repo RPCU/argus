@@ -325,7 +325,7 @@ data:
         name: flux-system
         namespace: flux-system
       path: ./infrastructure/cert-manager
-      prune: false
+      prune: true
 ---
 # The vault-auth ServiceAccount (+ bound token + system:auth-delegator), the
 # root-mgmt CA bundle, and the vault-issuer ClusterIssuer, applied on the workload

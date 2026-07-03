@@ -134,9 +134,16 @@ data:
     spec:
       forProvider:
         name: secrets-{{ .Cluster.metadata.name }}
+        # ExternalSecrets only need read, but PushSecrets (e.g. atlas jellyfin
+        # OIDC → Vault) write to the KV-v2 data path and manage the metadata
+        # path, so grant full CRUD + list on both. Without create/update on
+        # data/* the push fails with 403 permission denied.
         policy: |
           path "secrets-{{ .Cluster.metadata.name }}/data/*" {
-            capabilities = ["read"]
+            capabilities = ["create", "read", "update", "patch", "delete"]
+          }
+          path "secrets-{{ .Cluster.metadata.name }}/metadata/*" {
+            capabilities = ["create", "read", "update", "patch", "delete", "list"]
           }
       providerConfigRef:
         name: default

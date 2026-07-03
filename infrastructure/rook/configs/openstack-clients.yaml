@@ -17,25 +17,3 @@ spec:
   caps:
     mon: "profile rbd"
     osd: "profile rbd pool=rdb-pool"
----
-# CephFS client for EXTERNAL clusters (mgmt + opt-in workload clusters) that
-# consume the rpcu-fs filesystem remotely via the standalone ceph-csi-cephfs
-# driver. Rook writes the generated key into the `rook-ceph-client-cephfs`
-# Secret (rook-ceph ns); that key + the mon endpoints + the CephFS cluster FSID
-# are what the external ceph-csi driver needs (delivered off-cluster via the
-# mgmt Vault + ESO — see infrastructure/ceph-csi-cephfs).
-#
-# Caps grant full access to the CephFS filesystem + its data/metadata pools:
-#   - mon "allow r"                       — read the mon map / cluster state
-#   - mds "allow rw"                      — read/write the CephFS namespace
-#   - osd "allow rw tag cephfs data=rpcu-fs" — read/write the fs data objects
-apiVersion: ceph.rook.io/v1
-kind: CephClient
-metadata:
-  name: cephfs
-  namespace: rook-ceph
-spec:
-  caps:
-    mon: "allow r"
-    mds: "allow rw"
-    osd: "allow rw tag cephfs data=rpcu-fs"

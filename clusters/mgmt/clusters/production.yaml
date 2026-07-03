@@ -7,7 +7,7 @@ metadata:
     kustomize.toolkit.fluxcd.io/prune: disabled
   labels:
     type: workload
-    sveltos.argus.rpcu.io/ceph-csi-cephfs: enabled
+    sveltos.argus.rpcu.io/csi-driver-nfs: enabled
     sveltos.argus.rpcu.io/external-dns: enabled
     sveltos.argus.rpcu.io/gateway-api: enabled
     sveltos.argus.rpcu.io/cert-manager: enabled

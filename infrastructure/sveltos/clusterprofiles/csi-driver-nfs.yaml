@@ -1,0 +1,62 @@
+# csi-driver-nfs for OPT-IN workload clusters — provides ReadWriteMany (RWX)
+# volumes backed by the openstack cluster's rpcu-fs CephFilesystem, exported
+# over NFS by the Rook CephNFS gateway (rpcu-nfs) at the pinned LB IP
+# 10.0.0.245 (infrastructure/rook/configs/cephnfs.yaml).
+#
+# Replaces the former ceph-csi-cephfs add-on: the openstack Rook cluster is
+# POD-networked, so its mgr/MDS/OSDs advertise pod/ClusterIP addresses that
+# are unreachable from the OpenStack VMs the workload clusters run on —
+# direct ceph-csi could never provision (CreateVolume hung until the CSI
+# deadline; PVCs stayed Pending). The NFS gateway runs in-cluster; consumers
+# only need TCP/2049 to its LB IP.
+#
+# Delivered as a Flux takeover (same rationale as openstack-cinder-csi: not
+# bootstrap-critical; Flux is the SOLE owner). ONE thing is pushed: the Flux
+# Kustomization CR pointing at ./infrastructure/csi-driver-nfs. The base is
+# identical for every cluster — no per-cluster values, no secrets, no
+# Vault/ESO involvement (the StorageClass keeps the `ceph-cephfs` name for
+# compatibility with existing PVC manifests).
+#
+# Gated by the opt-in label sveltos.argus.rpcu.io/csi-driver-nfs: enabled.
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: csi-driver-nfs
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  dependsOn:
+    # Pushes a Flux Kustomization CR + HelmRelease reconciled by the kustomize/
+    # helm controllers, which only exist once Flux is installed.
+    - flux-instance
+  clusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/csi-driver-nfs: enabled
+  policyRefs:
+    - name: csi-driver-nfs-flux-kustomization
+      namespace: projectsveltos
+      kind: ConfigMap
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: csi-driver-nfs-flux-kustomization
+  namespace: projectsveltos
+data:
+  csi-driver-nfs-flux-kustomization.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: csi-driver-nfs
+      namespace: kube-system
+    spec:
+      interval: 10m
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/csi-driver-nfs
+      prune: true
+      wait: true
+      timeout: 5m

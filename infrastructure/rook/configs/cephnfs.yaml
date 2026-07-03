@@ -1,0 +1,58 @@
+# NFS-Ganesha gateway exporting the rpcu-fs CephFilesystem to EXTERNAL
+# clusters (mgmt + opt-in workload clusters), which consume it via the
+# csi-driver-nfs provisioner (infrastructure/csi-driver-nfs) for
+# ReadWriteMany (RWX) volumes.
+#
+# WHY NFS and not the ceph-csi-cephfs driver: this Rook cluster runs on POD
+# networking, so every Ceph daemon advertises pod/ClusterIP addresses
+# (10.244.x / 10.96.x) in the cluster maps. An external ceph-csi client must
+# connect DIRECTLY to the active mgr (subvolume provisioning) and to the
+# MDS/OSDs (mount + IO) at those advertised addresses — unreachable from the
+# OpenStack VMs the other clusters run on. Fronting the mons with
+# LoadBalancers is not sufficient (CreateVolume hangs until the CSI deadline;
+# PVCs stay Pending forever). The NFS gateway runs IN-cluster (full Ceph
+# connectivity) and external clients only need plain NFS/2049 to its
+# LoadBalancer IP — no Ceph map connectivity at all.
+#
+# The export is created ONCE, out of band, via the toolbox (the mgr `nfs`
+# module stores it in the .nfs RADOS pool — it survives restarts):
+#
+#   kubectl -n rook-ceph exec deploy/rook-ceph-tools -- \
+#     ceph nfs export create cephfs rpcu-nfs /rpcu-fs rpcu-fs --path=/
+#
+apiVersion: ceph.rook.io/v1
+kind: CephNFS
+metadata:
+  name: rpcu-nfs
+  namespace: rook-ceph
+spec:
+  server:
+    active: 1
+    logLevel: NIV_INFO
+---
+# LoadBalancer Service pinning the NFS gateway on the Cilium L2 pool
+# ("internal", 10.0.0.240-253; 240 kgateway, 241 powerdns, 245 NFS). This IP
+# is what the consuming clusters' `ceph-cephfs` StorageClass points at
+# (infrastructure/csi-driver-nfs/storageclass.yaml `server:` parameter — keep
+# the two in sync). Rook's own ClusterIP service remains for intra-cluster
+# use; this one is additive.
+apiVersion: v1
+kind: Service
+metadata:
+  name: rook-ceph-nfs-rpcu-nfs-external
+  namespace: rook-ceph
+  labels:
+    app: rook-ceph-nfs
+    ceph_nfs: rpcu-nfs
+spec:
+  type: LoadBalancer
+  loadBalancerIP: 10.0.0.245
+  selector:
+    app: rook-ceph-nfs
+    ceph_nfs: rpcu-nfs
+    instance: a
+  ports:
+    - name: nfs
+      port: 2049
+      protocol: TCP
+      targetPort: 2049

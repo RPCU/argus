@@ -1,0 +1,23 @@
+# RWX StorageClass backed by the openstack cluster's rpcu-fs CephFilesystem,
+# exported over NFS by the rook CephNFS gateway (rpcu-nfs) at the pinned
+# Cilium LB IP 10.0.0.245 (infrastructure/rook/configs/cephnfs.yaml — keep the
+# `server` parameter in sync with that Service's loadBalancerIP).
+#
+# The name is kept as `ceph-cephfs` (the storage IS CephFS, consumed via NFS)
+# so existing PVC manifests written against the former ceph-csi-cephfs driver
+# keep working unchanged. csi-driver-nfs provisions one subdirectory per PV
+# under the export root.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ceph-cephfs
+provisioner: nfs.csi.k8s.io
+parameters:
+  server: 10.0.0.245
+  share: /rpcu-fs
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
+mountOptions:
+  - nfsvers=4.1
+  - hard

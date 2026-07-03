@@ -1,0 +1,9 @@
+# mgmt overlay for the external CephFS CSI driver. Bases the shared
+# infrastructure/ceph-csi-cephfs and adds the mgmt-specific
+# ceph-csi-cephfs-cluster-values ConfigMap (remote Ceph FSID + mon endpoints)
+# in the same namespace as the HelmRelease, so the second-valuesFrom patch in
+# clusters/mgmt/ceph-csi-cephfs.yaml resolves without a cross-Kustomization
+# namespace race.
+resources:
+  - ../../../infrastructure/ceph-csi-cephfs
+  - cluster-values.yaml

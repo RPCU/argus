@@ -1,0 +1,57 @@
+# ceph-csi-cephfs (upstream Ceph CSI) values — EXTERNAL cluster mode.
+#
+# This deploys the standalone CephFS CSI driver on a cluster that has NO local
+# Ceph (mgmt / workload clusters run as OpenStack VMs). It connects back to the
+# EXISTING Rook/Ceph cluster on the bare-metal openstack cluster (rpcu-fs
+# CephFilesystem) to provide ReadWriteMany (RWX) volumes.
+#
+# The connection details differ per consuming cluster, so this base file
+# intentionally leaves `csiConfig` empty — the real clusterID + mon endpoints
+# are supplied by a SECOND valuesFrom override (see helmrelease.yaml). The
+# CephFS user credentials (adminID/adminKey) are NOT in Helm values; they are
+# delivered out of band as the `csi-cephfs-secret` Secret rendered from the mgmt
+# Vault by ESO (secret.yaml / the Sveltos add-on), and referenced by the
+# StorageClass below.
+
+# csiConfig maps the Ceph clusterID (the cluster FSID) to its monitor list.
+# OVERRIDDEN per cluster — left empty here.
+csiConfig: []
+
+# The StorageClass is created by this chart (not the openstack Rook one — that
+# `cephfs` class only works in-cluster). This external RWX class references the
+# rpcu-fs filesystem on the remote Ceph cluster and the ESO-rendered
+# csi-cephfs-secret.
+storageClass:
+  create: true
+  name: ceph-cephfs
+  # clusterID = the remote Ceph cluster FSID; MUST match a csiConfig entry.
+  # Overridden per cluster along with csiConfig.
+  clusterID: ""
+  fsName: rpcu-fs
+  # The pool is optional for CephFS (the fs default data pool is used when
+  # empty); the remote data pool is rpcu-fs-data0.
+  pool: "rpcu-fs-data0"
+  provisionVolume: true
+  # Reference the ESO-rendered CephFS user secret (adminID/adminKey).
+  provisionerSecret: csi-cephfs-secret
+  provisionerSecretNamespace: ceph-csi-cephfs
+  controllerExpandSecret: csi-cephfs-secret
+  controllerExpandSecretNamespace: ceph-csi-cephfs
+  nodeStageSecret: csi-cephfs-secret
+  nodeStageSecretNamespace: ceph-csi-cephfs
+  reclaimPolicy: Delete
+  allowVolumeExpansion: true
+  mountOptions: []
+  # Not the cluster default — only workloads that explicitly need RWX request it.
+  isDefault: false
+
+# The chart can also create the secret from values, but we render it from Vault
+# via ESO instead (keys out of Git). Disable chart secret creation.
+secret:
+  create: false
+  name: csi-cephfs-secret
+
+# Pin the CSI provisioning sidecars conservatively at chart defaults. The
+# nodeplugin needs host access to mount CephFS.
+provisioner:
+  replicaCount: 2

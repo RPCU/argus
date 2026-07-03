@@ -1,0 +1,25 @@
+# mgmt-specific override for the external CephFS CSI driver: the remote Ceph
+# cluster FSID (clusterID) + monitor endpoints of the openstack Rook cluster.
+# Appended as a second valuesFrom by clusters/mgmt/ceph-csi-cephfs.yaml so it
+# overrides the empty csiConfig/clusterID in the base values.yaml.
+#
+# TODO(operator): fill in the real FSID and mon endpoints from the openstack
+# cluster (they are not in Git):
+#   kubectl -n rook-ceph get cephcluster rook-ceph -o jsonpath='{.status.ceph.fsid}'
+#   kubectl -n rook-ceph get cm rook-ceph-mon-endpoints -o jsonpath='{.data.data}'
+# The mons (10.0.0.0/24) must be routable from the mgmt cluster.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ceph-csi-cephfs-cluster-values
+  namespace: ceph-csi-cephfs
+data:
+  values.yaml: |
+    csiConfig:
+      - clusterID: "REPLACE_WITH_CEPH_FSID"
+        monitors:
+          - "REPLACE_WITH_MON_1:6789"
+          - "REPLACE_WITH_MON_2:6789"
+          - "REPLACE_WITH_MON_3:6789"
+    storageClass:
+      clusterID: "REPLACE_WITH_CEPH_FSID"

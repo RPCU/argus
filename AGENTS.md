@@ -159,6 +159,8 @@ Key files:
 - `external-snapshotter-crds.yaml` - external-snapshotter VolumeSnapshot CRDs (shared `infrastructure/external-snapshotter/crds`, v8.6.0)
 - `external-snapshotter.yaml` - snapshot-controller Deployment + RBAC (shared `infrastructure/external-snapshotter/controller`, dependsOn external-snapshotter-crds)
 - `openstack-cinder-csi.yaml` - Cinder CSI Driver (DaemonSet + Deployment), provides `StorageClass` for Cinder PVCs (dependsOn openstack-ccm-identity + external-snapshotter-crds — its csi-snapshotter sidecar needs the VolumeSnapshot CRDs)
+- `ceph-csi-cephfs.yaml` - External CephFS CSI driver, provides a **ReadWriteMany (RWX)** `StorageClass` (`ceph-cephfs`) backed by the openstack cluster's `rpcu-fs` CephFilesystem (dependsOn external-secrets + crossplane-resources for the `vault-backend` store; `wait: false` — the `csi-cephfs-secret` ExternalSecret needs the mgmt Vault path `secrets-mgmt/ceph-csi` populated out of band). Path is the mgmt overlay `./clusters/mgmt/ceph-csi-cephfs` (bases `infrastructure/ceph-csi-cephfs` + adds the `ceph-csi-cephfs-cluster-values` ConfigMap with the remote Ceph FSID + mon endpoints, appended as a second `valuesFrom`).
+- `ceph-csi-cephfs/` - mgmt overlay for the external CephFS CSI driver. `cluster-values.yaml` = the `ceph-csi-cephfs-cluster-values` ConfigMap (remote Ceph FSID + mons, placeholders to fill in); `kustomization.yaml` bases `../../../infrastructure/ceph-csi-cephfs`.
 - `external-dns.yaml` - InternalDNS with Designate provider, syncs Service/Gateway DNS records into the rpcu.lan zone (dependsOn external-secrets; `wait: false` — ESO-rendered openstack-credentials secret requires the manual capo-variables secret first)
 - `crossplane.yaml` - Crossplane Helm install (shared `infrastructure/crossplane`, dependsOn nothing)
 - `crossplane-providers.yaml` - provider-random base (shared `infrastructure/crossplane-providers`, dependsOn crossplane). Currently unused / failing to install — candidate for removal.
@@ -267,10 +269,21 @@ _rook/configs/_ - Ceph cluster configuration
 
 - `cephcluster.yaml` - Ceph cluster with 3 monitors (lucy, makise, quinn)
 - `cephblockpool.yaml` - RBD block pool
+- `cephfilesystem.yaml` - CephFS filesystem `rpcu-fs` (replica-2 metadata +
+  `data0` data pools on nvme, `activeCount: 1` MDS with standby-replay,
+  `preserveFilesystemOnDelete: true`). Provides the shared POSIX filesystem
+  needed for **ReadWriteMany (RWX)** volumes (RBD/`general` is RWO-only).
 - `cephobjectstore.yaml` - S3-compatible object storage
 - `cephobjectstoreuser.yaml` - Object store credentials
-- `storageclassrdb.yaml` - RBD storage class
-- `openstack-clients.yaml` - OpenStack client pods
+- `storageclassrdb.yaml` - RBD storage class (`general`, cluster default, RWO)
+- `storageclasscephfs.yaml` - CephFS storage class (`cephfs`,
+  `rook-ceph.cephfs.csi.ceph.com` provisioner, fsName `rpcu-fs`, RWX-capable,
+  NOT default). In-cluster (openstack) RWX only — external clusters use
+  `infrastructure/ceph-csi-cephfs`.
+- `openstack-clients.yaml` - CephClients: `glance` + `cinder` (rbd caps) and
+  `cephfs` (mon `allow r` / mds `allow rw` / osd `allow rw tag cephfs
+data=rpcu-fs`). The `cephfs` client key (`rook-ceph-client-cephfs` Secret) is
+  what EXTERNAL clusters use to authenticate the standalone CephFS CSI driver.
 - `toolbox-deployment.yaml` - Ceph admin toolbox
 - `yaook-secret-reader-rbac.yaml` - RBAC allowing yaook to read secrets
 - `gateway/` - Gateway API resources for Rook services
@@ -283,6 +296,44 @@ _rook/configs/_ - Ceph cluster configuration
 - `helmrelease.yaml` - Helm chart
 - `helmrepo.yaml` - Repository reference
 - `kustomization.yaml` - Kustomization manifest
+
+**ceph-csi-cephfs/** - External CephFS CSI driver (RWX) — upstream Ceph CSI (chart v3.15.0)
+
+Standalone upstream [Ceph CSI](https://github.com/ceph/ceph-csi) CephFS driver
+for clusters with **no local Ceph** (the mgmt cluster and opt-in workload
+clusters run as OpenStack VMs). Connects back to the EXISTING Rook/Ceph cluster
+on the bare-metal `openstack` cluster (the `rpcu-fs` CephFilesystem) to provide
+**ReadWriteMany (RWX)** volumes. The in-cluster `general` (RBD) StorageClass is
+RWO-only; RWX needs a shared filesystem (CephFS).
+
+- `namespace.yaml` - Namespace `ceph-csi-cephfs`
+- `helmrepo.yaml` - HelmRepository (`https://ceph.github.io/csi-charts`)
+- `helmrelease.yaml` - `ceph-csi-cephfs` chart v3.15.0. Reads base `values.yaml`
+  via `valuesFrom`; the consumer appends a SECOND `valuesFrom` with the
+  per-cluster `csiConfig` (remote Ceph FSID + mon list) + StorageClass
+  `clusterID`.
+- `values.yaml` - Base values. `csiConfig` intentionally empty / StorageClass
+  `clusterID` blank (overridden per cluster). Creates the RWX `ceph-cephfs`
+  StorageClass (fsName `rpcu-fs`, pool `rpcu-fs-data0`, NOT default) referencing
+  the ESO-rendered `csi-cephfs-secret`. `secret.create: false`.
+- `externalsecret.yaml` - ESO `ExternalSecret` rendering `csi-cephfs-secret`
+  (`adminID`/`adminKey`) from the mgmt Vault via the `vault-backend`
+  ClusterSecretStore, KV path `<mount>/ceph-csi` (`secrets-mgmt` on mgmt,
+  `secrets-<cluster>` on workload clusters). Seed the key out of band from the
+  openstack cluster's `rook-ceph-client-cephfs` Secret (see `README.md`).
+- `README.md` - Pieces, per-cluster override recipe (FSID + mons), Vault
+  credential bootstrap.
+- `kustomization.yaml` - Kustomization manifest (`configMapGenerator`
+  `ceph-csi-cephfs-values`, `disableNameSuffixHash: true`).
+
+> The remote Ceph FSID + mon endpoints are NOT in Git (placeholders). Fill them
+> in per consuming cluster: mgmt via the overlay
+> `clusters/mgmt/ceph-csi-cephfs/cluster-values.yaml`; workload clusters via the
+> Sveltos `ceph-csi-cephfs` ClusterProfile's `ceph-csi-cephfs-cluster-values`
+> ConfigMap. The openstack Ceph mons (`10.0.0.0/24`) must be routable from the
+> consuming cluster. **REQUIRES the `vault-auth` add-on** on workload clusters
+> (it provisions the `vault-backend` ClusterSecretStore + the per-cluster Vault
+> mount the ExternalSecret reads).
 
 **crossplane/** - Universal Control Plane (v2.2.0)
 
@@ -844,6 +895,26 @@ flux-instance` (it pushes a Flux Kustomization CR + HelmRelease reconciled by
     (`infrastructure/yaook/designate.yaml`) which OR-s `role:dns_manager` into
     the recordset CRUD + zone-read targets.
 
+- `clusterprofiles/ceph-csi-cephfs.yaml` - **Per-child-cluster CephFS CSI driver
+  (RWX)**. Gives each OPT-IN workload cluster the upstream Ceph CSI CephFS
+  driver, providing **ReadWriteMany (RWX)** volumes backed by the EXISTING
+  Rook/Ceph cluster on the bare-metal openstack cluster (`rpcu-fs`
+  CephFilesystem). Delivered as a Flux takeover (same pattern as
+  openstack-ccm/openstack-cinder-csi/external-dns). Two things are pushed: the
+  `ceph-csi-cephfs-cluster-values` ConfigMap (ceph-csi-cephfs ns) containing the
+  remote Ceph FSID + monitor endpoints (identical across all workload clusters —
+  one openstack Ceph cluster), and the Flux Kustomization CR wrapping
+  `./infrastructure/ceph-csi-cephfs` patched to append that ConfigMap as a second
+  `valuesFrom`. The ExternalSecret for `csi-cephfs-secret` (adminID/adminKey) is
+  in the base and reads from the workload cluster's Vault mount
+  (`secrets-<cluster>/ceph-csi`) via the `vault-backend` ClusterSecretStore.
+  **Opt-in**: `clusterSelector: matchLabels: {type: workload,
+sveltos.argus.rpcu.io/ceph-csi-cephfs: enabled}`; `dependsOn: [flux-instance,
+vault-auth]` (pushes a Flux Kustomization CR + needs the vault-backend store
+  - per-cluster Vault mount). The CephFS client key must be seeded in Vault per
+    cluster out of band (see `infrastructure/ceph-csi-cephfs/README.md`). Listed
+    in `clusterprofiles/kustomization.yaml`.
+
 - `clusterprofiles/gateway-api.yaml` - **Per-child-cluster Gateway API + kgateway
   add-on**. Gives each OPT-IN workload cluster the Gateway API CRDs, the kgateway
   controller, and a workload-cluster Gateway for TLS-terminated HTTP/HTTPS
@@ -1300,6 +1371,7 @@ _fluxcd/instances/_ - Instance configuration
 | capi-operator        | 0.27.0  | kubernetes-sigs.github.io/cluster-api-operator | 5m            |
 | openstack-ccm        | 2.35.0  | kubernetes.github.io/cloud-provider-openstack  | 5m            |
 | openstack-cinder-csi | 2.35.0  | kubernetes.github.io/cloud-provider-openstack  | 5m            |
+| ceph-csi-cephfs      | 3.15.0  | ceph.github.io/csi-charts                      | 5m            |
 | external-dns         | 1.21.1  | kubernetes-sigs.github.io/external-dns/        | 5m            |
 
 ---
@@ -1449,6 +1521,17 @@ CAPI management cluster (self-management target via `clusterctl move`):
       (`wildcard-tls`) signed by the per-cluster Vault PKI intermediate. HTTPRoutes
       attached to the Gateway are synced to Designate by the external-dns add-on
       (label `sveltos.argus.rpcu.io/gateway-api: enabled`)
+    - `ceph-csi-cephfs` (`syncMode: ContinuousWithDriftDetection`,
+      `dependsOn: [flux-instance, vault-auth]`) — external CephFS CSI driver
+      providing **ReadWriteMany (RWX)** volumes backed by the openstack cluster's
+      `rpcu-fs` CephFilesystem. Pushes the `ceph-csi-cephfs-cluster-values`
+      ConfigMap (remote Ceph FSID + mons, identical across all workload clusters)
+      and a Flux Kustomization CR wrapping `./infrastructure/ceph-csi-cephfs`
+      (the ExternalSecret reads `secrets-<cluster>/ceph-csi` from Vault via the
+      `vault-backend` ClusterSecretStore provisioned by vault-auth). The CephFS
+      client key (`adminID`/`adminKey`) must be seeded in Vault per cluster out of
+      band (see `infrastructure/ceph-csi-cephfs/README.md`).
+      (label `sveltos.argus.rpcu.io/ceph-csi-cephfs: enabled`)
 
     `wait: false` — the dashboard's placeholder OIDC `clientId` must be set
     before it can come up healthy.
@@ -1927,7 +2010,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 2026 (Removed `infrastructure/sveltos/core/` — the capi-management ClusterProfile now reuses the parent `./infrastructure/sveltos` base with two Flux Kustomization CR patches: a HelmRelease `values`→`valuesFrom` swap (domain per-cluster), and a single `$patch: delete` by labelSelector (`argus.rpcu.io/sveltos-clusterprofile=true`) stripping all ClusterProfiles + backing resources. All clusterprofiles/ resources are now stamped with this common label via `labels:` in `clusterprofiles/kustomization.yaml`. The child mgmt cluster's ClusterProfiles are re-pushed as raw manifests by `capi-management-sveltos-profiles` ConfigMap. Bonus: the child now gets the fuller parent RBAC (Vault Crossplane MR + CAPI clusters rules) which the old minimal `core/rbac.yaml` was missing. Earlier: Moved the `jellyfin` Zitadel `Oidc` app OUT of the mgmt cluster overlay (`clusters/mgmt/crossplane/zitadel/`) to the **atlas** production cluster repo (`../atlas`, `clusters/production/crossplane/oidc-jellyfin.yaml`), where Crossplane + the Zitadel provider are now installed standalone (`infrastructure/crossplane` + `infrastructure/crossplane-zitadel`, wired by `clusters/production/{crossplane,crossplane-zitadel,crossplane-resources}.yaml`). The atlas production cluster now manages the shared-Zitadel jellyfin OIDC app itself (referencing the shared org `369994019545117645` by literal external ID); the mgmt overlay retains only its ProviderConfig + chihiro Oidc. NOTE: because both `crossplane-resources` Kustomizations use `prune: false`, the live `Oidc/jellyfin` on the mgmt cluster is NOT auto-deleted — delete it manually from mgmt before atlas's Crossplane adopts it, or the two providers will fight over the same external Zitadel app. On atlas the `zitadel` namespace is declared in the overlay and the `crossplane-provider-zitadel` admin-credentials secret is pulled from the shared mgmt Vault via ESO (`clusters/production/crossplane/external-secret.yaml` → `vault-backend` ClusterSecretStore, Vault KV path `secrets-production/zitadel/crossplane`, key `credentials`) instead of a manual secret — populate that Vault path out of band (ESO + the `vault-backend` ClusterSecretStore are assumed pre-existing on the production cluster, same as the other atlas ExternalSecrets). Earlier: Updated `chihiro` configuration to support optional `external-dns` and `gateway-api` parameters via ConfigMap toggles. Updated all Sveltos ClusterProfiles to enable `spec.prune: true` for Flux `Kustomization` CRs to ensure proper cleanup. Added `dns_manager` role to `ccm-credential` Composition to resolve 401 authentication errors for Cinder CSI. Updated `AGENTS.md` to reflect these changes.)
+**Last Updated**: July 2026 (Added CephFS ReadWriteMany (RWX) support: `CephFilesystem` + RWX `StorageClass` + `cephfs` CephClient on the openstack Rook/Ceph cluster; standalone upstream `ceph-csi-cephfs` CSI driver (chart v3.15.0) in `infrastructure/ceph-csi-cephfs` with ESO-rendered credentials from Vault; mgmt Flux Kustomization + overlay at `clusters/mgmt/ceph-csi-cephfs/`; Sveltos `ceph-csi-cephfs` ClusterProfile for opt-in workload clusters (Flux takeover, depends on vault-auth). Removed `infrastructure/sveltos/core/` — the capi-management ClusterProfile now reuses the parent `./infrastructure/sveltos` base with two Flux Kustomization CR patches: a HelmRelease `values`→`valuesFrom` swap (domain per-cluster), and a single `$patch: delete` by labelSelector (`argus.rpcu.io/sveltos-clusterprofile=true`) stripping all ClusterProfiles + backing resources. All clusterprofiles/ resources are now stamped with this common label via `labels:` in `clusterprofiles/kustomization.yaml`. The child mgmt cluster's ClusterProfiles are re-pushed as raw manifests by `capi-management-sveltos-profiles` ConfigMap. Bonus: the child now gets the fuller parent RBAC (Vault Crossplane MR + CAPI clusters rules) which the old minimal `core/rbac.yaml` was missing. Earlier: Moved the `jellyfin` Zitadel `Oidc` app OUT of the mgmt cluster overlay (`clusters/mgmt/crossplane/zitadel/`) to the **atlas** production cluster repo (`../atlas`, `clusters/production/crossplane/oidc-jellyfin.yaml`), where Crossplane + the Zitadel provider are now installed standalone (`infrastructure/crossplane` + `infrastructure/crossplane-zitadel`, wired by `clusters/production/{crossplane,crossplane-zitadel,crossplane-resources}.yaml`). The atlas production cluster now manages the shared-Zitadel jellyfin OIDC app itself (referencing the shared org `369994019545117645` by literal external ID); the mgmt overlay retains only its ProviderConfig + chihiro Oidc. NOTE: because both `crossplane-resources` Kustomizations use `prune: false`, the live `Oidc/jellyfin` on the mgmt cluster is NOT auto-deleted — delete it manually from mgmt before atlas's Crossplane adopts it, or the two providers will fight over the same external Zitadel app. On atlas the `zitadel` namespace is declared in the overlay and the `crossplane-provider-zitadel` admin-credentials secret is pulled from the shared mgmt Vault via ESO (`clusters/production/crossplane/external-secret.yaml` → `vault-backend` ClusterSecretStore, Vault KV path `secrets-production/zitadel/crossplane`, key `credentials`) instead of a manual secret — populate that Vault path out of band (ESO + the `vault-backend` ClusterSecretStore are assumed pre-existing on the production cluster, same as the other atlas ExternalSecrets). Earlier: Updated `chihiro` configuration to support optional `external-dns` and `gateway-api` parameters via ConfigMap toggles. Updated all Sveltos ClusterProfiles to enable `spec.prune: true` for Flux `Kustomization` CRs to ensure proper cleanup. Added `dns_manager` role to `ccm-credential` Composition to resolve 401 authentication errors for Cinder CSI. Updated `AGENTS.md` to reflect these changes.)
 **Repository**: <https://github.com/RPCU/argus.git>
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

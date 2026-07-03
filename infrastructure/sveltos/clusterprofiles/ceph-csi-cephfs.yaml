@@ -1,0 +1,121 @@
+# External CephFS CSI driver for OPT-IN workload clusters — provides
+# ReadWriteMany (RWX) volumes backed by the EXISTING Rook/Ceph cluster on the
+# bare-metal openstack cluster (rpcu-fs CephFilesystem). Workload clusters run
+# as OpenStack VMs with no local Ceph, so they consume that cluster remotely
+# (EXTERNAL mode), exactly like the mgmt cluster
+# (clusters/mgmt/ceph-csi-cephfs.yaml).
+#
+# Delivered as a Flux takeover (NO Sveltos helmChart bootstrap — same rationale
+# as openstack-cinder-csi: not bootstrap-critical, and a helmChart would fight
+# Flux over the same Helm release). Flux is the SOLE owner.
+#
+# Two things are pushed:
+#   1. the "ceph-csi-cephfs-cluster-values" ConfigMap (ceph-csi-cephfs ns) —
+#      the remote Ceph FSID (clusterID) + monitor endpoints. These are the SAME
+#      for every cluster (there is ONE openstack Ceph cluster); fill in the
+#      placeholders below once. Not templated per-cluster.
+#   2. the Flux Kustomization CR pointing at ./infrastructure/ceph-csi-cephfs,
+#      patched to append that ConfigMap as a second valuesFrom (overriding the
+#      empty base csiConfig/clusterID).
+#
+# The csi-cephfs-secret (Ceph user adminID/adminKey) is rendered by ESO from the
+# workload cluster's Vault mount (secrets-<cluster>/ceph-csi) via the
+# `vault-backend` ClusterSecretStore — the ExternalSecret ships in the base
+# infrastructure/ceph-csi-cephfs. So this add-on REQUIRES the vault-auth add-on
+# (which provisions that store + the per-cluster Vault mount). Seed the key in
+# Vault out of band (see infrastructure/ceph-csi-cephfs/README.md).
+#
+# Gated by the opt-in label sveltos.argus.rpcu.io/ceph-csi-cephfs: enabled.
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: ceph-csi-cephfs
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  dependsOn:
+    # Pushes a Flux Kustomization CR + HelmRelease reconciled by the kustomize/
+    # helm controllers, which only exist once Flux is installed.
+    - flux-instance
+    # The base ExternalSecret needs the `vault-backend` ClusterSecretStore + the
+    # per-cluster secrets-<cluster> Vault mount, both provisioned by vault-auth.
+    - vault-auth
+  clusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/ceph-csi-cephfs: enabled
+  policyRefs:
+    - name: ceph-csi-cephfs-cluster-values
+      namespace: projectsveltos
+      kind: ConfigMap
+    - name: ceph-csi-cephfs-flux-kustomization
+      namespace: projectsveltos
+      kind: ConfigMap
+---
+# The remote Ceph connection override pushed into the workload cluster's
+# ceph-csi-cephfs namespace. Identical for every cluster (one openstack Ceph
+# cluster) — NOT a Sveltos template.
+#
+# TODO(operator): fill in the real FSID + mon endpoints from the openstack
+# cluster (they are not in Git):
+#   kubectl -n rook-ceph get cephcluster rook-ceph -o jsonpath='{.status.ceph.fsid}'
+#   kubectl -n rook-ceph get cm rook-ceph-mon-endpoints -o jsonpath='{.data.data}'
+# The mons (10.0.0.0/24) must be routable from the workload cluster.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ceph-csi-cephfs-cluster-values
+  namespace: projectsveltos
+data:
+  ceph-csi-cephfs-cluster-values.yaml: |
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: ceph-csi-cephfs-cluster-values
+      namespace: ceph-csi-cephfs
+    data:
+      values.yaml: |
+        csiConfig:
+          - clusterID: "REPLACE_WITH_CEPH_FSID"
+            monitors:
+              - "REPLACE_WITH_MON_1:6789"
+              - "REPLACE_WITH_MON_2:6789"
+              - "REPLACE_WITH_MON_3:6789"
+        storageClass:
+          clusterID: "REPLACE_WITH_CEPH_FSID"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ceph-csi-cephfs-flux-kustomization
+  namespace: projectsveltos
+data:
+  ceph-csi-cephfs-flux-kustomization.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: ceph-csi-cephfs
+      namespace: ceph-csi-cephfs
+    spec:
+      interval: 10m
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/ceph-csi-cephfs
+      prune: true
+      patches:
+        - patch: |
+            apiVersion: helm.toolkit.fluxcd.io/v2
+            kind: HelmRelease
+            metadata:
+              name: ceph-csi-cephfs
+            spec:
+              valuesFrom:
+                - kind: ConfigMap
+                  name: ceph-csi-cephfs-values
+                - kind: ConfigMap
+                  name: ceph-csi-cephfs-cluster-values
+          target:
+            kind: HelmRelease
+            name: ceph-csi-cephfs

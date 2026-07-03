@@ -1,0 +1,56 @@
+# External CephFS CSI driver on the mgmt cluster — provides ReadWriteMany (RWX)
+# volumes backed by the EXISTING Rook/Ceph cluster on the bare-metal openstack
+# cluster (rpcu-fs CephFilesystem). mgmt runs as OpenStack VMs with no local
+# Ceph, so it consumes that cluster remotely (EXTERNAL mode).
+#
+# Deploys the shared base (infrastructure/ceph-csi-cephfs) and appends a
+# per-cluster values override (ceph-csi-cephfs-cluster-values) carrying the
+# remote Ceph FSID (clusterID) + monitor endpoints. Fill in the placeholders
+# below from the openstack cluster:
+#   kubectl -n rook-ceph get cephcluster rook-ceph -o jsonpath='{.status.ceph.fsid}'
+#   kubectl -n rook-ceph get cm rook-ceph-mon-endpoints -o jsonpath='{.data.data}'
+#
+# wait: false — the csi-cephfs-secret ExternalSecret cannot become Ready until
+# the mgmt Vault path secrets-mgmt/ceph-csi is populated out of band (see
+# infrastructure/ceph-csi-cephfs/README.md).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: ceph-csi-cephfs
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  # mgmt overlay: bases infrastructure/ceph-csi-cephfs + adds the
+  # ceph-csi-cephfs-cluster-values ConfigMap (remote Ceph FSID + mons).
+  path: ./clusters/mgmt/ceph-csi-cephfs
+  prune: true
+  wait: false
+  timeout: 5m
+  dependsOn:
+    # ESO renders the csi-cephfs-secret from Vault.
+    - name: external-secrets
+    # The `vault-backend` ClusterSecretStore (secrets-mgmt mount) lives in the
+    # mgmt crossplane/vault overlay.
+    - name: crossplane-resources
+  # Append the per-cluster csiConfig (mon list) + clusterID as a SECOND
+  # valuesFrom so it overrides the empty base values.yaml.
+  patches:
+    - patch: |
+        apiVersion: helm.toolkit.fluxcd.io/v2
+        kind: HelmRelease
+        metadata:
+          name: ceph-csi-cephfs
+          namespace: ceph-csi-cephfs
+        spec:
+          valuesFrom:
+            - kind: ConfigMap
+              name: ceph-csi-cephfs-values
+            - kind: ConfigMap
+              name: ceph-csi-cephfs-cluster-values
+      target:
+        kind: HelmRelease
+        name: ceph-csi-cephfs

@@ -3,11 +3,8 @@
 # Appended as a second valuesFrom by clusters/mgmt/ceph-csi-cephfs.yaml so it
 # overrides the empty csiConfig/clusterID in the base values.yaml.
 #
-# TODO(operator): fill in the real FSID and mon endpoints from the openstack
-# cluster (they are not in Git):
-#   kubectl -n rook-ceph get cephcluster rook-ceph -o jsonpath='{.status.ceph.fsid}'
-#   kubectl -n rook-ceph get cm rook-ceph-mon-endpoints -o jsonpath='{.data.data}'
-# The mons (10.0.0.0/24) must be routable from the mgmt cluster.
+# Monitors are pinned LoadBalancer IPs on the openstack cluster's Cilium L2
+# network (10.0.0.242-244), reachable from mgmt over the VLAN.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -16,10 +13,10 @@ metadata:
 data:
   values.yaml: |
     csiConfig:
-      - clusterID: "REPLACE_WITH_CEPH_FSID"
+      - clusterID: "cbbf0098-8fc1-426e-b73d-b2b4ff6c7bb4"
         monitors:
-          - "REPLACE_WITH_MON_1:6789"
-          - "REPLACE_WITH_MON_2:6789"
-          - "REPLACE_WITH_MON_3:6789"
+          - "10.0.0.242:6789"
+          - "10.0.0.243:6789"
+          - "10.0.0.244:6789"
     storageClass:
-      clusterID: "REPLACE_WITH_CEPH_FSID"
+      clusterID: "cbbf0098-8fc1-426e-b73d-b2b4ff6c7bb4"

@@ -505,20 +505,14 @@ files). Deployed only on mgmt for now.
   bootstrapped via the `capi-management` ClusterProfile, Sveltos pushes a
   templated version with `kubernetesClusterDomain: <cluster-name>.local` and
   `agent.managementCluster: true`.
-- `core/` - **Reusable Sveltos core install** (Flux Kustomization source). A
-  self-contained subset of the parent `sveltos/` directory containing only the
-  pieces needed to run Sveltos on a single cluster: `namespace.yaml`,
-  `helmrepo.yaml`, `helmrelease.yaml` (values via `valuesFrom` referencing a
-  `sveltos-core-values` ConfigMap), and `rbac.yaml` (base addon-controller
-  RBAC only — no capi-management-specific RBAC). The HelmRelease does NOT
-  carry hardcoded values — per-cluster configuration (domain,
-  managementCluster flag) is injected by a Sveltos-templated
-  `sveltos-core-values` ConfigMap pushed alongside the Flux Kustomization CR.
-  Used by the `capi-management` ClusterProfile to deploy Sveltos onto new
-  management clusters via a Flux `Kustomization` CR pointing at
-  `./infrastructure/sveltos/core` in Git. The main `sveltos/kustomization.yaml`
-  still references the parent directory files directly (not `core/`) — `core/` is
-  a Flux sync source, not a nested kustomize reference.
+- `clusterprofiles/kustomization.yaml` - Labels all resources under
+  `clusterprofiles/` with `argus.rpcu.io/sveltos-clusterprofile=true` (via
+  `labels: [{pairs: {...}, includeSelectors: false}]`). This label is the
+  mechanism that lets the `capi-management` ClusterProfile reuse the same
+  parent `./infrastructure/sveltos` base for new management clusters: the
+  pushed Flux `Kustomization` strips everything under `clusterprofiles/` with a
+  single `$patch: delete` targeting this labelSelector, yielding a core-only
+  install. No separate `./core` subdirectory is needed.
 - `clusterprofiles/oidc-rbac.yaml` - **OIDC user RBAC pushed to the CHILD (CAPI
   workload) clusters** (the focus of this install). A Sveltos `ClusterProfile`
   (`syncMode: ContinuousWithDriftDetection`) + a **templated** `policyRefs`
@@ -637,7 +631,7 @@ cilium`** so the CNI is fully installed before Flux — Flux's pods (and the
   target cluster reconciles them from the central repo.
 
   **What is deployed** (in dependency order via Flux `dependsOn`):
-  1. Sveltos core (Flux Kustomization → `infrastructure/sveltos/core`) — multi-cluster add-on manager
+  1. Sveltos core (Flux Kustomization → `infrastructure/sveltos`) — multi-cluster add-on manager, ClusterProfiles stripped via labelSelector `$patch:delete`
   2. Sveltos ClusterProfiles + backing ConfigMaps — pushed as raw manifests
   3. cert-manager (v1.19.2) — TLS certificate management
   4. external-secrets (v2.3.0) — credential syncing
@@ -659,12 +653,17 @@ cilium`** so the CNI is fully installed before Flux — Flux's pods (and the
       `valuesFrom` via a patch.
 
   **Sveltos deployment**: Sveltos is deployed via a Flux Kustomization CR
-  (not inline `helmCharts`) pointing at `./infrastructure/sveltos/core` in Git.
-  A templated `sveltos-core-values` ConfigMap provides per-cluster values
-  (`kubernetesClusterDomain: <cluster-name>.local`, `managementCluster: true`).
-  This is consistent with how other profiles (openstack-ccm, cinder-csi,
-  external-snapshotter) push Flux Kustomization CRs for GitOps-managed
-  deployment.
+  (not inline `helmCharts`) pointing at `./infrastructure/sveltos` in Git
+  (the SAME base the mgmt cluster uses). All clusterprofiles/ resources carry
+  a `argus.rpcu.io/sveltos-clusterprofile=true` label; the pushed
+  Kustomization uses a single `$patch: delete` targeting that label to strip
+  them, yielding a core-only install. A templated `sveltos-core-values`
+  ConfigMap provides per-cluster values (`kubernetesClusterDomain:
+  <cluster-name>.local`, `managementCluster: true`) via a values swap patch.
+  The new cluster's own ClusterProfiles are re-pushed as raw manifests by the
+  `capi-management-sveltos-profiles` ConfigMap. This is consistent with how
+  other profiles (openstack-ccm, cinder-csi, external-snapshotter) push Flux
+  Kustomization CRs for GitOps-managed deployment.
 
   **Credential transfer**: the `capo-variables` secret (OpenStack admin
   `clouds.yaml` in `capo-system`) is read from the **current** management
@@ -881,9 +880,10 @@ sveltos.argus.rpcu.io/gateway-api: enabled}`. Split into TWO ClusterProfiles:
   in `clusterprofiles/kustomization.yaml`.
 
 - `kustomization.yaml` - Kustomization manifest (namespace, helmrepo, core
-  helmrelease, rbac, clusterprofiles/). The main `sveltos/kustomization.yaml`
-  references the parent directory files directly; the `core/` subdirectory is
-  a separate Flux sync source used by the `capi-management` ClusterProfile.
+  helmrelease, rbac, clusterprofiles/). All clusterprofiles/ resources carry
+  the `argus.rpcu.io/sveltos-clusterprofile=true` label; the `capi-management`
+  ClusterProfile reuses this same base with a single `$patch: delete` targeting
+  that label to strip clusterprofiles for new management clusters.
 
 > Deployed by `clusters/mgmt/sveltos.yaml` (no `dependsOn` required; basic
 > Sveltos core install). The `oidc-rbac` ClusterProfile only takes effect on a
@@ -1927,7 +1927,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 2026 (Moved the `jellyfin` Zitadel `Oidc` app OUT of the mgmt cluster overlay (`clusters/mgmt/crossplane/zitadel/`) to the **atlas** production cluster repo (`../atlas`, `clusters/production/crossplane/oidc-jellyfin.yaml`), where Crossplane + the Zitadel provider are now installed standalone (`infrastructure/crossplane` + `infrastructure/crossplane-zitadel`, wired by `clusters/production/{crossplane,crossplane-zitadel,crossplane-resources}.yaml`). The atlas production cluster now manages the shared-Zitadel jellyfin OIDC app itself (referencing the shared org `369994019545117645` by literal external ID); the mgmt overlay retains only its ProviderConfig + chihiro Oidc. NOTE: because both `crossplane-resources` Kustomizations use `prune: false`, the live `Oidc/jellyfin` on the mgmt cluster is NOT auto-deleted — delete it manually from mgmt before atlas's Crossplane adopts it, or the two providers will fight over the same external Zitadel app. On atlas the `zitadel` namespace is declared in the overlay and the `crossplane-provider-zitadel` admin-credentials secret is pulled from the shared mgmt Vault via ESO (`clusters/production/crossplane/external-secret.yaml` → `vault-backend` ClusterSecretStore, Vault KV path `secrets-production/zitadel/crossplane`, key `credentials`) instead of a manual secret — populate that Vault path out of band (ESO + the `vault-backend` ClusterSecretStore are assumed pre-existing on the production cluster, same as the other atlas ExternalSecrets). Earlier: Updated `chihiro` configuration to support optional `external-dns` and `gateway-api` parameters via ConfigMap toggles. Updated all Sveltos ClusterProfiles to enable `spec.prune: true` for Flux `Kustomization` CRs to ensure proper cleanup. Added `dns_manager` role to `ccm-credential` Composition to resolve 401 authentication errors for Cinder CSI. Updated `AGENTS.md` to reflect these changes.)
+**Last Updated**: July 2026 (Removed `infrastructure/sveltos/core/` — the capi-management ClusterProfile now reuses the parent `./infrastructure/sveltos` base with two Flux Kustomization CR patches: a HelmRelease `values`→`valuesFrom` swap (domain per-cluster), and a single `$patch: delete` by labelSelector (`argus.rpcu.io/sveltos-clusterprofile=true`) stripping all ClusterProfiles + backing resources. All clusterprofiles/ resources are now stamped with this common label via `labels:` in `clusterprofiles/kustomization.yaml`. The child mgmt cluster's ClusterProfiles are re-pushed as raw manifests by `capi-management-sveltos-profiles` ConfigMap. Bonus: the child now gets the fuller parent RBAC (Vault Crossplane MR + CAPI clusters rules) which the old minimal `core/rbac.yaml` was missing. Earlier: Moved the `jellyfin` Zitadel `Oidc` app OUT of the mgmt cluster overlay (`clusters/mgmt/crossplane/zitadel/`) to the **atlas** production cluster repo (`../atlas`, `clusters/production/crossplane/oidc-jellyfin.yaml`), where Crossplane + the Zitadel provider are now installed standalone (`infrastructure/crossplane` + `infrastructure/crossplane-zitadel`, wired by `clusters/production/{crossplane,crossplane-zitadel,crossplane-resources}.yaml`). The atlas production cluster now manages the shared-Zitadel jellyfin OIDC app itself (referencing the shared org `369994019545117645` by literal external ID); the mgmt overlay retains only its ProviderConfig + chihiro Oidc. NOTE: because both `crossplane-resources` Kustomizations use `prune: false`, the live `Oidc/jellyfin` on the mgmt cluster is NOT auto-deleted — delete it manually from mgmt before atlas's Crossplane adopts it, or the two providers will fight over the same external Zitadel app. On atlas the `zitadel` namespace is declared in the overlay and the `crossplane-provider-zitadel` admin-credentials secret is pulled from the shared mgmt Vault via ESO (`clusters/production/crossplane/external-secret.yaml` → `vault-backend` ClusterSecretStore, Vault KV path `secrets-production/zitadel/crossplane`, key `credentials`) instead of a manual secret — populate that Vault path out of band (ESO + the `vault-backend` ClusterSecretStore are assumed pre-existing on the production cluster, same as the other atlas ExternalSecrets). Earlier: Updated `chihiro` configuration to support optional `external-dns` and `gateway-api` parameters via ConfigMap toggles. Updated all Sveltos ClusterProfiles to enable `spec.prune: true` for Flux `Kustomization` CRs to ensure proper cleanup. Added `dns_manager` role to `ccm-credential` Composition to resolve 401 authentication errors for Cinder CSI. Updated `AGENTS.md` to reflect these changes.)
 **Repository**: <https://github.com/RPCU/argus.git>
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

@@ -6,7 +6,8 @@
 # via Sveltos.
 #
 # What is deployed (in dependency order):
-#   1. Sveltos core controllers (Flux Kustomization -> infrastructure/sveltos/core)
+#   1. Sveltos core controllers (Flux Kustomization -> infrastructure/sveltos)
+#      Same base as mgmt; ClusterProfiles stripped via labelSelector $patch:delete.
 #      CRDs installed by the HelmRelease once Flux reconciles the Kustomization
 #   2. Sveltos ClusterProfiles + backing ConfigMaps — pushed as raw manifests
 #      so the new mgmt cluster can manage its own workload clusters
@@ -161,11 +162,29 @@ data:
     data:
       clouds.yaml: {{ index (getResource "CapoVariables").data "clouds.yaml" }}
 ---
-# Sveltos core controllers deployed via Flux Kustomization pointing at the
-# shared infrastructure/sveltos/core base. The Flux Kustomization CR is applied
-# directly by Sveltos; Flux on the target cluster then reconciles the core
-# manifests from Git. The sveltos-core-values ConfigMap provides per-cluster
-# values (domain, managementCluster) referenced by the HelmReleases in core/.
+# Sveltos core controllers deployed via a Flux Kustomization pointing at the
+# SHARED infrastructure/sveltos base (the SAME path the mgmt cluster uses — no
+# separate ./core subdirectory). The Flux Kustomization CR is applied directly
+# by Sveltos; Flux on the target cluster then reconciles from Git. Two patches
+# adapt the mgmt base into a "core-only" install for the new cluster:
+#
+#   1. HelmRelease values swap — the base helmrelease.yaml carries inline
+#      `values:` hardcoded to the mgmt cluster (kubernetesClusterDomain:
+#      mgmt.local). Replace that whole `values` object with a `valuesFrom`
+#      reference to the templated sveltos-core-values ConfigMap below, which
+#      carries this cluster's domain (<name>.local) + managementCluster: true.
+#
+#   2. Strip all ClusterProfiles — everything under clusterprofiles/ is stamped
+#      with the argus.rpcu.io/sveltos-clusterprofile=true label (see
+#      clusterprofiles/kustomization.yaml). A SINGLE `$patch: delete` targeting
+#      that labelSelector removes every ClusterProfile AND its backing
+#      ConfigMaps/Secrets/EventSources/EventTriggers in one shot, regardless of
+#      kind. The new mgmt cluster therefore gets Sveltos core only; its own
+#      ClusterProfiles are re-pushed as raw manifests by the
+#      capi-management-sveltos-profiles ConfigMap.
+#
+# This is why clusterprofiles/kustomization.yaml labels its resources and why no
+# ./infrastructure/sveltos/core directory is needed anymore.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -201,10 +220,42 @@ data:
         kind: GitRepository
         name: flux-system
         namespace: flux-system
-      path: ./infrastructure/sveltos/core
+      # SAME base as the mgmt cluster — no ./core subdirectory. The patches below
+      # turn it into a core-only install for this new management cluster.
+      path: ./infrastructure/sveltos
       prune: true
       wait: false
       timeout: 5m
+      patches:
+        # (1) Replace the base's inline mgmt-specific HelmRelease values with a
+        # valuesFrom reference to the per-cluster sveltos-core-values ConfigMap.
+        # $patch: replace on the values map drops the hardcoded mgmt.local block.
+        - patch: |
+            apiVersion: helm.toolkit.fluxcd.io/v2
+            kind: HelmRelease
+            metadata:
+              name: projectsveltos
+              namespace: projectsveltos
+            spec:
+              values:
+                $patch: delete
+              valuesFrom:
+                - kind: ConfigMap
+                  name: sveltos-core-values
+          target:
+            kind: HelmRelease
+            name: projectsveltos
+        # (2) Strip every ClusterProfile + backing resource (any kind) carrying
+        # the clusterprofiles label. One delete patch covers all of them; the new
+        # cluster's ClusterProfiles are re-pushed by capi-management-sveltos-profiles.
+        - patch: |
+            $patch: delete
+            apiVersion: config.projectsveltos.io/v1beta1
+            kind: ClusterProfile
+            metadata:
+              name: unused
+          target:
+            labelSelector: argus.rpcu.io/sveltos-clusterprofile=true
 ---
 apiVersion: v1
 kind: ConfigMap

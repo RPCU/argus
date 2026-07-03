@@ -1,4 +1,4 @@
-# Basic Sveltos install (mgmt cluster).
+# Sveltos core controllers + ClusterProfiles for the mgmt cluster.
 #
 # Structure (one concern per file):
 #   namespace.yaml    - projectsveltos namespace
@@ -8,15 +8,19 @@
 #                       (read OpenStackCluster + cloud-controller-app-creds;
 #                        read capo-variables in capo-system for capi-management)
 #   clusterprofiles/  - ClusterProfiles Sveltos pushes to child clusters
-#                       (oidc-rbac: kube-admin/kube-user -> cluster-admin)
-#                       (cilium: CNI via ContinuousWithDriftDetection)
-#                       (flux: Flux operator bootstrap + FluxInstance reconcile)
-#                       (openstack-ccm: OpenStack CCM for workload clusters)
-#                       (openstack-cinder-csi: Cinder CSI + VolumeSnapshot)
-#                       (external-snapshotter: VolumeSnapshot CRDs + controller)
-#                       (capi-management: CAPI/CAPO stack for new mgmt clusters)
-#                       (vault-auth: per-child Vault k8s auth backend + ESO
-#                        ClusterSecretStore against the shared mgmt Vault)
+#                       (oidc-rbac, cilium, flux, openstack-ccm, cinder-csi,
+#                        external-snapshotter, capi-management, vault-auth,
+#                        cert-manager, external-dns, gateway-api)
+#
+# Bootstrapping new management clusters:
+#   The capi-management ClusterProfile (clusterprofiles/capi-management.yaml)
+#   reuses this SAME base (./infrastructure/sveltos) for new mgmt clusters.
+#   All clusterprofiles/ resources carry the
+#   argus.rpcu.io/sveltos-clusterprofile=true label; the pushed Flux
+#   Kustomization strips them with a single $patch: delete targeting that
+#   labelSelector, yielding a core-only install. The new cluster's own
+#   ClusterProfiles are then re-pushed as raw manifests by the
+#   capi-management-sveltos-profiles ConfigMap.
 resources:
   - namespace.yaml
   - helmrepo.yaml

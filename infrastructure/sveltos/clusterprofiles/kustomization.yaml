@@ -5,7 +5,7 @@ resources:
   - external-snapshotter.yaml
   - openstack-ccm.yaml
   - openstack-cinder-csi.yaml
-  - ceph-csi-cephfs.yaml
+  - csi-driver-nfs.yaml
   - capi-management.yaml
   - vault-auth.yaml
   - cert-manager.yaml

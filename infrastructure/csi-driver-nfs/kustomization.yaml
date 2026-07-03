@@ -1,0 +1,5 @@
+namespace: kube-system
+resources:
+  - helmrepo.yaml
+  - helmrelease.yaml
+  - storageclass.yaml

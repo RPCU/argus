@@ -279,11 +279,20 @@ _rook/configs/_ - Ceph cluster configuration
 - `storageclasscephfs.yaml` - CephFS storage class (`cephfs`,
   `rook-ceph.cephfs.csi.ceph.com` provisioner, fsName `rpcu-fs`, RWX-capable,
   NOT default). In-cluster (openstack) RWX only — external clusters use
-  `infrastructure/ceph-csi-cephfs`.
-- `openstack-clients.yaml` - CephClients: `glance` + `cinder` (rbd caps) and
-  `cephfs` (mon `allow r` / mds `allow rw` / osd `allow rw tag cephfs
-data=rpcu-fs`). The `cephfs` client key (`rook-ceph-client-cephfs` Secret) is
-  what EXTERNAL clusters use to authenticate the standalone CephFS CSI driver.
+  `infrastructure/csi-driver-nfs` via the CephNFS gateway.
+- `cephnfs.yaml` - `CephNFS` gateway `rpcu-nfs` (1 active NFS-Ganesha server)
+  exporting the `rpcu-fs` CephFilesystem to EXTERNAL clusters, + a
+  `LoadBalancer` Service pinned at `10.0.0.245` (Cilium L2 pool) on TCP/2049.
+  This exists because the Rook cluster is POD-networked: mons advertise
+  ClusterIPs and mgr/MDS/OSDs advertise pod IPs in the Ceph maps, so an
+  external ceph-csi client can NEVER reach them (CreateVolume hangs → PVCs
+  Pending forever) — LB-fronted mons are not sufficient. The NFS gateway runs
+  in-cluster; consumers only need TCP/2049. The export itself is created ONCE
+  out of band (persisted in the `.nfs` RADOS pool):
+  `ceph nfs export create cephfs rpcu-nfs /rpcu-fs rpcu-fs --path=/`.
+- `openstack-clients.yaml` - CephClients: `glance` + `cinder` (rbd caps).
+  (The former external `cephfs` CephClient was removed together with the
+  ceph-csi-cephfs external driver — NFS consumers need no cephx key.)
 - `toolbox-deployment.yaml` - Ceph admin toolbox
 - `yaook-secret-reader-rbac.yaml` - RBAC allowing yaook to read secrets
 - `gateway/` - Gateway API resources for Rook services
@@ -297,43 +306,37 @@ data=rpcu-fs`). The `cephfs` client key (`rook-ceph-client-cephfs` Secret) is
 - `helmrepo.yaml` - Repository reference
 - `kustomization.yaml` - Kustomization manifest
 
-**ceph-csi-cephfs/** - External CephFS CSI driver (RWX) — upstream Ceph CSI (chart v3.15.0)
+**csi-driver-nfs/** - RWX volumes over NFS, CephFS-backed (chart v4.13.4)
 
-Standalone upstream [Ceph CSI](https://github.com/ceph/ceph-csi) CephFS driver
+Upstream [csi-driver-nfs](https://github.com/kubernetes-csi/csi-driver-nfs)
 for clusters with **no local Ceph** (the mgmt cluster and opt-in workload
-clusters run as OpenStack VMs). Connects back to the EXISTING Rook/Ceph cluster
-on the bare-metal `openstack` cluster (the `rpcu-fs` CephFilesystem) to provide
-**ReadWriteMany (RWX)** volumes. The in-cluster `general` (RBD) StorageClass is
-RWO-only; RWX needs a shared filesystem (CephFS).
+clusters run as OpenStack VMs). Provides **ReadWriteMany (RWX)** volumes from
+the openstack cluster's `rpcu-fs` CephFilesystem, exported over NFS by the
+Rook `CephNFS` gateway (`infrastructure/rook/configs/cephnfs.yaml`) at the
+pinned LB IP `10.0.0.245`. REPLACES the former `ceph-csi-cephfs` external
+driver, which could never work: the Rook cluster is pod-networked, so the
+mgr/MDS/OSDs advertise pod/ClusterIPs unreachable from the VMs (CreateVolume
+hung until the CSI deadline; PVCs stayed Pending). NFS consumers need only
+TCP/2049 to the LB IP — no Ceph credentials, no Vault/ESO plumbing.
 
-- `namespace.yaml` - Namespace `ceph-csi-cephfs`
-- `helmrepo.yaml` - HelmRepository (`https://ceph.github.io/csi-charts`)
-- `helmrelease.yaml` - `ceph-csi-cephfs` chart v3.15.0. Reads base `values.yaml`
-  via `valuesFrom`; the consumer appends a SECOND `valuesFrom` with the
-  per-cluster `csiConfig` (remote Ceph FSID + mon list) + StorageClass
-  `clusterID`.
-- `values.yaml` - Base values. `csiConfig` intentionally empty / StorageClass
-  `clusterID` blank (overridden per cluster). Creates the RWX `ceph-cephfs`
-  StorageClass (fsName `rpcu-fs`, pool `rpcu-fs-data0`, NOT default) referencing
-  the ESO-rendered `csi-cephfs-secret`. `secret.create: false`.
-- `externalsecret.yaml` - ESO `ExternalSecret` rendering `csi-cephfs-secret`
-  (`adminID`/`adminKey`) from the mgmt Vault via the `vault-backend`
-  ClusterSecretStore, KV path `<mount>/ceph-csi` (`secrets-mgmt` on mgmt,
-  `secrets-<cluster>` on workload clusters). Seed the key out of band from the
-  openstack cluster's `rook-ceph-client-cephfs` Secret (see `README.md`).
-- `README.md` - Pieces, per-cluster override recipe (FSID + mons), Vault
-  credential bootstrap.
-- `kustomization.yaml` - Kustomization manifest (`configMapGenerator`
-  `ceph-csi-cephfs-values`, `disableNameSuffixHash: true`).
+- `helmrepo.yaml` - HelmRepository (`https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/charts`)
+- `helmrelease.yaml` - `csi-driver-nfs` chart v4.13.4 (kube-system — system
+  priority classes, same rationale as openstack-cinder-csi). Inline values
+  (no per-cluster overrides needed).
+- `storageclass.yaml` - RWX StorageClass **`ceph-cephfs`** (name kept from the
+  former ceph-csi-cephfs driver so existing PVC manifests keep working):
+  `provisioner: nfs.csi.k8s.io`, `server: 10.0.0.245`, `share: /rpcu-fs`, one
+  subdirectory per PV, `nfsvers=4.1`. Keep `server` in sync with the CephNFS
+  LB Service IP.
+- `README.md` - Rationale (pod-networked Rook ⇒ NFS), pieces, one-time export
+  bootstrap command.
+- `kustomization.yaml` - Kustomization manifest.
 
-> The remote Ceph FSID + mon endpoints are NOT in Git (placeholders). Fill them
-> in per consuming cluster: mgmt via the overlay
-> `clusters/mgmt/ceph-csi-cephfs/cluster-values.yaml`; workload clusters via the
-> Sveltos `ceph-csi-cephfs` ClusterProfile's `ceph-csi-cephfs-cluster-values`
-> ConfigMap. The openstack Ceph mons (`10.0.0.0/24`) must be routable from the
-> consuming cluster. **REQUIRES the `vault-auth` add-on** on workload clusters
-> (it provisions the `vault-backend` ClusterSecretStore + the per-cluster Vault
-> mount the ExternalSecret reads).
+> Identical on every consuming cluster — no per-cluster values, no secrets.
+> Consumers: `clusters/mgmt/csi-driver-nfs.yaml` (mgmt) and the Sveltos
+> `csi-driver-nfs` ClusterProfile (opt-in workload clusters, label
+> `sveltos.argus.rpcu.io/csi-driver-nfs: enabled`). The NFS export is created
+> once via the toolbox (persisted in the `.nfs` RADOS pool).
 
 **crossplane/** - Universal Control Plane (v2.2.0)
 

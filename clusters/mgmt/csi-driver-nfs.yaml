@@ -1,0 +1,24 @@
+# csi-driver-nfs on the mgmt cluster — RWX volumes backed by the openstack
+# cluster's rpcu-fs CephFilesystem, exported over NFS by the Rook CephNFS
+# gateway at 10.0.0.245 (infrastructure/rook/configs/cephnfs.yaml).
+#
+# Replaces the former ceph-csi-cephfs stack: the Rook cluster is
+# pod-networked, so its mgr/MDS/OSDs advertise pod IPs that are unreachable
+# from the mgmt VMs — direct ceph-csi can never provision/mount from here.
+# The StorageClass keeps the `ceph-cephfs` name for compatibility. No
+# per-cluster values and no secrets (plain NFS on the internal VLAN).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: csi-driver-nfs
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  path: ./infrastructure/csi-driver-nfs
+  prune: true
+  wait: true
+  timeout: 5m

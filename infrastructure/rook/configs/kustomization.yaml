@@ -4,7 +4,7 @@ resources:
   - cephfilesystem.yaml
   - cephobjectstore.yaml
   - cephobjectstoreuser.yaml
-  - mon-external-services.yaml
+  - cephnfs.yaml
   - openstack-clients.yaml
   - storageclassrdb.yaml
   - storageclasscephfs.yaml

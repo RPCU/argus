@@ -1,0 +1,42 @@
+# CephFS (Ceph File System) — provides ReadWriteMany (RWX) volumes.
+#
+# The existing rdb-pool / `general` StorageClass is RBD (a raw block device),
+# which is ReadWriteOnce only — a block volume can be mounted read-write by a
+# single node at a time. A shared POSIX filesystem mountable by many nodes/pods
+# simultaneously (RWX) requires CephFS, which is what this CephFilesystem
+# provides. It creates the metadata + data pools and the MDS (metadata server)
+# daemons the filesystem needs.
+#
+# Consumed:
+#   - directly on the openstack cluster via the `cephfs` StorageClass
+#     (storageclasscephfs.yaml).
+#   - remotely (EXTERNAL cluster) by the mgmt cluster and opt-in workload
+#     clusters via the standalone ceph-csi-cephfs driver
+#     (infrastructure/ceph-csi-cephfs), which authenticates with the CephFS
+#     CephClient key (openstack-clients.yaml `cephfs` client).
+apiVersion: ceph.rook.io/v1
+kind: CephFilesystem
+metadata:
+  name: rpcu-fs
+  namespace: rook-ceph
+spec:
+  # Filesystem metadata pool — small, must be replicated (never erasure-coded).
+  metadataPool:
+    failureDomain: host
+    replicated:
+      size: 2
+    deviceClass: nvme
+  # Filesystem data pool(s). Mirrors the rdb-pool sizing (replica-2 on nvme,
+  # host failure domain) for consistency on the 3-node cluster.
+  dataPools:
+    - name: data0
+      failureDomain: host
+      replicated:
+        size: 2
+      deviceClass: nvme
+  # Do not delete the pools if the CephFilesystem CR is removed — protects data.
+  preserveFilesystemOnDelete: true
+  # MDS daemons. activeCount: 1 with a standby-replay hot standby for failover.
+  metadataServer:
+    activeCount: 1
+    activeStandby: true

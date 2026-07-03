@@ -16,6 +16,7 @@ resources:
   - external-snapshotter-crds.yaml
   - external-snapshotter.yaml
   - openstack-cinder-csi.yaml
+  - ceph-csi-cephfs.yaml
   - external-dns.yaml
   - crossplane.yaml
   - crossplane-compositions.yaml

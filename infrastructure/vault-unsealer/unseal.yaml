@@ -5,7 +5,9 @@ metadata:
   namespace: vault-unseal-controller-system
 spec:
   vaultNodes:
-    - http://vault.vault.svc:8200
+    - http://vault-0.vault-internal.vault.svc:8200
+    - http://vault-1.vault-internal.vault.svc:8200
+    - http://vault-2.vault-internal.vault.svc:8200
   unsealKeysSecretRef:
     name: thresholdkeys
     namespace: vault-unseal-controller-system

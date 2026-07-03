@@ -30,7 +30,6 @@ storageClass:
   fsName: rpcu-fs
   # The pool is optional for CephFS (the fs default data pool is used when
   # empty); the remote data pool is rpcu-fs-data0.
-  pool: "rpcu-fs-data0"
   provisionVolume: true
   # Reference the ESO-rendered CephFS user secret (adminID/adminKey).
   provisionerSecret: csi-cephfs-secret

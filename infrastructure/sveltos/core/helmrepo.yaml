@@ -1,8 +1,0 @@
-apiVersion: source.toolkit.fluxcd.io/v1
-kind: HelmRepository
-metadata:
-  name: projectsveltos
-  namespace: projectsveltos
-spec:
-  interval: 5m
-  url: https://projectsveltos.github.io/helm-charts

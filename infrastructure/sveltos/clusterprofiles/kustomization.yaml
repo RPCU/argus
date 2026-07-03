@@ -10,3 +10,19 @@ resources:
   - cert-manager.yaml
   - external-dns.yaml
   - gateway-api.yaml
+# Stamp every resource in this directory (ClusterProfiles + their backing
+# ConfigMaps/Secrets/EventSources/EventTriggers) with a common metadata label.
+# This is what lets the capi-management ClusterProfile reuse the PARENT
+# ./infrastructure/sveltos base (instead of a separate ./core subdirectory) when
+# bootstrapping a new management cluster: the pushed Flux Kustomization strips
+# everything under clusterprofiles/ with a SINGLE `$patch: delete` targeting this
+# label (a new mgmt cluster gets Sveltos core only; its ClusterProfiles are then
+# re-pushed as raw manifests by capi-management-sveltos-profiles).
+#
+# includeSelectors: false — add the label to metadata ONLY; do NOT inject it into
+# each ClusterProfile's spec.clusterSelector.matchLabels (which would break which
+# workload clusters the profiles target on the mgmt cluster).
+labels:
+  - pairs:
+      argus.rpcu.io/sveltos-clusterprofile: "true"
+    includeSelectors: false

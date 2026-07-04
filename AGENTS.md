@@ -2100,11 +2100,11 @@ Argus is a **production-grade Kubernetes GitOps repository** that:
 
 All configuration is declarative, version-controlled, and enables auditable infrastructure changes.
 
-- `rook/csi-drivers/` - CSI driver Helm chart (v1.20.1)
+- `rook/csi-drivers/` - CSI driver Helm chart (v1.0.3)
 
 ---
 
-**Last Updated**: July 2026 (Added `rook-ceph-csi` Helm chart configuration per Rook v1.20 upgrade requirements.)
+**Last Updated**: July 2026 (Updated `rook-ceph-csi` Helm chart version to v1.0.3)
 **Repository**: <https://github.com/RPCU/argus.git>
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

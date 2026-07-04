@@ -40,3 +40,23 @@ spec:
   metadataServer:
     activeCount: 1
     activeStandby: true
+    # cluster-critical priority + guaranteed resources (previously BestEffort).
+    # Rook auto-sets mds_cache_memory_limit to ~50% of the memory limit.
+    priorityClassName: system-cluster-critical
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        memory: 4Gi
+    # REQUIRED anti-affinity: without it both MDS pods (active + standby-replay)
+    # were observed co-scheduled on the same node (quinn) — a single node
+    # failure would have taken CephFS down entirely, defeating the standby.
+    placement:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: rook-ceph-mds
+                rook_file_system: rpcu-fs
+            topologyKey: kubernetes.io/hostname

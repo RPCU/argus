@@ -12,6 +12,38 @@ spec:
     allowMultiplePerNode: false
   dashboard:
     enabled: true
+  # Guaranteed scheduling for the storage daemons on the hyperconverged nodes
+  # (they share the hosts with nova-compute VMs and the k8s control plane).
+  # Without priorityClassNames the daemons are first in line for eviction under
+  # node pressure — mon/osd get node-critical, mgr cluster-critical.
+  priorityClassNames:
+    mon: system-node-critical
+    osd: system-node-critical
+    mgr: system-cluster-critical
+  # Resource requests/limits (previously unset → BestEffort QoS, daemons were
+  # the first OOM/eviction victims when VMs used memory — a direct stability
+  # risk). Requests guarantee scheduling weight; memory limits bound blast
+  # radius. No CPU limits (throttling an OSD/mon hurts tail latency).
+  # Rook auto-tunes osd_memory_target from the OSD memory request.
+  resources:
+    mon:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        memory: 2Gi
+    mgr:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        memory: 1Gi
+    osd:
+      requests:
+        cpu: "2"
+        memory: 5Gi
+      limits:
+        memory: 8Gi
   # cluster level storage configuration and selection
   storage:
     useAllNodes: false

@@ -4,15 +4,21 @@ metadata:
   name: rpcu-store
   namespace: rook-ceph
 spec:
+  # deviceClass on BOTH pools so their CRUSH rules are nvme-classed like every
+  # other pool — mixing classed and class-less rules creates "overlapping
+  # roots", which silently disables the PG autoscaler cluster-wide (this is
+  # what pinned the main data pools at pg_num 1 until July 2026).
   metadataPool:
     failureDomain: host
     replicated:
       size: 2
+    deviceClass: nvme
   dataPool:
     failureDomain: host
     erasureCoded:
       dataChunks: 2
       codingChunks: 1
+    deviceClass: nvme
   preservePoolsOnDelete: true
   gateway:
     # sslCertificateRef: todo

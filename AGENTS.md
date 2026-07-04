@@ -267,13 +267,28 @@ _rook/setup/_ - Initial installation
 
 _rook/configs/_ - Ceph cluster configuration
 
-- `cephcluster.yaml` - Ceph cluster with 3 monitors (lucy, makise, quinn)
-- `cephblockpool.yaml` - RBD block pool
+- `cephcluster.yaml` - Ceph cluster with 3 monitors (lucy, makise, quinn).
+  Sets `priorityClassNames` (mon/osd `system-node-critical`, mgr
+  `system-cluster-critical`) and `resources` for mon/mgr/osd (osd: 2 CPU /
+  5Gi request, 8Gi limit; Rook auto-tunes `osd_memory_target` from the
+  request). Previously all daemons ran BestEffort — first eviction/OOM
+  victims on the hyperconverged nodes (they share the hosts with
+  nova-compute VMs). No CPU limits on purpose (throttling hurts tail latency).
+- `cephblockpool.yaml` - RBD block pool (replica 2, nvme, `pg_autoscale_mode`
+  on + `target_size_ratio: 0.8`). See the "PG autoscaler / overlapping CRUSH
+  roots" note in Section 8 — ALL pools must use nvme-classed CRUSH rules.
 - `cephfilesystem.yaml` - CephFS filesystem `rpcu-fs` (replica-2 metadata +
   `data0` data pools on nvme, `activeCount: 1` MDS with standby-replay,
   `preserveFilesystemOnDelete: true`). Provides the shared POSIX filesystem
   needed for **ReadWriteMany (RWX)** volumes (RBD/`general` is RWO-only).
-- `cephobjectstore.yaml` - S3-compatible object storage
+  The MDS has `system-cluster-critical` priority, resources (2Gi request /
+  4Gi limit — Rook auto-sets `mds_cache_memory_limit` to ~50% of the limit),
+  and **required podAntiAffinity** on `kubernetes.io/hostname`: without it
+  both MDS pods (active + standby-replay) were observed co-scheduled on the
+  same node, so one node failure would have taken CephFS down entirely.
+- `cephobjectstore.yaml` - S3-compatible object storage. Both pools set
+  `deviceClass: nvme` so their CRUSH rules are nvme-classed — see the
+  "PG autoscaler / overlapping CRUSH roots" note in Section 8.
 - `cephobjectstoreuser.yaml` - Object store credentials
 - `storageclassrdb.yaml` - RBD storage class (`general`, cluster default, RWO)
 - `storageclasscephfs.yaml` - CephFS storage class (`cephfs`,
@@ -1159,9 +1174,16 @@ reconciled by the operators above. Deployed by the `yaook` Flux Kustomization
 (dependsOn yaook-operator + external-secrets).
 
 - `keystone.yaml` - KeystoneDeployment (identity)
-- `glance.yaml` - GlanceDeployment (images)
+- `glance.yaml` - GlanceDeployment (images). `show_image_direct_url: true`
+  exposes the RBD location of images so cinder/nova create volumes as instant
+  Ceph copy-on-write clones instead of streaming a full copy through the
+  glance API (images must be **raw** format for COW cloning; safe because
+  glance/cinder share one Ceph cluster).
 - `neutron.yaml` - NeutronDeployment (networking)
-- `nova.yaml` - NovaDeployment (compute)
+- `nova.yaml` - NovaDeployment (compute). libvirt I/O tuning for RBD-backed
+  disks: `disk_cachemodes: network=writeback` (librbd writeback cache —
+  flushed on guest fsync, large guest write-latency win) and
+  `hw_disk_discard: unmap` (guest TRIM reclaims space in the Ceph pool).
 - `cinder.yaml` - CinderDeployment (block storage, rook-ceph RBD backend)
 - `horizon.yaml` - HorizonDeployment (dashboard)
 - `octavia.yaml` - OctaviaDeployment (load balancing)
@@ -1941,6 +1963,49 @@ machines; delete `-v2` once confirmed. Verify with
 (and `…-controlplane`). This gap is Kamaji-specific — the kubeadm
 `openstack-default` class runs the apiserver ON a control-plane VM inside the
 managed SGs, so it reaches the kubelet via the node-to-node 10250 rule already.
+
+#### Ceph PG autoscaler silently breaks on overlapping CRUSH roots (openstack cluster)
+
+ALL Ceph pools must use **nvme-classed CRUSH rules**. If even one pool uses a
+class-less rule (plain `replicated_rule` on root `default`) while others use
+device-class rules (shadow root `default~nvme`), the mgr pg_autoscaler
+considers the roots "overlapping" and **silently refuses to manage any
+affected pool** — `ceph osd pool autoscale-status` returns EMPTY output and
+`pg_num` never grows. This is exactly what happened until July 2026: the main
+data pools (`rdb-pool`, `rpcu-fs-data0`, `rpcu-fs-metadata`,
+`rpcu-store.rgw.buckets.data`) sat at **`pg_num: 1`** — 115 GiB of RBD data in
+a single PG, one OSD holding ~zero data (no parallelism, monolithic recovery).
+
+Fixed live (one-time ops, July 2026):
+
+- `ceph osd crush rule create-replicated replicated_nvme default host nvme`,
+  then repointed `.mgr`, `.nfs`, `cinder.volumes` and the 7 replicated RGW
+  pools to it (`ceph osd pool set <pool> crush_rule replicated_nvme`).
+- New EC profile `rpcu-store.rgw.buckets.data_ecprofile_nvme` (k=2 m=1,
+  `crush-device-class=nvme`) + EC rule `rpcu-store.rgw.buckets.data-nvme` for
+  the EC data pool.
+- Split PGs: `rdb-pool` 32 (autoscaler then grew it further via
+  `target_size_ratio: 0.8`), `rpcu-fs-data0` 32, `rpcu-fs-metadata` 16,
+  `rpcu-store.rgw.buckets.data` 32.
+
+Repo side: `cephblockpool.yaml` sets `pg_autoscale_mode: on` +
+`target_size_ratio: 0.8`; `cephobjectstore.yaml` sets `deviceClass: nvme` on
+both pools. When adding ANY new pool (including Rook-implicit ones like
+`.nfs`), make sure it lands on an nvme-classed rule or the autoscaler breaks
+again cluster-wide.
+
+#### Ceph mon crash storm = containerd fd limit (hephaestus repo)
+
+On 2026-07-03 all 3 mons crash-looped for ~15 min (36 crashes, `abort()` in
+`Processor::accept()`): a reconnect storm after a node outage exhausted the
+**soft `nofile` limit of 1024** that containers inherit from containerd (the
+NixOS containerd unit didn't raise it; upstream containerd.service ships
+`LimitNOFILE=infinity`). Fix lives in the **hephaestus** repo
+(`nixosModules/kubernetes/default.nix`):
+`systemd.services.containerd.serviceConfig.LimitNOFILE = 1048576` — requires a
+`nixos-rebuild switch` + containerd restart on lucy/makise/quinn to take
+effect. If mons ever crash-loop with that backtrace again, check
+`cat /proc/1/limits` inside a mon container first.
 
 #### Tenant network MTU is pinned to 1400 (no jumbo frames)
 

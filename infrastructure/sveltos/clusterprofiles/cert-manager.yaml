@@ -280,6 +280,9 @@ spec:
     # Pushes a Flux Kustomization CR (cert-manager) reconciled by the workload
     # cluster's kustomize-controller, which only exists after flux/flux-instance.
     - flux-instance
+    # Gateway API CRDs must be present before cert-manager starts — its
+    # gateway-shim controller watches Gateway/HTTPRoute resources.
+    - gateway-api-crds
   clusterSelector:
     matchLabels:
       type: workload

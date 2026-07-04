@@ -923,14 +923,23 @@ vault-auth]` (pushes a Flux Kustomization CR + needs the vault-backend store
     cluster out of band (see `infrastructure/ceph-csi-cephfs/README.md`). Listed
     in `clusterprofiles/kustomization.yaml`.
 
-- `clusterprofiles/gateway-api.yaml` - **Per-child-cluster Gateway API + kgateway
-  add-on**. Gives each OPT-IN workload cluster the Gateway API CRDs, the kgateway
-  controller, and a workload-cluster Gateway for TLS-terminated HTTP/HTTPS
-  ingress. Delivered as a Flux takeover (same pattern as
-  openstack-ccm/openstack-cinder-csi/external-dns). Three Flux Kustomization CRs
-  are pushed: **(1)** `gateway-api` — upstream Gateway API experimental CRDs
-  (`./infrastructure/gateway-api`); **(2)** `kgateway-crds` — kgateway CRDs
-  (`./infrastructure/kgateway/crds`, dependsOn gateway-api); **(3)** `kgateway` —
+- `clusterprofiles/gateway-api-crds.yaml` - **Gateway API CRDs on ALL workload
+  clusters**. Installs the upstream Gateway API experimental CRDs
+  (`./infrastructure/gateway-api`) on every cluster with label `type: workload`
+  (no opt-in required). Provides the CRDs that cert-manager's gateway-shim
+  controller needs to reconcile Certificate resources for Gateway HTTPRoutes.
+  Does NOT install kgateway or any Gateway resources — those remain opt-in via
+  the `gateway-api` ClusterProfile. Depends on `flux-instance`. Listed in
+  `clusterprofiles/kustomization.yaml`.
+
+- `clusterprofiles/gateway-api.yaml` - **Per-child-cluster kgateway
+  add-on**. Gives each OPT-IN workload cluster the kgateway CRDs, controller,
+  and a workload-cluster Gateway for TLS-terminated HTTP/HTTPS ingress. The
+  Gateway API CRDs are NOT deployed here — they are installed on ALL workload
+  clusters by the `gateway-api-crds` ClusterProfile. Delivered as a Flux takeover
+  (same pattern as openstack-ccm/openstack-cinder-csi/external-dns). Two Flux
+  Kustomization CRs are pushed: **(1)** `kgateway-crds` — kgateway CRDs
+  (`./infrastructure/kgateway/crds`, dependsOn gateway-api); **(2)** `kgateway` —
   kgateway controller (`./infrastructure/kgateway`, dependsOn kgateway-crds),
   patched to replace the base's resources list with only `helmrelease.yaml` (strips
   the openstack-specific `gateway.yaml` and `httplistenerpolicy.yaml` from the
@@ -949,8 +958,8 @@ vault-issuer`), **GatewayParameters** (LoadBalancer via OpenStack CCM, no Cilium
   external-dns add-on (`domainFilters` scoped to `<cluster>.rpcu.lan`). **Opt-in**:
   `clusterSelector: matchLabels: {type: workload,
 sveltos.argus.rpcu.io/gateway-api: enabled}`. Split into TWO ClusterProfiles:
-  `gateway-api` (`dependsOn: cert-manager`) pushes only the Flux Kustomization CRs
-  (CRDs + controller); `gateway-api-resources` (`dependsOn: gateway-api`) pushes
+  `gateway-api` (`dependsOn: gateway-api-crds`) pushes only the Flux Kustomization CRs
+  (kgateway CRDs + controller); `gateway-api-resources` (`dependsOn: gateway-api`) pushes
   the Gateway/GatewayParameters/Certificate/HTTPRoute/HTTPListenerPolicy CRs. The
   split orders the CRs AFTER the CRDs — deploying them together fails with
   `no matches for kind "GatewayParameters"` because the kgateway CRDs (installed
@@ -2018,7 +2027,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 2026 (Added CephFS ReadWriteMany (RWX) support: `CephFilesystem` + RWX `StorageClass` + `cephfs` CephClient on the openstack Rook/Ceph cluster; standalone upstream `ceph-csi-cephfs` CSI driver (chart v3.15.0) in `infrastructure/ceph-csi-cephfs` with ESO-rendered credentials from Vault; mgmt Flux Kustomization + overlay at `clusters/mgmt/ceph-csi-cephfs/`; Sveltos `ceph-csi-cephfs` ClusterProfile for opt-in workload clusters (Flux takeover, depends on vault-auth). Removed `infrastructure/sveltos/core/` — the capi-management ClusterProfile now reuses the parent `./infrastructure/sveltos` base with two Flux Kustomization CR patches: a HelmRelease `values`→`valuesFrom` swap (domain per-cluster), and a single `$patch: delete` by labelSelector (`argus.rpcu.io/sveltos-clusterprofile=true`) stripping all ClusterProfiles + backing resources. All clusterprofiles/ resources are now stamped with this common label via `labels:` in `clusterprofiles/kustomization.yaml`. The child mgmt cluster's ClusterProfiles are re-pushed as raw manifests by `capi-management-sveltos-profiles` ConfigMap. Bonus: the child now gets the fuller parent RBAC (Vault Crossplane MR + CAPI clusters rules) which the old minimal `core/rbac.yaml` was missing. Earlier: Moved the `jellyfin` Zitadel `Oidc` app OUT of the mgmt cluster overlay (`clusters/mgmt/crossplane/zitadel/`) to the **atlas** production cluster repo (`../atlas`, `clusters/production/crossplane/oidc-jellyfin.yaml`), where Crossplane + the Zitadel provider are now installed standalone (`infrastructure/crossplane` + `infrastructure/crossplane-zitadel`, wired by `clusters/production/{crossplane,crossplane-zitadel,crossplane-resources}.yaml`). The atlas production cluster now manages the shared-Zitadel jellyfin OIDC app itself (referencing the shared org `369994019545117645` by literal external ID); the mgmt overlay retains only its ProviderConfig + chihiro Oidc. NOTE: because both `crossplane-resources` Kustomizations use `prune: false`, the live `Oidc/jellyfin` on the mgmt cluster is NOT auto-deleted — delete it manually from mgmt before atlas's Crossplane adopts it, or the two providers will fight over the same external Zitadel app. On atlas the `zitadel` namespace is declared in the overlay and the `crossplane-provider-zitadel` admin-credentials secret is pulled from the shared mgmt Vault via ESO (`clusters/production/crossplane/external-secret.yaml` → `vault-backend` ClusterSecretStore, Vault KV path `secrets-production/zitadel/crossplane`, key `credentials`) instead of a manual secret — populate that Vault path out of band (ESO + the `vault-backend` ClusterSecretStore are assumed pre-existing on the production cluster, same as the other atlas ExternalSecrets). Earlier: Updated `chihiro` configuration to support optional `external-dns` and `gateway-api` parameters via ConfigMap toggles. Updated all Sveltos ClusterProfiles to enable `spec.prune: true` for Flux `Kustomization` CRs to ensure proper cleanup. Added `dns_manager` role to `ccm-credential` Composition to resolve 401 authentication errors for Cinder CSI. Updated `AGENTS.md` to reflect these changes.)
+**Last Updated**: July 2026 (Added `gateway-api-crds` ClusterProfile: installs Gateway API experimental CRDs on ALL workload clusters (`type: workload`, no opt-in) for cert-manager compatibility; the existing `gateway-api` ClusterProfile now depends on `gateway-api-crds` instead of deploying CRDs itself, and `cert-manager` depends on `gateway-api-crds`. Added CephFS ReadWriteMany (RWX) support: `CephFilesystem` + RWX `StorageClass` + `cephfs` CephClient on the openstack Rook/Ceph cluster; standalone upstream `ceph-csi-cephfs` CSI driver (chart v3.15.0) in `infrastructure/ceph-csi-cephfs` with ESO-rendered credentials from Vault; mgmt Flux Kustomization + overlay at `clusters/mgmt/ceph-csi-cephfs/`; Sveltos `ceph-csi-cephfs` ClusterProfile for opt-in workload clusters (Flux takeover, depends on vault-auth). Removed `infrastructure/sveltos/core/` — the capi-management ClusterProfile now reuses the parent `./infrastructure/sveltos` base with two Flux Kustomization CR patches: a HelmRelease `values`→`valuesFrom` swap (domain per-cluster), and a single `$patch: delete` by labelSelector (`argus.rpcu.io/sveltos-clusterprofile=true`) stripping all ClusterProfiles + backing resources. All clusterprofiles/ resources are now stamped with this common label via `labels:` in `clusterprofiles/kustomization.yaml`. The child mgmt cluster's ClusterProfiles are re-pushed as raw manifests by `capi-management-sveltos-profiles` ConfigMap. Bonus: the child now gets the fuller parent RBAC (Vault Crossplane MR + CAPI clusters rules) which the old minimal `core/rbac.yaml` was missing. Earlier: Moved the `jellyfin` Zitadel `Oidc` app OUT of the mgmt cluster overlay (`clusters/mgmt/crossplane/zitadel/`) to the **atlas** production cluster repo (`../atlas`, `clusters/production/crossplane/oidc-jellyfin.yaml`), where Crossplane + the Zitadel provider are now installed standalone (`infrastructure/crossplane` + `infrastructure/crossplane-zitadel`, wired by `clusters/production/{crossplane,crossplane-zitadel,crossplane-resources}.yaml`). The atlas production cluster now manages the shared-Zitadel jellyfin OIDC app itself (referencing the shared org `369994019545117645` by literal external ID); the mgmt overlay retains only its ProviderConfig + chihiro Oidc. NOTE: because both `crossplane-resources` Kustomizations use `prune: false`, the live `Oidc/jellyfin` on the mgmt cluster is NOT auto-deleted — delete it manually from mgmt before atlas's Crossplane adopts it, or the two providers will fight over the same external Zitadel app. On atlas the `zitadel` namespace is declared in the overlay and the `crossplane-provider-zitadel` admin-credentials secret is pulled from the shared mgmt Vault via ESO (`clusters/production/crossplane/external-secret.yaml` → `vault-backend` ClusterSecretStore, Vault KV path `secrets-production/zitadel/crossplane`, key `credentials`) instead of a manual secret — populate that Vault path out of band (ESO + the `vault-backend` ClusterSecretStore are assumed pre-existing on the production cluster, same as the other atlas ExternalSecrets). Earlier: Updated `chihiro` configuration to support optional `external-dns` and `gateway-api` parameters via ConfigMap toggles. Updated all Sveltos ClusterProfiles to enable `spec.prune: true` for Flux `Kustomization` CRs to ensure proper cleanup. Added `dns_manager` role to `ccm-credential` Composition to resolve 401 authentication errors for Cinder CSI. Updated `AGENTS.md` to reflect these changes.)
 **Repository**: <https://github.com/RPCU/argus.git>
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

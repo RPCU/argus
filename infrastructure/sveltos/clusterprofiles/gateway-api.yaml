@@ -2,10 +2,13 @@
 # takeover (same pattern as openstack-ccm/openstack-cinder-csi/external-dns).
 #
 # Deploys:
-#   1. Gateway API CRDs (upstream experimental channel)
-#   2. kgateway CRDs + controller
-#   3. A workload-cluster Gateway (*.cluster.rpcu.lan) using the vault-issuer
+#   1. kgateway CRDs + controller
+#   2. A workload-cluster Gateway (*.cluster.rpcu.lan) using the vault-issuer
 #      ClusterIssuer from the cert-manager add-on for TLS
+#
+# The Gateway API CRDs (upstream experimental channel) are NOT deployed here —
+# they are installed on ALL workload clusters by the gateway-api-crds
+# ClusterProfile (no opt-in required).
 #
 # A manually-created Certificate (wildcard-tls) in kgateway-system is signed
 # by the vault-issuer (pki-int/sign/cm-<cluster>). The per-cluster PKI role
@@ -18,9 +21,8 @@
 #
 # Gated by the opt-in label sveltos.argus.rpcu.io/gateway-api: enabled.
 #
-# dependsOn the cert-manager ClusterProfile: the vault-issuer ClusterIssuer must
-# exist before the Gateway can be reconciled (the cert-manager.io/cluster-issuer
-# annotation references it).
+# dependsOn the gateway-api-crds ClusterProfile: the Gateway API CRDs must
+# exist before kgateway CRDs can be installed.
 apiVersion: config.projectsveltos.io/v1beta1
 kind: ClusterProfile
 metadata:
@@ -29,7 +31,7 @@ metadata:
 spec:
   syncMode: ContinuousWithDriftDetection
   dependsOn:
-    - cert-manager
+    - gateway-api-crds
   clusterSelector:
     matchLabels:
       type: workload
@@ -73,22 +75,6 @@ metadata:
   name: gateway-api-flux-kustomizations
   namespace: projectsveltos
 data:
-  gateway-api-crds.yaml: |
-    apiVersion: kustomize.toolkit.fluxcd.io/v1
-    kind: Kustomization
-    metadata:
-      name: gateway-api
-      namespace: flux-system
-    spec:
-      interval: 10m
-      sourceRef:
-        kind: GitRepository
-        name: flux-system
-        namespace: flux-system
-      path: ./infrastructure/gateway-api
-      prune: true
-      wait: true
-      timeout: 5m
   kgateway-crds.yaml: |
     apiVersion: kustomize.toolkit.fluxcd.io/v1
     kind: Kustomization

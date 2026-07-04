@@ -10,6 +10,7 @@ resources:
   - vault-auth.yaml
   - cert-manager.yaml
   - external-dns.yaml
+  - gateway-api-crds.yaml
   - gateway-api.yaml
 # Stamp every resource in this directory (ClusterProfiles + their backing
 # ConfigMaps/Secrets/EventSources/EventTriggers) with a common metadata label.

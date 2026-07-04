@@ -1,4 +1,4 @@
-namespace: rook-ceph
+namespace: flux-system
 resources:
   - helmrelease.yaml
   - helmrepo.yaml

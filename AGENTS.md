@@ -1123,7 +1123,7 @@ Split out of `cluster-api-templates` so an ESO failure (admission, missing
 > split the templates and the ClusterClass into two Kustomizations with
 > `dependsOn`, like `kgateway-crds` → `kgateway`.)
 
-**yaook-operator/** - Yaook OpenStack Operators (v2.2.0)
+**yaook-operator/** - Yaook OpenStack Operators (v2.4.0)
 
 - `namespace.yaml` - Kubernetes namespace (yaook)
 - `helmrepo.yaml` - Repository reference (charts.yaook.cloud)

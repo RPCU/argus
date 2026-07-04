@@ -1,0 +1,47 @@
+# Gateway API CRDs only — installed on ALL workload clusters (type: workload).
+# No opt-in label required. Provides the Gateway API CRDs that cert-manager's
+# gateway-shim controller needs to reconcile Certificate resources for Gateway
+# HTTPRoutes.
+#
+# Does NOT install kgateway or any Gateway resources — those remain opt-in via
+# the gateway-api ClusterProfile (sveltos.argus.rpcu.io/gateway-api: enabled).
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: gateway-api-crds
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  dependsOn:
+    - flux-instance
+  clusterSelector:
+    matchLabels:
+      type: workload
+  policyRefs:
+    - name: gateway-api-crds-flux-kustomization
+      namespace: projectsveltos
+      kind: ConfigMap
+---
+# Flux Kustomization CR for the upstream Gateway API experimental CRDs.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-api-crds-flux-kustomization
+  namespace: projectsveltos
+data:
+  gateway-api-crds.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: gateway-api
+      namespace: flux-system
+    spec:
+      interval: 10m
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/gateway-api
+      prune: true
+      wait: true
+      timeout: 5m

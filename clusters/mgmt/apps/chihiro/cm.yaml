@@ -94,6 +94,7 @@ data:
             sveltos.argus.rpcu.io/cert-manager: {{ chihiro.certManager }}
             sveltos.argus.rpcu.io/external-dns: {{ chihiro.externalDns }}
             sveltos.argus.rpcu.io/gateway-api: {{ chihiro.gatewayApi }}
+            sveltos.argus.rpcu.io/csi-driver-nfs: {{ chihiro.csiDriverNfs }}
             type: workload
         spec:
           clusterNetwork:
@@ -270,3 +271,12 @@ data:
           false_value: disabled
           editable: true
           path: "metadata.labels.'sveltos.argus.rpcu.io/gateway-api'"
+        csiDriverNfs:
+          label: "CephFS NFS (RWX)"
+          description: "Enable CephFS NFS CSI driver for ReadWriteMany volumes via the openstack Ceph cluster's NFS gateway"
+          type: boolean
+          default: false
+          true_value: enabled
+          false_value: disabled
+          editable: true
+          path: "metadata.labels.'sveltos.argus.rpcu.io/csi-driver-nfs'"

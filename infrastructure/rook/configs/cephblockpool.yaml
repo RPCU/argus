@@ -8,8 +8,15 @@ spec:
   replicated:
     size: 2
   deviceClass: nvme
-  # parameters:
-  #   pg_autoscale_mode: "on"
-  #   # Hint to the autoscaler that this pool holds the bulk of cluster data
-  #   # so it provisions enough PGs up front instead of starting tiny.
-  #   target_size_ratio: "0.8"
+  parameters:
+    pg_autoscale_mode: "on"
+    # Hint to the autoscaler that this pool holds the bulk of cluster data
+    # so it provisions enough PGs up front instead of starting tiny.
+    # NOTE: the autoscaler was silently broken until July 2026 by overlapping
+    # CRUSH roots (.mgr/.nfs/cinder.volumes used the class-less
+    # replicated_rule while the Rook pools used nvme-classed rules) — the
+    # main data pools sat at pg_num 1. Fixed live by repointing those three
+    # pools to a `replicated_nvme` rule and splitting pg_num (rdb-pool 32,
+    # rpcu-fs-data0 32, rpcu-fs-metadata 16, rgw.buckets.data 32). Keep ALL
+    # pools on nvme-classed rules or the autoscaler breaks again.
+    target_size_ratio: "0.8"

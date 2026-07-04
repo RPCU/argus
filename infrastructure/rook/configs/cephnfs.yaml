@@ -35,7 +35,9 @@ spec:
 # is what the consuming clusters' `ceph-cephfs` StorageClass points at
 # (infrastructure/csi-driver-nfs/storageclass.yaml `server:` parameter — keep
 # the two in sync). Rook's own ClusterIP service remains for intra-cluster
-# use; this one is additive.
+# use; this one is additive. The IP is pinned via the Cilium LB-IPAM
+# annotation (same convention as infrastructure/kgateway/gateway.yaml) —
+# spec.loadBalancerIP is deprecated since Kubernetes v1.24.
 apiVersion: v1
 kind: Service
 metadata:
@@ -44,9 +46,10 @@ metadata:
   labels:
     app: rook-ceph-nfs
     ceph_nfs: rpcu-nfs
+  annotations:
+    lbipam.cilium.io/ips: "10.0.0.245"
 spec:
   type: LoadBalancer
-  loadBalancerIP: 10.0.0.245
   selector:
     app: rook-ceph-nfs
     ceph_nfs: rpcu-nfs

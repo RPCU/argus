@@ -1,0 +1,4 @@
+namespace: rook-ceph
+resources:
+  - helmrelease.yaml
+  - helmrepo.yaml

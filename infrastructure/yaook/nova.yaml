@@ -25,6 +25,7 @@ spec:
           - matchLabels: {}
         novaComputeConfig:
           DEFAULT:
+            initialState: "Enabled"
             debug: false
             max_concurrent_builds: 5
             block_device_allocate_retries: 180

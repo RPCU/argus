@@ -283,12 +283,17 @@ _rook/configs/_ - Ceph cluster configuration
 - `cephnfs.yaml` - `CephNFS` gateway `rpcu-nfs` (1 active NFS-Ganesha server)
   exporting the `rpcu-fs` CephFilesystem to EXTERNAL clusters, + a
   `LoadBalancer` Service pinned at `10.0.0.245` (Cilium L2 pool) on TCP/2049.
-  This exists because the Rook cluster is POD-networked: mons advertise
-  ClusterIPs and mgr/MDS/OSDs advertise pod IPs in the Ceph maps, so an
-  external ceph-csi client can NEVER reach them (CreateVolume hangs → PVCs
-  Pending forever) — LB-fronted mons are not sufficient. The NFS gateway runs
-  in-cluster; consumers only need TCP/2049. The export itself is created ONCE
-  out of band (persisted in the `.nfs` RADOS pool):
+  The IP is pinned via the `lbipam.cilium.io/ips` annotation (repo convention,
+  same as `infrastructure/kgateway/gateway.yaml`) — NOT the deprecated
+  `spec.loadBalancerIP` field. This exists because the Rook cluster is
+  POD-networked: mons advertise ClusterIPs and mgr/MDS/OSDs advertise pod IPs
+  in the Ceph maps, so an external ceph-csi client can NEVER reach them
+  (CreateVolume hangs → PVCs Pending forever) — LB-fronted mons are not
+  sufficient. (The out-of-band `rook-ceph-mon-{a,d,f}-external` LB Services at
+  `10.0.0.242-244` from that failed attempt were deleted from the live
+  cluster; `.242-.244` are free again.) The NFS gateway runs in-cluster;
+  consumers only need TCP/2049. The export itself is created ONCE out of band
+  (persisted in the `.nfs` RADOS pool):
   `ceph nfs export create cephfs rpcu-nfs /rpcu-fs rpcu-fs --path=/`.
 - `openstack-clients.yaml` - CephClients: `glance` + `cinder` (rbd caps).
   (The former external `cephfs` CephClient was removed together with the

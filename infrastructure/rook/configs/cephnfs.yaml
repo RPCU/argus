@@ -26,6 +26,29 @@ metadata:
   name: rpcu-nfs
   namespace: rook-ceph
 spec:
+  # IMPORTANT: After creating the export, you MUST disable security_label:
+  #
+  #   kubectl -n rook-ceph exec deploy/rook-ceph-tools -- \
+  #     ceph nfs export config apply rpcu-nfs '{
+  #       "fsid": "rpcu-nfs",
+  #       "cluster": "rpcu-nfs",
+  #       "export": "/",
+  #       "path": "/",
+  #       "pseudo": "/rpcu-fs",
+  #       "squash": "no_root_squash",
+  #       "security_label": false,
+  #       "protocols": [4],
+  #       "access_type": "RW"
+  #     }'
+  #
+  # Without this, Linux 6.x+ kernels fail with EREMOTEIO on statx() calls
+  # (used by .NET Directory.Exists()) because the NFSv4 GETATTR bitmap
+  # requests a security_label attribute that Ganesha/CephFS can't serve for
+  # non-root users. This breaks Radarr/Jellyfin and any .NET app that uses
+  # Directory.Exists() on NFS-backed mounts.
+  #
+  # NOTE: This is a one-time manual step — the CephNFS CRD does not expose
+  # an export-level security_label field. Re-running the command is idempotent.
   server:
     active: 1
     logLevel: NIV_INFO

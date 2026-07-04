@@ -342,6 +342,16 @@ TCP/2049 to the LB IP — no Ceph credentials, no Vault/ESO plumbing.
 > `csi-driver-nfs` ClusterProfile (opt-in workload clusters, label
 > `sveltos.argus.rpcu.io/csi-driver-nfs: enabled`). The NFS export is created
 > once via the toolbox (persisted in the `.nfs` RADOS pool).
+>
+> **CRITICAL: `security_label: false` on the NFS export.** On Linux 6.x+
+> kernels, `statx()` requests an NFSv4 GETATTR bitmap that includes
+> `security_label` — a feature Ganesha/CephFS cannot serve for non-root users.
+> This causes EREMOTEIO (Remote I/O error) on `statx()` calls, breaking any
+> .NET/Node.js app that uses `Directory.Exists()` (Radarr, Jellyfin, etc.).
+> The fix is a one-time export reconfiguration:
+> `ceph nfs export config apply rpcu-nfs '{"security_label":false,...}'`.
+> See `infrastructure/rook/configs/cephnfs.yaml` for the full command. If you
+> recreate NFS PVCs, the fresh mounts will pick up this setting automatically.
 
 **crossplane/** - Universal Control Plane (v2.2.0)
 

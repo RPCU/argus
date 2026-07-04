@@ -2,9 +2,10 @@ apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: rook-ceph-csi
-  namespace: rook-ceph
+  namespace: flux-system
 spec:
   interval: 5m
+  targetNamespace: rook-ceph
   chart:
     spec:
       chart: ceph-csi-drivers

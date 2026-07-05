@@ -21,3 +21,6 @@ allowVolumeExpansion: true
 mountOptions:
   - nfsvers=4.1
   - soft
+  - timeo=50
+  - retrans=3
+  - noatime

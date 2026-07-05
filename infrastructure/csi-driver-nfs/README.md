@@ -40,3 +40,38 @@ The NFS export is stored by the mgr `nfs` module in the `.nfs` RADOS pool
 kubectl -n rook-ceph exec deploy/rook-ceph-tools -- \
   ceph nfs export create cephfs rpcu-nfs /rpcu-fs rpcu-fs --path=/
 ```
+
+If the CephNFS cluster/export is recreated, the export reverts to
+`security_label: true` — re-apply with:
+`ceph nfs export config apply rpcu-nfs '{"security_label":false,...}'`.
+
+## CRITICAL: consumer nodes MUST disable NFS directory delegations
+
+Linux kernels ≥ 6.11 optimistically send the NFSv4.1 `GET_DIR_DELEGATION`
+op when a directory is accessed repeatedly. NFS-Ganesha (ALL released
+versions incl. V6.5 — the ceph v19.2.3 image ships V5.9) replies
+`NFS4ERR_OP_ILLEGAL` instead of `NFS4ERR_NOTSUPP` (fixed only in ganesha
+`next`, unreleased). The client cannot map `OP_ILLEGAL` to an errno and
+returns **EREMOTEIO (Remote I/O error)** to userspace, poisoning the dir's
+cached state — symptoms: intermittent/flapping `Remote I/O error` on
+directory listings (2nd access within the cache window), files "randomly
+missing" from Jellyfin/Radarr library scans. Confirmed by packet capture
+(status 10044 in reply to op 46).
+
+Because ganesha replies `OP_ILLEGAL` (not `NOTSUPP`), the client does NOT
+disable the feature server-wide and keeps hitting it per-directory. Until a
+fixed ganesha release ships, every NFS-consuming node needs the `nfsv4`
+module parameter `directory_delegations=0`:
+
+```bash
+# runtime (lost on reboot — applied to all production workers 2026-07-05):
+echo N > /sys/module/nfsv4/parameters/directory_delegations
+
+# permanent (NixOS node image, hephaestus repo):
+boot.extraModprobeConfig = "options nfsv4 directory_delegations=0";
+```
+
+Takes effect immediately for subsequent lookups (no remount needed).
+Verified: 75/75 non-root directory enumerations clean after flipping, vs
+persistent flapping failures before. Re-evaluate when the ganesha image
+ships the `GET_DIR_DELEGATION → NOTSUPP` fix.

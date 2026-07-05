@@ -14,8 +14,9 @@
 # connectivity) and external clients only need plain NFS/2049 to its
 # LoadBalancer IP — no Ceph map connectivity at all.
 #
-# The export is created ONCE, out of band, via the toolbox (the mgr `nfs`
-# module stores it in the .nfs RADOS pool — it survives restarts):
+# The export itself is NOT declarable on this CR (the CephNFS CRD has no
+# export spec — exports are mgr `nfs` module state in the .nfs RADOS pool).
+# Create it once with:
 #
 #   kubectl -n rook-ceph exec deploy/rook-ceph-tools -- \
 #     ceph nfs export create cephfs rpcu-nfs /rpcu-fs rpcu-fs --path=/
@@ -26,29 +27,14 @@ metadata:
   name: rpcu-nfs
   namespace: rook-ceph
 spec:
-  # IMPORTANT: After creating the export, you MUST disable security_label:
-  #
-  #   kubectl -n rook-ceph exec deploy/rook-ceph-tools -- \
-  #     ceph nfs export config apply rpcu-nfs '{
-  #       "fsid": "rpcu-nfs",
-  #       "cluster": "rpcu-nfs",
-  #       "export": "/",
-  #       "path": "/",
-  #       "pseudo": "/rpcu-fs",
-  #       "squash": "no_root_squash",
-  #       "security_label": false,
-  #       "protocols": [4],
-  #       "access_type": "RW"
-  #     }'
-  #
-  # Without this, Linux 6.x+ kernels fail with EREMOTEIO on statx() calls
-  # (used by .NET Directory.Exists()) because the NFSv4 GETATTR bitmap
-  # requests a security_label attribute that Ganesha/CephFS can't serve for
-  # non-root users. This breaks Radarr/Jellyfin and any .NET app that uses
-  # Directory.Exists() on NFS-backed mounts.
-  #
-  # NOTE: This is a one-time manual step — the CephNFS CRD does not expose
-  # an export-level security_label field. Re-running the command is idempotent.
+  # IMPORTANT: the export MUST have security_label=false. Without it, Linux
+  # 6.x+ kernels fail with EREMOTEIO (Remote I/O error) on statx()/opendir()
+  # for NON-ROOT users (root is unaffected), because the NFSv4.2 GETATTR
+  # bitmap requests a security_label attribute Ganesha/CephFS can't serve.
+  # This breaks Radarr/Jellyfin and any .NET app using Directory.Exists()
+  # on NFS-backed mounts (July 2026 production incident). If the CephNFS
+  # cluster/export is recreated, the export reverts to security_label=true —
+  # re-apply with: ceph nfs export config apply rpcu-nfs '{"security_label":false,...}'.
   server:
     active: 1
     logLevel: NIV_INFO

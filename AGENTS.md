@@ -112,8 +112,9 @@ Key files:
 - `gateway-api.yaml` - Gateway API CRDs installation
 - `kgateway-crds.yaml` - kgateway CRDs installation
 - `kgateway.yaml` - kgateway controller and Gateway installation
-- `ceph-adapter-rook.yaml` - OpenStack/Ceph integration
-- `rook.yaml` - Rook storage orchestrator
+- `rook.yaml` - Rook storage orchestrator (three Flux Kustomizations:
+  `rook-setup` → `rook-ceph-csi` [./infrastructure/rook/csi-drivers, dependsOn
+  rook-setup] → `rook-configs` [dependsOn rook-setup + rook-ceph-csi])
 - `yaook-operator.yaml` - Yaook OpenStack operators
 - `crossplane.yaml` - Crossplane Flux Kustomizations: `crossplane` (Helm),
   `crossplane-openstack` (provider base), `crossplane-zitadel` (provider base),
@@ -261,8 +262,31 @@ _trust-manager/configs/_ - Trust bundle configuration
 
 _rook/setup/_ - Initial installation
 
-- `helmrelease.yaml` - Rook Helm chart (v1.19.0)
+- `helmrelease.yaml` - Rook Helm chart (v1.20.1). Since Rook v1.20 the
+  operator NO LONGER deploys the CSI drivers itself — the `rook-ceph` chart
+  bundles the **ceph-csi-operator** as a subchart (default
+  `csi.installCsiOperator: true`), and the drivers are admin-managed via the
+  separate `ceph-csi-drivers` chart (see _rook/csi-drivers/_ below). Values
+  are just `crds.enabled: true`; no CSI values belong here anymore.
 - `helmrepo.yaml` - Repository reference
+- `kustomization.yaml` - Kustomization manifest
+
+_rook/csi-drivers/_ - Ceph-CSI drivers chart (NEW requirement in Rook v1.20)
+
+- `helmrelease.yaml` - `ceph-csi-drivers` chart v1.0.3 (targetNamespace
+  rook-ceph). Values are an exact copy of Rook's recommended
+  `deploy/charts/rook-ceph/../ceph-csi-drivers/values.yaml` for release-1.20:
+  `imageSet.name: rook-csi-operator-image-set-configmap` (the ConfigMap Rook
+  generates), system priority classes, and Driver CRs
+  `rook-ceph.rbd.csi.ceph.com` + `rook-ceph.cephfs.csi.ceph.com` (names MUST
+  keep the rook operator namespace prefix to match the existing StorageClass
+  provisioners). `nfs`/`nvmeof` drivers disabled (external RWX is served via
+  the CephNFS/Ganesha gateway + `csi-driver-nfs`, not ceph-csi NFS). The
+  pre-existing Driver/OperatorConfig CRs (auto-created by Rook v1.18/v1.19)
+  were adopted by Helm on install — do NOT also set CSI values in the
+  rook-ceph operator chart, that would duplicate ownership.
+- `helmrepo.yaml` - HelmRepository `ceph-csi-operator`
+  (`https://ceph.github.io/ceph-csi-operator`)
 - `kustomization.yaml` - Kustomization manifest
 
 _rook/configs/_ - Ceph cluster configuration
@@ -313,17 +337,15 @@ _rook/configs/_ - Ceph cluster configuration
 - `openstack-clients.yaml` - CephClients: `glance` + `cinder` (rbd caps).
   (The former external `cephfs` CephClient was removed together with the
   ceph-csi-cephfs external driver — NFS consumers need no cephx key.)
+- `rook-ceph-config.yaml` - Ceph daemon configuration overrides (Rook
+  `rook-ceph-config` ConfigMap). Sets `mon_max_pg_per_osd = 400` (up from the
+  default 250) — the July 2026 PG splits brought the 3-OSD cluster to 251
+  PGs/OSD, which hit the default limit and triggered a persistent
+  `TOO_MANY_PGS` health warning.
 - `toolbox-deployment.yaml` - Ceph admin toolbox
-- `yaook-secret-reader-rbac.yaml` - RBAC allowing yaook to read secrets
 - `gateway/` - Gateway API resources for Rook services
   - `httproute-ceph.yaml` - HTTPRoute for Ceph dashboard (TLS termination at Gateway)
   - `kustomization.yaml` - Kustomization manifest
-- `kustomization.yaml` - Kustomization manifest
-
-**ceph-adapter-rook/** - OpenStack Integration
-
-- `helmrelease.yaml` - Helm chart
-- `helmrepo.yaml` - Repository reference
 - `kustomization.yaml` - Kustomization manifest
 
 **csi-driver-nfs/** - RWX volumes over NFS, CephFS-backed (chart v4.13.4)
@@ -1412,7 +1434,8 @@ _fluxcd/instances/_ - Instance configuration
 | cert-manager         | v1.19.2 | jetstack/cert-manager                          | 5m            |
 | cilium               | v1.18.6 | cilium/cilium                                  | 5m            |
 | kgateway             | v2.2.2  | oci://cr.kgateway.dev/kgateway-dev/charts      | 5m            |
-| rook                 | v1.19.0 | rook-release/rook-ceph                         | 5m            |
+| rook                 | v1.20.1 | rook-release/rook-ceph                         | 5m            |
+| ceph-csi-drivers     | 1.0.3   | ceph.github.io/ceph-csi-operator               | 5m            |
 | crossplane           | 2.2.0   | charts.crossplane.io/stable                    | 5m            |
 | external-secrets     | 2.3.0   | charts.external-secrets.io                     | 5m            |
 | yaook-crds           | 2.2.0   | yaook.cloud/crds                               | 5m            |
@@ -1446,8 +1469,7 @@ _fluxcd/instances/_ - Instance configuration
    - cilium (with VLAN patches)
    - crossplane (Helm → crossplane-openstack → crossplane-compositions → crossplane-resources [./clusters/openstack/crossplane, prune:false])
    - external-secrets
-   - ceph-adapter-rook
-   - rook (setup → configs with health checks)
+   - rook (setup → csi-drivers → configs with health checks)
    - yaook-operator (CRDs first, then operators via dependsOn)
 
 ### Kustomization Dependencies (from clusters/mgmt/)
@@ -1981,9 +2003,11 @@ Fixed live (one-time ops, July 2026):
 - `ceph osd crush rule create-replicated replicated_nvme default host nvme`,
   then repointed `.mgr`, `.nfs`, `cinder.volumes` and the 7 replicated RGW
   pools to it (`ceph osd pool set <pool> crush_rule replicated_nvme`).
-- New EC profile `rpcu-store.rgw.buckets.data_ecprofile_nvme` (k=2 m=1,
-  `crush-device-class=nvme`) + EC rule `rpcu-store.rgw.buckets.data-nvme` for
-  the EC data pool.
+- Updated the original EC profile `rpcu-store.rgw.buckets.data_ecprofile` in
+  place (`--force`) to add `crush-device-class=nvme` — the July manual fix had
+  created a parallel `_ecprofile_nvme` profile instead of updating the
+  original, leaving the ObjectStore CR's pools on the old profile without the
+  device class.
 - Split PGs: `rdb-pool` 32 (autoscaler then grew it further via
   `target_size_ratio: 0.8`), `rpcu-fs-data0` 32, `rpcu-fs-metadata` 16,
   `rpcu-store.rgw.buckets.data` 32.
@@ -2100,11 +2124,9 @@ Argus is a **production-grade Kubernetes GitOps repository** that:
 
 All configuration is declarative, version-controlled, and enables auditable infrastructure changes.
 
-- `rook/csi-drivers/` - CSI driver Helm chart (v1.0.3)
-
 ---
 
-**Last Updated**: July 2026 (Updated `rook-ceph-csi` Helm chart version to v1.0.3)
+**Last Updated**: July 2026 (Fixed EC profile crush-device-class for ObjectStore, raised mon_max_pg_per_osd to 400, added rook-ceph-config ConfigMap)
 **Repository**: <https://github.com/RPCU/argus.git>
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

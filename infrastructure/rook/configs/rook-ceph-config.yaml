@@ -1,0 +1,13 @@
+# Ceph daemon configuration overrides — Rook reads this ConfigMap and applies
+# the settings to all Ceph daemons. Previously unset: the default
+# mon_max_pg_per_osd (250) was hit after the July 2026 PG splits left 251
+# PGs across 3 OSDs. Raised to 400 for headroom on the 3-node cluster.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rook-ceph-config
+  namespace: rook-ceph
+data:
+  config: |
+    [global]
+    mon_max_pg_per_osd = 400

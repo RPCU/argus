@@ -6,6 +6,7 @@ resources:
   - cephobjectstoreuser.yaml
   - cephnfs.yaml
   - openstack-clients.yaml
+  - rook-ceph-config.yaml
   - storageclassrdb.yaml
   - storageclasscephfs.yaml
   - toolbox-deployment.yaml

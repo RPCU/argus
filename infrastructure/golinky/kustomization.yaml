@@ -1,0 +1,5 @@
+namespace: golinky
+resources:
+  - https://github.com/didactiklabs/golinky/releases/download/v0.3.1/bundle.yaml
+patches:
+  - path: golinky-service-patch.yaml

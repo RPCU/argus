@@ -444,6 +444,11 @@ TCP/2049 to the LB IP — no Ceph credentials, no Vault/ESO plumbing.
 - `values.yaml` - Custom Helm values
 - `kustomization.yaml` - Kustomization manifest
 
+**golinky/** - Link Shortener (v0.3.1)
+
+- `kustomization.yaml` - Kustomization manifest (namespace: golinky, upstream bundle from `didactiklabs/golinky` v0.3.1)
+- `golinky-service-patch.yaml` - Strategic merge patch: `type: LoadBalancer` with `lbipam.cilium.io/ips: "10.0.0.241"` for Cilium L2 IP pinning
+
 **openstack-ccm/** - OpenStack Cloud Controller Manager (chart v2.35.0, app v1.35.0)
 
 Provides `Service` type `LoadBalancer` via OpenStack Octavia and initialises
@@ -2126,7 +2131,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 2026 (Fixed EC profile crush-device-class for ObjectStore, raised mon_max_pg_per_osd to 400, added rook-ceph-config ConfigMap)
+**Last Updated**: July 2026 (Added golinky link shortener to openstack cluster, fixed EC profile crush-device-class for ObjectStore, raised mon_max_pg_per_osd to 400, added rook-ceph-config ConfigMap)
 **Repository**: <https://github.com/RPCU/argus.git>
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

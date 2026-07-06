@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: golinky
+  namespace: golinky
+  annotations:
+    lbipam.cilium.io/ips: "10.0.0.242"
+spec:
+  type: LoadBalancer

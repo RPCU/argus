@@ -1224,6 +1224,11 @@ reconciled by the operators above. Deployed by the `yaook` Flux Kustomization
   wedges mid-eviction (`state: Evicting`, `phase: WaitingForDependency`) with
   its compute service left `disabled` — cascading across lucy/makise/quinn one
   at a time. (Pre-2.4.0 the scalar was tolerated; the upgrade tightened it.)
+  `live_migration_permit_auto_converge: true` enables libvirt auto-converge:
+  when the VM's dirty page rate exceeds network bandwidth during live migration,
+  libvirt automatically throttles vCPU to force convergence. Without this, busy
+  VMs with high memory write rates (e.g. production workers) can oscillate
+  forever in the pre-copy convergence loop and never complete migration.
 - `cinder.yaml` - CinderDeployment (block storage, rook-ceph RBD backend)
 - `horizon.yaml` - HorizonDeployment (dashboard)
 - `octavia.yaml` - OctaviaDeployment (load balancing)
@@ -2144,7 +2149,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 2026 (Fixed nova.yaml disk_cachemodes to list form — yaook operator 2.4.0 CUE schema requires `[...string]`; a scalar string triggered a cluster-wide NovaComputeNode rolling recreate that wedged nodes in Evicting because live-migration cannot converge)
+**Last Updated**: July 2026 (Added `live_migration_permit_auto_converge: true` to nova.yaml — libvirt auto-converge throttles vCPU when dirty page rate exceeds bandwidth, preventing busy VMs from oscillating forever in pre-copy migration convergence loops)
 **Repository**: <https://github.com/RPCU/argus.git>
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

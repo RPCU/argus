@@ -1208,9 +1208,22 @@ reconciled by the operators above. Deployed by the `yaook` Flux Kustomization
   glance/cinder share one Ceph cluster).
 - `neutron.yaml` - NeutronDeployment (networking)
 - `nova.yaml` - NovaDeployment (compute). libvirt I/O tuning for RBD-backed
-  disks: `disk_cachemodes: network=writeback` (librbd writeback cache —
+  disks: `disk_cachemodes: [network=writeback]` (librbd writeback cache —
   flushed on guest fsync, large guest write-latency win) and
   `hw_disk_discard: unmap` (guest TRIM reclaims space in the Ceph pool).
+  **`disk_cachemodes` MUST be a LIST** (`[network=writeback]`), not a bare
+  string. The yaook operator 2.4.0 CUE schema
+  (`nova_template/openstack_default_nova.cue`: `"disk_cachemodes"?: [...string]`)
+  rejects a scalar string with `conflicting values "network=writeback" and
+[...string]` → the generated `NovaComputeNode` goes `ConfigurationInvalid`.
+  A scalar here is worse than a plain config error: because it makes the
+  rendered compute config "not up-to-date", the nova-operator flags every node
+  `RequiresRecreation=True` and starts a **rolling recreate** (maxUnavailable=1)
+  that DELETEs each `NovaComputeNode` and evicts (live-migrates) its VMs before
+  recreating it. If live-migration cannot converge on this cluster, each node
+  wedges mid-eviction (`state: Evicting`, `phase: WaitingForDependency`) with
+  its compute service left `disabled` — cascading across lucy/makise/quinn one
+  at a time. (Pre-2.4.0 the scalar was tolerated; the upgrade tightened it.)
 - `cinder.yaml` - CinderDeployment (block storage, rook-ceph RBD backend)
 - `horizon.yaml` - HorizonDeployment (dashboard)
 - `octavia.yaml` - OctaviaDeployment (load balancing)
@@ -2131,7 +2144,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 2026 (Added golinky link shortener to openstack cluster, fixed EC profile crush-device-class for ObjectStore, raised mon_max_pg_per_osd to 400, added rook-ceph-config ConfigMap)
+**Last Updated**: July 2026 (Fixed nova.yaml disk_cachemodes to list form — yaook operator 2.4.0 CUE schema requires `[...string]`; a scalar string triggered a cluster-wide NovaComputeNode rolling recreate that wedged nodes in Evicting because live-migration cannot converge)
 **Repository**: <https://github.com/RPCU/argus.git>
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

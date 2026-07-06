@@ -45,7 +45,8 @@ spec:
             # librbd writeback cache for network (RBD) disks — large guest
             # write-latency improvement; safe with virtio: the cache is
             # flushed on guest fsync/barrier requests.
-            disk_cachemodes: network=writeback
+            disk_cachemodes:
+              - network=writeback
             # Pass guest TRIM/discard through to Ceph so deleted blocks are
             # reclaimed in the pool (needs virtio-scsi or virtio-blk w/ recent
             # machine types; harmless otherwise).

@@ -33,6 +33,13 @@ spec:
     workers:
       machineDeployments:
         - class: default-worker
+          name: worker-large
+          replicas: 1
+          variables:
+            overrides:
+              - name: workerFlavor
+                value: large
+        - class: default-worker
           name: worker
           replicas: 3
           variables:

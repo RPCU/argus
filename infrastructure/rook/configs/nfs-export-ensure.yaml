@@ -1,0 +1,132 @@
+# Declarative enforcement of the rpcu-nfs CephFS export (exports are mgr
+# `nfs` module state in the .nfs RADOS pool — NOT declarable on the CephNFS
+# CR, see cephnfs.yaml). This CronJob:
+#
+#   1. creates the export if it is missing (e.g. after the CephNFS cluster or
+#      the .nfs pool is recreated), and
+#   2. re-applies the spec if `security_label: false` ever drifts — the July
+#      2026 incidents: with security_label enabled (the default on a fresh
+#      export), Linux 6.x+ clients get EREMOTEIO on statx()/opendir() for
+#      NON-ROOT users, breaking Jellyfin/Radarr/Sonarr library scans.
+#
+# The job is a no-op when the export matches (checks before applying), so the
+# hourly schedule causes no ganesha export reloads in steady state.
+#
+# CAVEAT (remount trap, see cephnfs.yaml): if this job ever has to FIX the
+# export (log line "drift detected"), clients that mounted while the export
+# was wrong keep a stale supported-attributes cache in their mount superblock
+# and continue to fail until remounted — restart the ganesha pod, then force
+# a remount on the consuming clusters (scale ALL pods sharing the affected
+# PVCs on a node to zero, then back up).
+#
+# Auth plumbing (SA, mon endpoints, admin keyring) mirrors
+# toolbox-deployment.yaml.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rpcu-nfs-export-ensure
+  namespace: rook-ceph # namespace:cluster
+  labels:
+    app: rpcu-nfs-export-ensure
+spec:
+  schedule: "17 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 300
+      backoffLimit: 3
+      template:
+        metadata:
+          labels:
+            app: rpcu-nfs-export-ensure
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: rook-ceph-default
+          containers:
+            - name: export-ensure
+              image: quay.io/ceph/ceph:v19
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/bash
+                - -ec
+                - |
+                  # Minimal ceph.conf + keyring (same sources as the toolbox)
+                  mon_endpoints=$(sed 's/[a-z0-9_-]\+=//g' /etc/rook/mon-endpoints)
+                  cat > /etc/ceph/ceph.conf <<EOF
+                  [global]
+                  mon_host = ${mon_endpoints}
+                  [client.admin]
+                  keyring = /etc/ceph/keyring
+                  EOF
+                  cat > /etc/ceph/keyring <<EOF
+                  [${ROOK_CEPH_USERNAME}]
+                  key = $(cat /var/lib/rook-ceph-mon/secret.keyring)
+                  EOF
+
+                  cat > /tmp/export.json <<'EOF'
+                  {
+                    "cluster_id": "rpcu-nfs",
+                    "pseudo": "/rpcu-fs",
+                    "path": "/",
+                    "fsal": {
+                      "name": "CEPH",
+                      "fs_name": "rpcu-fs"
+                    },
+                    "access_type": "RW",
+                    "squash": "no_root_squash",
+                    "security_label": false,
+                    "protocols": [4],
+                    "transports": ["TCP"]
+                  }
+                  EOF
+
+                  info=$(ceph nfs export info rpcu-nfs /rpcu-fs 2>/dev/null || true)
+                  if [ -z "${info}" ]; then
+                    echo "export /rpcu-fs missing — creating"
+                    ceph nfs export apply rpcu-nfs -i /tmp/export.json
+                  elif ! echo "${info}" | grep -q '"security_label": false'; then
+                    echo "drift detected (security_label != false) — re-applying."
+                    echo "NOTE: restart the ganesha pod and REMOUNT all consuming"
+                    echo "clusters' stale mounts (see cephnfs.yaml remount trap)."
+                    ceph nfs export apply rpcu-nfs -i /tmp/export.json
+                  else
+                    echo "export /rpcu-fs up-to-date (security_label=false)"
+                  fi
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 2016
+                runAsGroup: 2016
+                capabilities:
+                  drop: ["ALL"]
+              env:
+                - name: ROOK_CEPH_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: rook-ceph-mon
+                      key: ceph-username
+              volumeMounts:
+                - name: ceph-config
+                  mountPath: /etc/ceph
+                - name: mon-endpoint-volume
+                  mountPath: /etc/rook
+                - name: ceph-admin-secret
+                  mountPath: /var/lib/rook-ceph-mon
+                  readOnly: true
+          volumes:
+            - name: ceph-admin-secret
+              secret:
+                secretName: rook-ceph-mon
+                optional: false
+                items:
+                  - key: ceph-secret
+                    path: secret.keyring
+            - name: mon-endpoint-volume
+              configMap:
+                name: rook-ceph-mon-endpoints
+                items:
+                  - key: data
+                    path: mon-endpoints
+            - name: ceph-config
+              emptyDir: {}

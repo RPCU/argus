@@ -54,7 +54,7 @@ spec:
       - name: externalNetworkId
         value: 1cfd69da-057c-4748-a0d4-de5b0ca77db2
       - name: imageName
-        value: hephaestus-kaas-26.05-v1.36.1
+        value: hephaestus-kaas-2-26.05-v1.36.1
       - name: managedSubnetCIDR
         value: 192.168.8.0/24
       - name: dataStoreName

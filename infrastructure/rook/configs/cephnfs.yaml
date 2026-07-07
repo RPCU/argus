@@ -16,10 +16,10 @@
 #
 # The export itself is NOT declarable on this CR (the CephNFS CRD has no
 # export spec — exports are mgr `nfs` module state in the .nfs RADOS pool).
-# Create it once with:
-#
-#   kubectl -n rook-ceph exec deploy/rook-ceph-tools -- \
-#     ceph nfs export create cephfs rpcu-nfs /rpcu-fs rpcu-fs --path=/
+# It is enforced declaratively by the `rpcu-nfs-export-ensure` CronJob
+# (nfs-export-ensure.yaml), which creates the export if missing and re-applies
+# security_label=false if it ever drifts (e.g. after the CephNFS cluster or
+# export is recreated).
 #
 apiVersion: ceph.rook.io/v1
 kind: CephNFS
@@ -32,12 +32,46 @@ spec:
   # for NON-ROOT users (root is unaffected), because the NFSv4.2 GETATTR
   # bitmap requests a security_label attribute Ganesha/CephFS can't serve.
   # This breaks Radarr/Jellyfin and any .NET app using Directory.Exists()
-  # on NFS-backed mounts (July 2026 production incident). If the CephNFS
-  # cluster/export is recreated, the export reverts to security_label=true —
-  # re-apply with: ceph nfs export config apply rpcu-nfs '{"security_label":false,...}'.
+  # on NFS-backed mounts (July 2026 production incident). The
+  # nfs-export-ensure CronJob keeps this setting applied.
+  #
+  # REMOUNT TRAP (July 2026, second incident): the running ganesha only picks
+  # up an export config change on restart/reload, AND every NFS client caches
+  # the server's supported-attributes bitmap in its mount superblock at mount
+  # time. A client that mounted while ganesha still advertised security_label
+  # keeps requesting it FOREVER (until remount) and gets EREMOTEIO for every
+  # non-root statx() once the server stops serving it. After changing
+  # security_label: restart the ganesha pod AND force a remount on every
+  # consuming cluster (scale ALL pods sharing the affected PVCs on a node to
+  # zero so kubelet unstages the volume, then scale back up).
   server:
     active: 1
     logLevel: NIV_INFO
+    # Ganesha was BestEffort with no priorityClass — the same gap that made
+    # mon/mgr/osd/mds the first eviction/OOM victims on these hyperconverged
+    # nodes (see cephcluster.yaml). Exit-137 kills of the gateway during the
+    # 2026-07-06 node event each cost a 90s NFS grace period + client session
+    # churn on every consuming cluster. No CPU limit on purpose (repo
+    # convention — throttling hurts tail latency).
+    priorityClassName: system-cluster-critical
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        memory: 2Gi
+    # Relax the liveness probe (default: period=10s failure=10 ≈ 100s). A
+    # kill → restart cycle is EXPENSIVE for NFS (90s grace period, stalled
+    # clients, session churn), so tolerate ~6 min of unresponsiveness before
+    # killing — a hung ganesha this long is genuinely dead, while a slow
+    # startup after a node event is not. Rook keeps its default rpcinfo
+    # handler; only the timings are overridden.
+    livenessProbe:
+      probe:
+        initialDelaySeconds: 30
+        timeoutSeconds: 10
+        periodSeconds: 15
+        failureThreshold: 24
 ---
 # LoadBalancer Service pinning the NFS gateway on the Cilium L2 pool
 # ("internal", 10.0.0.240-253; 240 kgateway, 241 powerdns, 245 NFS). This IP

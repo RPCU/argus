@@ -331,9 +331,35 @@ _rook/configs/_ - Ceph cluster configuration
   sufficient. (The out-of-band `rook-ceph-mon-{a,d,f}-external` LB Services at
   `10.0.0.242-244` from that failed attempt were deleted from the live
   cluster; `.242-.244` are free again.) The NFS gateway runs in-cluster;
-  consumers only need TCP/2049. The export itself is created ONCE out of band
-  (persisted in the `.nfs` RADOS pool):
-  `ceph nfs export create cephfs rpcu-nfs /rpcu-fs rpcu-fs --path=/`.
+  consumers only need TCP/2049. The export is created/enforced by the
+  `rpcu-nfs-export-ensure` CronJob (see `nfs-export-ensure.yaml` below) —
+  no longer a manual one-off. The `server` block now sets
+  `priorityClassName: system-cluster-critical` + `resources` (500m/1Gi req,
+  2Gi mem limit, no CPU limit) and a **relaxed `livenessProbe`**
+  (`failureThreshold: 24`, `periodSeconds: 15` ≈ 6 min) — the gateway was
+  previously BestEffort with the default ~100s liveness, so the 2026-07-06
+  node event exit-137-killed it repeatedly, each kill costing a 90s NFS grace
+  period + client session churn. **security_label remount trap** (2026-07-07
+  second incident): ganesha only reloads an export change on restart, and NFS
+  clients cache the server's supported-attributes bitmap in the mount
+  superblock at mount time — a client that mounted while `security_label` was
+  still advertised keeps requesting it (EREMOTEIO for non-root statx()) until
+  REMOUNTED. After any `security_label` change: restart the ganesha pod AND
+  force a remount on every consuming cluster (scale ALL pods sharing the
+  affected PVCs on a node to 0 so kubelet unstages the volume, then back up).
+- `nfs-export-ensure.yaml` - `rpcu-nfs-export-ensure` CronJob (rook-ceph,
+  hourly at :17, `concurrencyPolicy: Forbid`). Declaratively enforces the
+  `rpcu-nfs` CephFS export (exports are mgr `nfs` module state in the `.nfs`
+  RADOS pool — NOT declarable on the CephNFS CR): creates it if missing (e.g.
+  after the CephNFS cluster or `.nfs` pool is recreated) and re-applies
+  `security_label: false` if it drifts (the default on a fresh export is
+  `true`, which breaks non-root statx() on Linux 6.x+ → Jellyfin/Radarr
+  library scans fail with Remote I/O error). No-op when the export already
+  matches (checks `ceph nfs export info` before applying), so steady state
+  causes no ganesha reloads. Auth plumbing (SA `rook-ceph-default`, mon
+  endpoints, admin keyring) mirrors `toolbox-deployment.yaml`. NOTE: when the
+  job has to FIX drift it logs a reminder — the remount trap above still
+  applies (the job fixes the server; stale client mounts must be remounted).
 - `openstack-clients.yaml` - CephClients: `glance` + `cinder` (rbd caps).
   (The former external `cephfs` CephClient was removed together with the
   ceph-csi-cephfs external driver — NFS consumers need no cephx key.)
@@ -2149,7 +2175,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 2026 (Added `live_migration_permit_auto_converge: true` to nova.yaml — libvirt auto-converge throttles vCPU when dirty page rate exceeds bandwidth, preventing busy VMs from oscillating forever in pre-copy migration convergence loops)
+**Last Updated**: July 2026 (NFS resilience after the 2026-07-06/07 incidents: `cephnfs.yaml` gateway now has `system-cluster-critical` priority + resources + a relaxed liveness probe; new `nfs-export-ensure.yaml` CronJob declaratively enforces the export incl. `security_label: false`; `infrastructure/kamaji/values.yaml` adds `required` etcd pod anti-affinity so etcd members spread across mgmt nodes and one node event no longer degrades every tenant control plane)
 **Repository**: <https://github.com/RPCU/argus.git>
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

@@ -15,6 +15,25 @@ resources:
     memory: 256Mi
 kamaji-etcd:
   clusterDomain: "mgmt.local"
+  # Spread the 3 etcd members across distinct nodes. Without this, node
+  # churn (CAPI remediation) packed 2/3 members onto ONE worker (observed
+  # 2026-07-07), so a single node degraded EVERY tenant control plane —
+  # tenant apiservers timed out on liveness/readiness for hours and workload
+  # clusters' leader-elected controllers (e.g. csi-nfs-controller sidecars)
+  # crash-looped on lease-renewal timeouts. `required` (not preferred) on
+  # hostname, same convention as the Vault and rook MDS anti-affinity — with
+  # 3 mgmt workers a temporarily Pending member (quorum 2/3 intact) is
+  # preferable to co-location.
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - kamaji-etcd
+          topologyKey: "kubernetes.io/hostname"
 gatewayAPI:
   enabled: false
 datastore:

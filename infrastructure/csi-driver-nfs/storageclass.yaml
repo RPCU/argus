@@ -20,7 +20,7 @@ volumeBindingMode: Immediate
 allowVolumeExpansion: true
 mountOptions:
   - nfsvers=4.1
-  - soft
+  - hard
   - timeo=600
   - retrans=3
   - noatime

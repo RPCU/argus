@@ -107,7 +107,7 @@ data:
                 - {{ chihiro.serviceCIDR }}
           topology:
             classRef:
-              name: openstack-kamaji-v1
+              name: openstack-kamaji
             controlPlane:
               replicas: 0
             variables:
@@ -161,6 +161,10 @@ data:
                 version: ["v1.35.4"]
             - value: "hephaestus-kaas-26.05-{{ chihiro.version }}"
               label: "26.05"
+              constrain:
+                version: ["v1.36.1"]
+            - value: "hephaestus-kaas-2-26.05-{{ chihiro.version }}"
+              label: "26.05-2"
               constrain:
                 version: ["v1.36.1"]
           default: "hephaestus-kaas-26.05-{{ chihiro.version }}"

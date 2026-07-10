@@ -2067,6 +2067,50 @@ both pools. When adding ANY new pool (including Rook-implicit ones like
 `.nfs`), make sure it lands on an nvme-classed rule or the autoscaler breaks
 again cluster-wide.
 
+#### Ceph single OSD full from too-few PGs on the dominant pool (openstack cluster)
+
+On **2026-07-10** `osd.2` (quinn) hit `full_ratio` (95.02%) and Ceph flagged
+`OSD_FULL` → `POOL_FULL` on **all 14 pools**, blocking writes **cluster-wide**,
+even though the cluster was only **~73% full** with 760 GiB free. "Full" in Ceph
+is **per-OSD, not per-cluster**: a full OSD blocks writes to every pool with PGs
+on it regardless of free space elsewhere. K8s PVC accounting does NOT prevent
+this — RBD/CephFS volumes are **thin-provisioned** (a 100Gi PVC consumes only
+bytes written), the replica-2 ×2 raw multiplier is invisible to K8s, and there
+is no admission gate on live Ceph utilization or per-OSD balance.
+
+Root cause: `rpcu-fs-data0` (the CephFS/NFS media pool) holds **~1 TiB ≈ 70% of
+raw capacity** but was left at **`pg_num: 32`** by the July 2026 CRUSH-root fix
+above. At ~31 GiB per PG on a 3-OSD replica-2 cluster the 64 PG-copies split
+**26/19/19**, so quinn carried ~40% of the bytes vs ~30% each on lucy/makise.
+The **upmap balancer could not fix it** — it balances on aggregate **PG count**
+(which was even: 257/252/233), NOT per-pool bytes; coarse, oversized PGs give it
+nothing to smooth (`ceph balancer status` reported `no optimization needed`).
+
+Fixed live (one-time ops, 2026-07-10):
+
+- Unblock writes: `ceph osd set-full-ratio 0.97` / `set-backfillfull-ratio 0.92`
+  / `set-nearfull-ratio 0.85→0.88` (temporary — reverted to 0.95/0.9/0.85 once
+  drained). Stopgap only; creates no space.
+- Immediate relief: `ceph osd reweight osd.2 0.85` to shed PGs off quinn (reset
+  to 1.0 after).
+- **Durable fix**: split `rpcu-fs-data0` `pg_num` **32 → 128** (finer PGs the
+  balancer CAN distribute evenly) + `ceph config set mgr
+mgr/balancer/upmap_max_deviation 1` (default 5 was too loose for 3 OSDs).
+- Speed up drain: Ceph v19 uses the **mClock scheduler** by default, which
+  **IGNORES `osd_max_backfills`/`osd_recovery_max_active`** — recovery speed is
+  the `osd_mclock_profile` (default `balanced`). Set
+  `ceph config set osd osd_mclock_profile high_recovery_ops` during the drain,
+  reset to `balanced` after (starves client I/O otherwise).
+
+Repo side: `cephfilesystem.yaml` `dataPools[0]` (`data0`) now declares
+`pg_autoscale_mode: on` + `target_size_ratio: 0.8` (mirrors `cephblockpool.yaml`)
+so the autoscaler keeps enough PGs and never collapses back to 32. Both dominant
+pools declaring 0.8 is fine — the autoscaler normalizes the ratios (each →
+`EFFECTIVE RATIO 0.5`). **Lesson**: on a small (3-OSD) replica-2 cluster, the
+pool holding the bulk of the data needs enough PGs that individual PGs stay
+small relative to per-OSD capacity, or one OSD fills from placement skew the
+PG-count balancer can't correct. Set `target_size_ratio` on EVERY dominant pool.
+
 #### Ceph mon crash storm = containerd fd limit (hephaestus repo)
 
 On 2026-07-03 all 3 mons crash-looped for ~15 min (36 crashes, `abort()` in
@@ -2175,7 +2219,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 2026 (NFS resilience after the 2026-07-06/07 incidents: `cephnfs.yaml` gateway now has `system-cluster-critical` priority + resources + a relaxed liveness probe; new `nfs-export-ensure.yaml` CronJob declaratively enforces the export incl. `security_label: false`; `infrastructure/kamaji/values.yaml` adds `required` etcd pod anti-affinity so etcd members spread across mgmt nodes and one node event no longer degrades every tenant control plane)
+**Last Updated**: July 2026 (2026-07-10 Ceph OSD-full incident: `osd.2`/quinn hit 95% full_ratio and blocked writes cluster-wide at only ~73% cluster usage because `rpcu-fs-data0` — ~70% of the data — was left at `pg_num: 32`, splitting 26/19/19 across the 3 OSDs; the PG-count upmap balancer couldn't correct the byte skew. Fixed live by splitting `rpcu-fs-data0` pg_num 32→128 + `upmap_max_deviation 1` + `osd_mclock_profile high_recovery_ops` for the drain; `infrastructure/rook/configs/cephfilesystem.yaml` `data0` pool now declares `pg_autoscale_mode: on` + `target_size_ratio: 0.8` so it never collapses back to 32. See the new "Ceph single OSD full from too-few PGs on the dominant pool" note in Section 8. Prior update — NFS resilience after the 2026-07-06/07 incidents: `cephnfs.yaml` gateway now has `system-cluster-critical` priority + resources + a relaxed liveness probe; new `nfs-export-ensure.yaml` CronJob declaratively enforces the export incl. `security_label: false`; `infrastructure/kamaji/values.yaml` adds `required` etcd pod anti-affinity so etcd members spread across mgmt nodes and one node event no longer degrades every tenant control plane)
 **Repository**: <https://github.com/RPCU/argus.git>
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

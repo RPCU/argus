@@ -1,43 +1,12 @@
-# OpenStack Cloud Controller Manager (OCCM) for OPT-IN workload clusters,
-# delivered as a Flux takeover (NO Sveltos helmChart bootstrap).
+# OCCM for OPT-IN workload clusters, delivered as a Flux takeover.
+# Why no Sveltos helmChart bootstrap: the CCM is not required to bring a cluster
+# up, and a helmChart would permanently fight Flux over the same Helm release.
+# Flux is the sole owner; this profile only pushes manifests.
 #
-# Why no bootstrap: unlike the CNI (cilium needs a Sveltos helmChart bootstrap
-# because no pod schedules without a CNI), the CCM is not required to bring a
-# cluster up. A Sveltos helmChart bootstrap (ContinuousWithDriftDetection) would
-# also permanently FIGHT Flux over the same Helm release — Sveltos kept
-# reverting Flux's nodeSelector/postRenderer changes. So Flux is the SOLE owner:
-# this ClusterProfile only pushes manifests; Flux installs + reconciles the CCM
-# from the central repo.
-#
-# Three things are pushed to each matching workload cluster:
-#   1. the per-project "cloud-controller-clouds" Secret (the Application
-#      Credential clouds.yaml + cloud.conf rendered by ESO on mgmt). This profile
-#      OWNS the secret; the Cinder CSI profile mounts it but does not own it.
-#   2. the "openstack-ccm-workload-values" ConfigMap (kube-system) — overrides
-#      the mgmt-specific base values.yaml: the shared secret name
-#      (cloud-controller-clouds) and the Kamaji tolerations.
-#   3. the Flux Kustomization CR (wrapping infrastructure/openstack-ccm), patched
-#      to add that ConfigMap as a second valuesFrom AND a postRenderer that
-#      replaces the chart's control-plane nodeSelector (Kamaji clusters have no
-#      control-plane nodes).
-#
-# Credentials use Application Credentials (scoped per project) instead of the
-# former yaook-sys-maint admin credentials. The clouds.yaml is templated from
-# the cloud-controller-app-creds Secret (mgmt namespace), keyed by project name.
-# The project name is resolved from the workload cluster's OpenStackCluster
-# resource (spec.identityRef.cloudName).
-#
-# Gated by the opt-in label sveltos.argus.rpcu.io/openstack-integration: enabled
-# — the SAME label shared by the openstack-cinder-csi and external-snapshotter
-# ClusterProfiles, so one label opts a cluster into the whole OpenStack
-# integration stack (CCM + Cinder CSI + snapshotter).
-#
-# dependsOn the `flux-instance` ClusterProfile (which itself dependsOn `flux`):
-# this profile pushes a Flux Kustomization CR (wrapping infrastructure/openstack-ccm)
-# that references the `flux-system` GitRepository and a HelmRelease reconciled by
-# the helm-controller. Both only exist once the Flux Operator + FluxInstance have
-# deployed the Flux controllers, CRDs, and the GitRepository source — so we must
-# wait for Flux to be in place first.
+# Gated by sveltos.argus.rpcu.io/openstack-integration: enabled (shared with
+# openstack-cinder-csi and external-snapshotter — one label opts into the full
+# OpenStack integration stack). dependsOn: flux-instance (pushes a Flux
+# Kustomization CR that requires the helm-controller).
 apiVersion: config.projectsveltos.io/v1beta1
 kind: ClusterProfile
 metadata:
@@ -51,18 +20,8 @@ spec:
     matchLabels:
       type: workload
       sveltos.argus.rpcu.io/openstack-integration: enabled
-  # Load two management-cluster resources so the cloud.conf/clouds.yaml can be
-  # generated per-cluster:
-  #   - OpenStackCluster: gives this cluster's OpenStack project via
-  #     spec.identityRef.cloudName (e.g. "lab"). Fetched by the CAPI
-  #     infrastructureRef name (random suffix, e.g. lab-665wz) which is read
-  #     dynamically from the Cluster CR.
-  #   - cloud-controller-app-creds Secret: the multi-project Application
-  #     Credential clouds.yaml rendered by ESO on mgmt. The template extracts
-  #     ONLY this cluster's entry, so no other project's credentials are pushed
-  #     to the workload cluster.
-  # RBAC for these reads is granted by the addon-controller-role-extra patch in
-  # rbac.yaml.
+  # OpenStackCluster: workload cluster's project (spec.identityRef.cloudName).
+  # AppCreds: multi-project Application Credential clouds.yaml (mgmt ns).
   templateResourceRefs:
     - resource:
         apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -77,8 +36,6 @@ spec:
         name: cloud-controller-app-creds
       identifier: AppCreds
   policyRefs:
-    # Per-cluster clouds.yaml + cloud.conf, generated dynamically from the
-    # templateResourceRefs above (see ConfigMap openstack-ccm-clouds below).
     - name: openstack-ccm-clouds
       namespace: projectsveltos
       kind: ConfigMap
@@ -89,26 +46,8 @@ spec:
       namespace: projectsveltos
       kind: ConfigMap
 ---
-# Per-cluster CCM credentials, generated DYNAMICALLY (no per-project files).
-#
-# Sveltos instantiates this template on the management cluster:
-#   - cloudName  = the workload cluster's OpenStack project, read from its
-#                  OpenStackCluster.spec.identityRef.cloudName (alias
-#                  OpenStackCluster).
-#   - the matching cloud entry (auth_url, username, password, project_id, ...)
-#                  is extracted from the multi-project cloud-controller-app-creds
-#                  clouds.yaml (alias AppCreds) via fromYaml — ONLY this
-#                  cluster's entry is emitted, so other projects' creds are not
-#                  leaked to the workload cluster.
-#
-# It deploys an Opaque Secret cloud-controller-clouds into the workload
-# cluster's kube-system (the name/keys the CCM + Cinder CSI charts mount). The
-# clouds.yaml is scoped to the cluster's own project, so Octavia builds the LB
-# in the project that owns the tenant subnet (fixes "Subnet not found").
-#
-# NOTE: `cloud=openstack` in cloud.conf stays fixed — we always render the
-# single selected entry under the cloud name "openstack", so the CCM's
-# clouds-file lookup matches regardless of which project it is.
+# Per-cluster clouds.yaml + cloud.conf, templated from the AppCreds secret.
+# Scoped to this cluster's project only (other projects' creds are not leaked).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -155,14 +94,16 @@ data:
             interface: public
             identity_api_version: 3
 ---
-# Per-cluster values override pushed into the workload cluster's kube-system.
-# valuesFrom ConfigMaps are merged in order; the Flux Kustomization patch below
-# appends this one AFTER the base openstack-ccm-values, so these keys win.
+# Per-cluster CCM values override. Sets cluster.name so Octavia LB / floating-IP
+# descriptions read "... from cluster <name>" instead of the chart default
+# "kubernetes". Sveltos-templated.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: openstack-ccm-workload-values
   namespace: projectsveltos
+  annotations:
+    projectsveltos.io/template: "true"
 data:
   openstack-ccm-workload-values.yaml: |
     apiVersion: v1
@@ -172,14 +113,15 @@ data:
       namespace: kube-system
     data:
       values.yaml: |
+        cluster:
+          name: {{ .Cluster.metadata.name }}
         secret:
           enabled: true
           create: false
           name: cloud-controller-clouds
-        # NOTE: nodeSelector is intentionally NOT set here. Helm map-merge cannot
-        # remove the chart's default node-role.kubernetes.io/control-plane key,
-        # so it is overridden by a Helm postRenderer ($patch: replace) on the
-        # Flux Kustomization patch below. tolerations DO apply via values merge.
+        # nodeSelector cannot be removed via Helm map-merge; the chart default
+        # node-role.kubernetes.io/control-plane is replaced by a postRenderer
+        # ($patch: replace) on the Flux Kustomization below.
         tolerations:
           - key: node.cloudprovider.kubernetes.io/uninitialized
             value: "true"
@@ -221,12 +163,6 @@ data:
                   name: openstack-ccm-values
                 - kind: ConfigMap
                   name: openstack-ccm-workload-values
-              # Helm deep-merges map values, so neither {} nor adding a key can
-              # REMOVE the chart's default nodeSelector key
-              # node-role.kubernetes.io/control-plane. On Kamaji workload
-              # clusters that key matches no node, so the CCM DaemonSet stays at
-              # 0 desired. Use a Helm postRenderer (kustomize $patch: replace) to
-              # overwrite the rendered DaemonSet's nodeSelector outright.
               postRenderers:
                 - kustomize:
                     patches:

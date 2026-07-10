@@ -36,22 +36,10 @@ spec:
       deviceClass: nvme
       parameters:
         pg_autoscale_mode: "on"
-        # This is the CLUSTER'S LARGEST pool by far (~1 TiB stored, ~70% of
-        # raw capacity — the CephFS/NFS media data). It was left at pg_num 32
-        # by the July 2026 CRUSH-root fix, which was far too coarse: at ~31 GiB
-        # per PG on a 3-OSD replica-2 cluster the PGs split 26/19/19, so quinn
-        # (osd.2) carried ~40% of the bytes while lucy/makise held ~30% each —
-        # osd.2 hit full_ratio (95%) and blocked writes cluster-wide even though
-        # the cluster was only ~73% full (2026-07-10 incident). The upmap
-        # balancer could not fix it because it balances on aggregate PG COUNT
-        # (which was even), not per-pool bytes — coarse, oversized PGs give it
-        # nothing to smooth. Fixed live by splitting pg_num 32 -> 128 (finer PGs
-        # the balancer can distribute evenly) + tightening
-        # mgr/balancer/upmap_max_deviation to 1. The target_size_ratio below
-        # tells the autoscaler this pool holds the bulk of the data so it
-        # provisions/keeps enough PGs up front instead of collapsing back to 32.
-        # rdb-pool also declares 0.8; the autoscaler normalizes the ratios
-        # across pools, so both dominant pools claiming 0.8 is fine.
+        # Dominant pool (~70% of raw capacity). target_size_ratio keeps the
+        # autoscaler from collapsing pg_num too low on a 3-OSD replica-2
+        # cluster. Must stay in sync with rdb-pool (also 0.8); the autoscaler
+        # normalizes both to EFFECTIVE RATIO 0.5. See AGENTS.md Section 8.
         target_size_ratio: "0.8"
   # Do not delete the pools if the CephFilesystem CR is removed — protects data.
   preserveFilesystemOnDelete: true

@@ -803,6 +803,8 @@ data:
     metadata:
       name: openstack-ccm-workload-values
       namespace: projectsveltos
+      annotations:
+        projectsveltos.io/template: "true"
     data:
       openstack-ccm-workload-values.yaml: |
         apiVersion: v1
@@ -812,6 +814,8 @@ data:
           namespace: kube-system
         data:
           values.yaml: |
+            cluster:
+              name: {{ .Cluster.metadata.name }}
             secret:
               enabled: true
               create: false

@@ -19,3 +19,16 @@ spec:
   # the CCM Pods will CrashLoop/wait until the secret appears, which is fine.
   dependsOn:
     - name: openstack-ccm-identity
+  patches:
+    - patch: |
+        apiVersion: helm.toolkit.fluxcd.io/v2
+        kind: HelmRelease
+        metadata:
+          name: openstack-cloud-controller-manager
+        spec:
+          values:
+            cluster:
+              name: mgmt
+      target:
+        kind: HelmRelease
+        name: openstack-cloud-controller-manager

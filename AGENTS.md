@@ -1807,11 +1807,16 @@ argus alongside the self-hosted job, exclude argus from that App's access
   6. **Helm-values `tag:` without a sibling `repository:`** — inline marker in
      `infrastructure/kamaji/values.yaml` (`docker.io/clastix/kamaji`).
   7. **Plain `image: registry/repo:tag`** in raw manifests → `docker` (rook
-     ceph image + toolbox, chihiro).
-  8. **npins** GitRelease pin in `npins/sources.json` → `github-releases`
-     (sveltosctl). Note: bumping the JSON pin alone is not sufficient — the
-     `hash`/`revision` must be refreshed with `npins update`; treat such PRs as a
-     signal to run `npins update` locally.
+     ceph image + toolbox + nfs-export CronJob, chihiro). All three
+     `quay.io/ceph/ceph` images are pinned to the same full tag (`v19.2.3`,
+     not a floating `v19`) and grouped so they bump in lockstep.
+
+**npins is NOT managed by Renovate.** `npins/sources.json` pins carry a
+`revision`/`url`/`hash` that a Renovate regex cannot refresh (it could only bump
+the `version` string, leaving a stale hash that breaks the Nix build). The
+dedicated `.github/workflows/npins-update.yaml` workflow runs `npins update`
+across ALL pins every 6h and opens correct PRs with refreshed hashes — it is the
+sole owner of npins updates (sveltosctl, nixpkgs, etc.).
 
 **Grouping (packageRules):** yaook operators (shared 2.2.0), openstack
 cloud-provider (CCM + Cinder CSI + their images), cluster-api providers, cilium

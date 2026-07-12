@@ -4,15 +4,20 @@
 //   - Reliably update Flux HelmReleases (HTTP + OCI repos), container images
 //     (incl. those buried in Helm `values.yaml` blocks), Kustomize remote
 //     bases pinned to GitHub release URLs / `?ref=` tags, Crossplane provider
-//     & function packages, Cluster API provider version fields, the Sveltos
-//     ClusterProfile inline `helmCharts`, and the npins Go-release pin.
+//     & function packages, Cluster API provider version fields, and the Sveltos
+//     ClusterProfile inline `helmCharts`.
 //   - Manual review for everything (no auto-merge) — production GitOps.
 //
 // Most work is done by Renovate's built-in `flux` and `helm-values` managers.
 // The `customManagers` (regex) below cover the version pins that no built-in
 // manager understands (URL-pinned kustomize bases, Crossplane packages, CAPI
-// provider `version:` fields, Sveltos inline charts, the npins pin, and a few
-// image tags expressed in non-standard YAML shapes).
+// provider `version:` fields, Sveltos inline charts, and a few image tags
+// expressed in non-standard YAML shapes).
+//
+// npins pins (npins/sources.json) are deliberately left to the dedicated
+// `.github/workflows/npins-update.yaml` workflow, which runs `npins update`
+// and refreshes the pin hash — a Renovate regex could only bump the version
+// string and would leave a stale hash that breaks the Nix build.
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
 
@@ -157,17 +162,12 @@
       datasourceTemplate: "docker",
     },
 
-    // 8. npins GitRelease pin (npins/sources.json). Tracks the Go release tag.
-    {
-      customType: "regex",
-      managerFilePatterns: ["/(^|/)npins/sources\\.json$/"],
-      matchStrings: [
-        '"owner":\\s*"(?<owner>[^"]+)",\\s*"repo":\\s*"(?<repo>[^"]+)"[\\s\\S]*?"version":\\s*"(?<currentValue>v?[0-9][^"]+)"',
-      ],
-      depNameTemplate: "{{{owner}}}/{{{repo}}}",
-      datasourceTemplate: "github-releases",
-      versioningTemplate: "semver",
-    },
+    // NOTE: npins pins (npins/sources.json) are intentionally NOT managed by
+    // Renovate. A regex manager can only bump the `version` field, leaving the
+    // pin's `revision`/`url`/`hash` stale — which breaks the Nix build. The
+    // repo's dedicated `.github/workflows/npins-update.yaml` runs `npins update`
+    // across ALL pins every 6h and opens correct PRs with refreshed hashes, so
+    // it is the sole owner of npins updates (sveltosctl, nixpkgs, etc.).
   ],
 
   // ---------------------------------------------------------------------------
@@ -180,6 +180,13 @@
       matchManagers: ["flux"],
       matchPackageNames: ["/-operator$/", "/^crds$/"],
       matchFileNames: ["infrastructure/yaook-operator/**"],
+    },
+
+    // Group all Ceph daemon images (cephcluster + toolbox + nfs-export CronJob)
+    // so they bump in lockstep — they must stay on the same Ceph release.
+    {
+      groupName: "ceph image",
+      matchPackageNames: ["quay.io/ceph/ceph"],
     },
 
     // Group the OpenStack cloud-provider charts + their images (CCM + Cinder
@@ -231,6 +238,20 @@
     {
       matchPackageNames: ["kamaji", "kamaji-crds"],
       matchManagers: ["flux"],
+      enabled: false,
+    },
+
+    // provider-random (crossplane-contrib) is unused AND no longer resolvable
+    // on any registry (crossplane-contrib moved off xpkg.upbound.io; the
+    // package returns no-result on upbound and ghcr alike), so Renovate logs a
+    // persistent "Failed to look up docker package ... no-result" warning.
+    // It's already flagged in AGENTS.md as unused / failing to install /
+    // candidate for removal. Disable lookups for it to silence the warning.
+    {
+      matchPackageNames: [
+        "xpkg.upbound.io/crossplane-contrib/provider-random",
+        "/crossplane-contrib/provider-random$/",
+      ],
       enabled: false,
     },
 

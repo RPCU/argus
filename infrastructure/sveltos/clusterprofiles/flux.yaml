@@ -43,7 +43,7 @@ spec:
       repositoryName: flux-operator
       chartName: flux-operator
       # renovate: datasource=docker depName=ghcr.io/controlplaneio-fluxcd/charts/flux-operator
-      chartVersion: "0.40.0"
+      chartVersion: "0.54.1"
       releaseName: flux-operator
       releaseNamespace: flux-system
       helmChartAction: Install

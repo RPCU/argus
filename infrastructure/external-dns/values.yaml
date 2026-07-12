@@ -26,7 +26,7 @@ provider:
   webhook:
     image:
       repository: ghcr.io/inovex/external-dns-openstack-webhook
-      tag: "2.2.0"
+      tag: "v2.3.0"
     # Mount the clouds.yaml into the webhook sidecar (same path as the main
     # container).
     extraVolumeMounts:

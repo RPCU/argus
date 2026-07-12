@@ -1742,10 +1742,38 @@ Validates devenv configuration and hello script.
 
 ### Dependency Updates (Renovate)
 
-`renovate.json5` (repo root) configures the **Mend Renovate GitHub App** to open
-PRs for outdated dependencies. **No auto-merge** — every PR requires manual
-review/merge (production GitOps). PRs are batched Monday early morning
-(`Europe/Paris`). A Dependency Dashboard issue tracks everything.
+`renovate.json5` (repo root) drives dependency-update PRs. Renovate runs
+**self-hosted in GitHub Actions** (`.github/workflows/renovate.yaml`, the
+`renovatebot/github-action`) rather than via the Mend-hosted App. **No
+auto-merge** — every PR requires manual review/merge (production GitOps). PRs
+are batched Monday early morning (`Europe/Paris`) via the `schedule` in
+`renovate.json5`. A Dependency Dashboard issue tracks everything.
+
+**Runner + auth (self-hosted).** The workflow (`.github/workflows/renovate.yaml`)
+runs hourly (`cron: 0 * * * *`) plus `workflow_dispatch` (with `dryRun` /
+`logLevel` inputs); Renovate's own `schedule` gates when branches/PRs are
+actually created, so the hourly runs are cheap no-ops outside the window. It
+mints a short-lived installation token from the org's **`rpcu-bot` GitHub App**
+(app_id `3164565`) via `actions/create-github-app-token@v1` (same pattern as
+bealv's updatecli workflow), then passes it to the Renovate action. It reuses
+the existing **org-level** secrets already granted to `argus` (no repo-level
+secrets needed):
+
+- `APP_ID` — the `rpcu-bot` App's numeric App ID.
+- `PRIVATE_KEY` — the `rpcu-bot` App's private key (PEM).
+
+Both are org secrets on `RPCU` (visible to argus via
+`gh api /repos/RPCU/argus/actions/organization-secrets`), created out of band
+from `https://github.com/organizations/RPCU/settings/apps/rpcu-bot`.
+
+The `rpcu-bot` App must have **Workflows: Read and write** permission — the
+`helpers:pinGitHubActionDigests` preset makes Renovate open PRs that edit
+`.github/workflows/*`, which requires the `workflows` scope on the token (the
+App's other needed scopes — Contents, Pull requests, Issues, Actions — are
+already granted). The Mend-hosted `renovate` App (app_id `2740`) is installed
+org-wide (`repository_selection: all`); to avoid it double-running against
+argus alongside the self-hosted job, exclude argus from that App's access
+(org → Installations → `renovate` → Only select repositories) or uninstall it.
 
 **What it tracks, and how:**
 
@@ -2219,7 +2247,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 2026 (2026-07-10 Ceph OSD-full incident: `osd.2`/quinn hit 95% full_ratio and blocked writes cluster-wide at only ~73% cluster usage because `rpcu-fs-data0` — ~70% of the data — was left at `pg_num: 32`, splitting 26/19/19 across the 3 OSDs; the PG-count upmap balancer couldn't correct the byte skew. Fixed live by splitting `rpcu-fs-data0` pg_num 32→128 + `upmap_max_deviation 1` + `osd_mclock_profile high_recovery_ops` for the drain; `infrastructure/rook/configs/cephfilesystem.yaml` `data0` pool now declares `pg_autoscale_mode: on` + `target_size_ratio: 0.8` so it never collapses back to 32. See the new "Ceph single OSD full from too-few PGs on the dominant pool" note in Section 8. Prior update — NFS resilience after the 2026-07-06/07 incidents: `cephnfs.yaml` gateway now has `system-cluster-critical` priority + resources + a relaxed liveness probe; new `nfs-export-ensure.yaml` CronJob declaratively enforces the export incl. `security_label: false`; `infrastructure/kamaji/values.yaml` adds `required` etcd pod anti-affinity so etcd members spread across mgmt nodes and one node event no longer degrades every tenant control plane)
+**Last Updated**: July 2026 (Renovate is now self-hosted in GitHub Actions: new `.github/workflows/renovate.yaml` runs the `renovatebot/github-action` hourly + on-dispatch, minting a token from the `rpcu-bot` GitHub App via `actions/create-github-app-token`, reusing the org-level `APP_ID`/`PRIVATE_KEY` secrets. Replaces the Mend-hosted App. See "Dependency Updates (Renovate)" in Section 5. — Prior: 2026-07-10 Ceph OSD-full incident: `osd.2`/quinn hit 95% full_ratio and blocked writes cluster-wide at only ~73% cluster usage because `rpcu-fs-data0` — ~70% of the data — was left at `pg_num: 32`, splitting 26/19/19 across the 3 OSDs; the PG-count upmap balancer couldn't correct the byte skew. Fixed live by splitting `rpcu-fs-data0` pg_num 32→128 + `upmap_max_deviation 1` + `osd_mclock_profile high_recovery_ops` for the drain; `infrastructure/rook/configs/cephfilesystem.yaml` `data0` pool now declares `pg_autoscale_mode: on` + `target_size_ratio: 0.8` so it never collapses back to 32. See the new "Ceph single OSD full from too-few PGs on the dominant pool" note in Section 8. Prior update — NFS resilience after the 2026-07-06/07 incidents: `cephnfs.yaml` gateway now has `system-cluster-critical` priority + resources + a relaxed liveness probe; new `nfs-export-ensure.yaml` CronJob declaratively enforces the export incl. `security_label: false`; `infrastructure/kamaji/values.yaml` adds `required` etcd pod anti-affinity so etcd members spread across mgmt nodes and one node event no longer degrades every tenant control plane)
 **Repository**: <https://github.com/RPCU/argus.git>
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

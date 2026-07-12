@@ -8,7 +8,7 @@ metadata:
   namespace: capi-system
 spec:
   # renovate: datasource=github-releases depName=kubernetes-sigs/cluster-api
-  version: v1.13.2
+  version: v1.13.3
   manager:
     featureGates:
       ClusterTopology: true

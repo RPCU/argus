@@ -11,7 +11,7 @@
       "version_upper_bound": "1.10",
       "release_prefix": null,
       "submodules": false,
-      "version": "v1.9.0",
+      "version": "v1.12.0",
       "revision": "774659bd8ebfd80ce03c37127054710800e9f4a9",
       "url": "https://api.github.com/repos/projectsveltos/sveltosctl/tarball/refs/tags/v1.9.0",
       "hash": "sha256-NVZUOyp8+3DOl32DIS9bdJtHN1tygTH8vKFWFaJNlXA=",

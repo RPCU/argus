@@ -12,7 +12,7 @@ spec:
   chart:
     spec:
       chart: projectsveltos
-      version: 1.12.3
+      version: 1.12.6
       interval: 5m
       sourceRef:
         kind: HelmRepository

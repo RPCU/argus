@@ -6,4 +6,4 @@ metadata:
   namespace: capi-kubeadm-bootstrap-system
 spec:
   # renovate: datasource=github-releases depName=kubernetes-sigs/cluster-api
-  version: v1.13.3
+  version: v1.13.4

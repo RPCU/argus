@@ -593,7 +593,7 @@ data:
           repositoryName: cilium
           chartName: cilium/cilium
           # renovate: datasource=helm depName=cilium registryUrl=https://helm.cilium.io/
-          chartVersion: "1.19.5"
+          chartVersion: "1.19.6"
           releaseName: cilium
           releaseNamespace: kube-system
           helmChartAction: Install

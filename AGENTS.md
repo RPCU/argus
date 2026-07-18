@@ -1818,6 +1818,21 @@ dedicated `.github/workflows/npins-update.yaml` workflow runs `npins update`
 across ALL pins every 6h and opens correct PRs with refreshed hashes — it is the
 sole owner of npins updates (sveltosctl, nixpkgs, etc.).
 
+**yaook OpenStack releases are NOT managed by Renovate.** The yaook operator
+supports multiple OpenStack releases (e.g. `2025.1`, `2026.1`) via the
+`targetRelease` field in each Deployment CR. New releases are defined in the
+operator's Python source (`RELEASES = [...]` in each component's `__init__.py`
+or `cr.py`). Because there is no public registry or datasource for these
+version strings, Renovate cannot track them. The dedicated
+`.github/workflows/yaook-releases.yaml` workflow runs weekly (Monday 03:00 UTC)
+and on-demand: it fetches the yaook operator source from GitLab, extracts the
+`RELEASES` lists from all components, compares them to the `targetRelease` in
+our CRs (`infrastructure/yaook/*.yaml`), and opens a PR to upgrade if a newer
+release is available. All 8 CRs are updated together (keystone, nova, glance,
+neutron, cinder, horizon, octavia, designate). Barbican is not currently
+deployed. **Before merging:** verify the upgrade path is valid — check the
+[yaook upgrade docs](https://yaook.cloud/docs/) for breaking changes.
+
 **Grouping (packageRules):** yaook operators (shared 2.2.0), openstack
 cloud-provider (CCM + Cinder CSI + their images), cluster-api providers, cilium
 (HelmRelease + Sveltos inline kept in sync), flux-operator (HelmRelease +
@@ -2252,7 +2267,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 2026 (Renovate is now self-hosted in GitHub Actions: new `.github/workflows/renovate.yaml` runs the `renovatebot/github-action` hourly + on-dispatch, minting a token from the `rpcu-bot` GitHub App via `actions/create-github-app-token`, reusing the org-level `APP_ID`/`PRIVATE_KEY` secrets. Replaces the Mend-hosted App. See "Dependency Updates (Renovate)" in Section 5. — Prior: 2026-07-10 Ceph OSD-full incident: `osd.2`/quinn hit 95% full_ratio and blocked writes cluster-wide at only ~73% cluster usage because `rpcu-fs-data0` — ~70% of the data — was left at `pg_num: 32`, splitting 26/19/19 across the 3 OSDs; the PG-count upmap balancer couldn't correct the byte skew. Fixed live by splitting `rpcu-fs-data0` pg_num 32→128 + `upmap_max_deviation 1` + `osd_mclock_profile high_recovery_ops` for the drain; `infrastructure/rook/configs/cephfilesystem.yaml` `data0` pool now declares `pg_autoscale_mode: on` + `target_size_ratio: 0.8` so it never collapses back to 32. See the new "Ceph single OSD full from too-few PGs on the dominant pool" note in Section 8. Prior update — NFS resilience after the 2026-07-06/07 incidents: `cephnfs.yaml` gateway now has `system-cluster-critical` priority + resources + a relaxed liveness probe; new `nfs-export-ensure.yaml` CronJob declaratively enforces the export incl. `security_label: false`; `infrastructure/kamaji/values.yaml` adds `required` etcd pod anti-affinity so etcd members spread across mgmt nodes and one node event no longer degrades every tenant control plane)
+**Last Updated**: July 2026 (New `.github/workflows/yaook-releases.yaml` workflow: scrapes yaook operator GitLab source weekly to detect new OpenStack releases and opens upgrade PRs for all yaook Deployment CRs. Renovate is now self-hosted in GitHub Actions: new `.github/workflows/renovate.yaml` runs the `renovatebot/github-action` hourly + on-dispatch, minting a token from the `rpcu-bot` GitHub App via `actions/create-github-app-token`, reusing the org-level `APP_ID`/`PRIVATE_KEY` secrets. Replaces the Mend-hosted App. See "Dependency Updates (Renovate)" in Section 5. — Prior: 2026-07-10 Ceph OSD-full incident: `osd.2`/quinn hit 95% full_ratio and blocked writes cluster-wide at only ~73% cluster usage because `rpcu-fs-data0` — ~70% of the data — was left at `pg_num: 32`, splitting 26/19/19 across the 3 OSDs; the PG-count upmap balancer couldn't correct the byte skew. Fixed live by splitting `rpcu-fs-data0` pg_num 32→128 + `upmap_max_deviation 1` + `osd_mclock_profile high_recovery_ops` for the drain; `infrastructure/rook/configs/cephfilesystem.yaml` `data0` pool now declares `pg_autoscale_mode: on` + `target_size_ratio: 0.8` so it never collapses back to 32. See the new "Ceph single OSD full from too-few PGs on the dominant pool" note in Section 8. Prior update — NFS resilience after the 2026-07-06/07 incidents: `cephnfs.yaml` gateway now has `system-cluster-critical` priority + resources + a relaxed liveness probe; new `nfs-export-ensure.yaml` CronJob declaratively enforces the export incl. `security_label: false`; `infrastructure/kamaji/values.yaml` adds `required` etcd pod anti-affinity so etcd members spread across mgmt nodes and one node event no longer degrades every tenant control plane)
 **Repository**: <https://github.com/RPCU/argus.git>
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

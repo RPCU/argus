@@ -147,23 +147,49 @@ jobs:
 
           echo "Highest current targetRelease across all CRs: $CURRENT_MAX"
 
-          # Only create a PR if LATEST_SUPPORTED > CURRENT_MAX (real upgrade)
-          # Use version comparison: sort both, check if LATEST is on last line
-          SORTED=$(printf '%s\n%s\n' "$CURRENT_MAX" "$LATEST_SUPPORTED" | sort -t. -k1,1n -k2,2n | tail -1)
+          # Only propose the NEXT release after current (single-step upgrade).
+          # Yaook rejects jumps of more than one release.
+          # First try: next release in the intersection after CURRENT_MAX
+          NEXT_SUPPORTED=$(echo "$INTERSECTION" | awk -v cur="$CURRENT_MAX" '
+            found { print; exit }
+            $0 == cur { found=1 }
+          ')
+          # Fallback: if current is not in the intersection, use the first
+          # intersection release that is newer (single step from an older version)
+          if [ -z "$NEXT_SUPPORTED" ]; then
+            NEXT_SUPPORTED=$(echo "$INTERSECTION" | while read -r rel; do
+              [ -z "$rel" ] && continue
+              SORTED=$(printf '%s\n%s\n' "$CURRENT_MAX" "$rel" | sort -t. -k1,1n -k2,2n | tail -1)
+              if [ "$SORTED" = "$rel" ] && [ "$CURRENT_MAX" != "$rel" ]; then
+                echo "$rel"
+                break
+              fi
+            done)
+          fi
+          if [ -z "$NEXT_SUPPORTED" ]; then
+            echo "Already at latest intersection release ($CURRENT_MAX), no upgrade possible"
+          fi
 
-          if [ "$SORTED" = "$LATEST_SUPPORTED" ] && [ "$CURRENT_MAX" != "$LATEST_SUPPORTED" ]; then
-            echo "Upgrade available: $CURRENT_MAX -> $LATEST_SUPPORTED"
-            UPGRADE_NEEDED=true
-            for f in infrastructure/yaook/*.yaml; do
-              grep -q 'targetRelease:' "$f" || continue
-              CHANGES="${CHANGES}${f}\n"
-            done
+          # Only create a PR if NEXT_SUPPORTED > CURRENT_MAX (real upgrade)
+          if [ -n "$NEXT_SUPPORTED" ]; then
+            SORTED=$(printf '%s\n%s\n' "$CURRENT_MAX" "$NEXT_SUPPORTED" | sort -t. -k1,1n -k2,2n | tail -1)
+            if [ "$SORTED" = "$NEXT_SUPPORTED" ] && [ "$CURRENT_MAX" != "$NEXT_SUPPORTED" ]; then
+              echo "Upgrade available: $CURRENT_MAX -> $NEXT_SUPPORTED"
+              UPGRADE_NEEDED=true
+              for f in infrastructure/yaook/*.yaml; do
+                grep -q 'targetRelease:' "$f" || continue
+                CHANGES="${CHANGES}${f}\n"
+              done
+            else
+              echo "All CRs already at the latest supported release ($CURRENT_MAX)"
+            fi
           else
-            echo "All CRs already at the latest supported release ($CURRENT_MAX)"
+            echo "No further upgrade available"
           fi
 
           echo "needs_upgrade=$UPGRADE_NEEDED" >> "$GITHUB_OUTPUT"
-          echo "target=$LATEST_SUPPORTED" >> "$GITHUB_OUTPUT"
+          echo "target=$NEXT_SUPPORTED" >> "$GITHUB_OUTPUT"
+          echo "current_max=$CURRENT_MAX" >> "$GITHUB_OUTPUT"
           echo "changes<<EOF" >> "$GITHUB_OUTPUT"
           echo -e "$CHANGES" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
@@ -187,7 +213,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "chore(yaook): upgrade OpenStack release to ${{ steps.upgrade.outputs.target }}"
-          title: "chore(yaook): upgrade OpenStack release to ${{ steps.upgrade.outputs.target }}"
+          title: "chore(yaook): upgrade OpenStack release ${{ steps.current.outputs.current_max }} -> ${{ steps.upgrade.outputs.target }}"
           body: |
             Automated upgrade of all yaook OpenStack service deployments to release **${{ steps.upgrade.outputs.target }}**.
 

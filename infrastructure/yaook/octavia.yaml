@@ -40,7 +40,7 @@ spec:
     replicas: 1
   issuerRef:
     name: yaook-internal
-  targetRelease: "2026.1"
+  targetRelease: "2025.1"
   region:
     name: hetzner
   policy:

@@ -133,4 +133,4 @@ spec:
     subnetCidr: 10.244.0.0/16
   region:
     name: hetzner
-  targetRelease: "2026.1"
+  targetRelease: "2025.1"

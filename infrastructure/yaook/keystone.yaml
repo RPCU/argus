@@ -71,4 +71,4 @@ spec:
     admin_required: role:admin or is_admin:1
   region:
     name: hetzner
-  targetRelease: "2026.1"
+  targetRelease: "2025.1"

@@ -52,6 +52,20 @@ spec:
             # reclaimed in the pool (needs virtio-scsi or virtio-blk w/ recent
             # machine types; harmless otherwise).
             hw_disk_discard: unmap
+            # Use rsync (not the default scp) for remote file operations during
+            # COLD migration / resize of instances with LOCAL qcow2 root disks
+            # (images_type is unset → default qcow2, so root disks live in
+            # /var/lib/nova/instances and MUST be copied node-to-node). The
+            # yaook compute image's SSH `nova` user is locked down by
+            # `restricted-ssh-commands`, whose allow-list only permits the
+            # legacy SCP wire protocol (`scp -r -[ft] …`) and rsync — NOT the
+            # SFTP subsystem. Modern OpenSSH (9+) `scp` defaults to SFTP, so
+            # nova's default scp transport is rejected (exit 124 →
+            # `scp: Connection closed`) and every cold migration fails, wedging
+            # the nova-compute operator's node eviction/rollout. rsync IS in the
+            # restricted-ssh-commands allow-list and works, so force it here.
+            # (choices: ssh|rsync — nova conf `[libvirt]`.)
+            remote_filesystem_transport: rsync
         volumeBackends:
           ceph:
             cephConfig: {}

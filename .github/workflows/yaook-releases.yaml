@@ -95,32 +95,11 @@ jobs:
         run: |
           RELEASE_MAP="${{ steps.fetch.outputs.release_map }}"
 
-          # Step 1: Find the INTERSECTION of all supported releases.
-          # All components must support the target release for compatibility.
-          INTERSECTION=""
-          FIRST=true
-          for component in keystone nova glance neutron cinder horizon octavia designate; do
-            component_line=$(echo -e "$RELEASE_MAP" | grep "^${component}=")
-            component_releases=$(echo "$component_line" | cut -d= -f2 | tr ',' '\n')
-
-            if [ "$FIRST" = true ]; then
-              INTERSECTION="$component_releases"
-              FIRST=false
-            else
-              # Keep only releases present in both
-              INTERSECTION=$(comm -12 <(echo "$INTERSECTION" | sort -t. -k1,1n -k2,2n) \
-                                        <(echo "$component_releases" | sort -t. -k1,1n -k2,2n))
-            fi
-            echo "After $component intersection: $(echo $INTERSECTION | tr '\n' ' ')"
-          done
-
-          LATEST_SUPPORTED=$(echo "$INTERSECTION" | tail -1)
-          echo "Latest release supported by ALL components: $LATEST_SUPPORTED"
-
-          # Step 2: Check each CR — only propose an upgrade (never a downgrade)
+          # For each CR, find the next single-step release from that
+          # component's own RELEASES list. Each component upgrades independently.
           UPGRADE_NEEDED=false
           CHANGES=""
-          CURRENT_MAX=""
+          SUMMARY=""
 
           for f in infrastructure/yaook/*.yaml; do
             if ! grep -q 'targetRelease:' "$f"; then
@@ -131,80 +110,63 @@ jobs:
             case "$basename" in
               keystone|nova|glance|neutron|cinder|horizon|octavia|designate)
                 component="$basename" ;;
-              *) continue ;;
+              *)
+                echo "WARNING: Unknown component for $f, skipping"
+                continue
+                ;;
             esac
 
             current=$(grep 'targetRelease:' "$f" | head -1 | grep -o '"[0-9]\{4\}\.[0-9]*"' | tr -d '"')
             [ -z "$current" ] && continue
 
-            # Track highest current version across all CRs
-            if [ -z "$CURRENT_MAX" ] || [ "$(printf '%s\n%s' "$CURRENT_MAX" "$current" | sort -t. -k1,1n -k2,2n | tail -1)" = "$current" ]; then
-              CURRENT_MAX="$current"
+            # Get this component's supported releases
+            component_line=$(echo -e "$RELEASE_MAP" | grep "^${component}=")
+            component_releases=$(echo "$component_line" | cut -d= -f2 | tr ',' '\n')
+
+            # Find the next release after current (single-step only)
+            NEXT=$(echo "$component_releases" | awk -v cur="$current" '
+              found { print; exit }
+              $0 == cur { found=1 }
+            ')
+
+            if [ -n "$NEXT" ]; then
+              SORTED=$(printf '%s\n%s\n' "$current" "$NEXT" | sort -t. -k1,1n -k2,2n | tail -1)
+              if [ "$SORTED" = "$NEXT" ] && [ "$current" != "$NEXT" ]; then
+                echo "$f ($component): $current -> $NEXT"
+                CHANGES="${CHANGES}${f}|${component}|${current}|${NEXT}\n"
+                SUMMARY="${SUMMARY}| ${component}: ${current} → ${NEXT}\n"
+                UPGRADE_NEEDED=true
+                continue
+              fi
             fi
 
-            echo "$f ($component): current=$current"
+            echo "$f ($component): $current (up to date)"
           done
 
-          echo "Highest current targetRelease across all CRs: $CURRENT_MAX"
-
-          # Only propose the NEXT release after current (single-step upgrade).
-          # Yaook rejects jumps of more than one release.
-          # First try: next release in the intersection after CURRENT_MAX
-          NEXT_SUPPORTED=$(echo "$INTERSECTION" | awk -v cur="$CURRENT_MAX" '
-            found { print; exit }
-            $0 == cur { found=1 }
-          ')
-          # Fallback: if current is not in the intersection, use the first
-          # intersection release that is newer (single step from an older version)
-          if [ -z "$NEXT_SUPPORTED" ]; then
-            NEXT_SUPPORTED=$(echo "$INTERSECTION" | while read -r rel; do
-              [ -z "$rel" ] && continue
-              SORTED=$(printf '%s\n%s\n' "$CURRENT_MAX" "$rel" | sort -t. -k1,1n -k2,2n | tail -1)
-              if [ "$SORTED" = "$rel" ] && [ "$CURRENT_MAX" != "$rel" ]; then
-                echo "$rel"
-                break
-              fi
-            done)
-          fi
-          if [ -z "$NEXT_SUPPORTED" ]; then
-            echo "Already at latest intersection release ($CURRENT_MAX), no upgrade possible"
-          fi
-
-          # Only create a PR if NEXT_SUPPORTED > CURRENT_MAX (real upgrade)
-          if [ -n "$NEXT_SUPPORTED" ]; then
-            SORTED=$(printf '%s\n%s\n' "$CURRENT_MAX" "$NEXT_SUPPORTED" | sort -t. -k1,1n -k2,2n | tail -1)
-            if [ "$SORTED" = "$NEXT_SUPPORTED" ] && [ "$CURRENT_MAX" != "$NEXT_SUPPORTED" ]; then
-              echo "Upgrade available: $CURRENT_MAX -> $NEXT_SUPPORTED"
-              UPGRADE_NEEDED=true
-              for f in infrastructure/yaook/*.yaml; do
-                grep -q 'targetRelease:' "$f" || continue
-                CHANGES="${CHANGES}${f}\n"
-              done
-            else
-              echo "All CRs already at the latest supported release ($CURRENT_MAX)"
-            fi
-          else
-            echo "No further upgrade available"
-          fi
-
           echo "needs_upgrade=$UPGRADE_NEEDED" >> "$GITHUB_OUTPUT"
-          echo "target=$NEXT_SUPPORTED" >> "$GITHUB_OUTPUT"
-          echo "current_max=$CURRENT_MAX" >> "$GITHUB_OUTPUT"
           echo "changes<<EOF" >> "$GITHUB_OUTPUT"
           echo -e "$CHANGES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "summary<<EOF" >> "$GITHUB_OUTPUT"
+          echo -e "$SUMMARY" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Apply upgrades
         if: steps.upgrade.outputs.needs_upgrade == 'true'
         run: |
-          TARGET="${{ steps.upgrade.outputs.target }}"
           CHANGES="${{ steps.upgrade.outputs.changes }}"
 
-          echo "=== Upgrade plan: all CRs -> $TARGET ==="
-          echo -e "$CHANGES" | while read -r f; do
-            [ -z "$f" ] && continue
-            sed -i "s/targetRelease:.*/targetRelease: \"$TARGET\"/" "$f"
-            echo "Updated $f"
+          echo "=== Upgrade plan ==="
+          echo -e "$CHANGES" | while IFS='|' read -r file component current target; do
+            [ -z "$file" ] && continue
+            echo "  $component: $current -> $target ($file)"
+          done
+          echo "==================="
+
+          echo -e "$CHANGES" | while IFS='|' read -r file component current target; do
+            [ -z "$file" ] && continue
+            sed -i "s/targetRelease:.*/targetRelease: \"$target\"/" "$file"
+            echo "Updated $file: $current -> $target"
           done
 
       - name: Create Pull Request
@@ -212,16 +174,20 @@ jobs:
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "chore(yaook): upgrade OpenStack release to ${{ steps.upgrade.outputs.target }}"
-          title: "chore(yaook): upgrade OpenStack release ${{ steps.current.outputs.current_max }} -> ${{ steps.upgrade.outputs.target }}"
+          commit-message: "chore(yaook): upgrade OpenStack releases"
+          title: "chore(yaook): upgrade OpenStack releases"
           body: |
-            Automated upgrade of all yaook OpenStack service deployments to release **${{ steps.upgrade.outputs.target }}**.
+            Automated per-component upgrade of yaook OpenStack service deployments.
 
             **Operator chart version:** ${{ steps.fetch.outputs.ref }} ${{ steps.fetch.outputs.tag_info }}
 
             **Source:** [yaook/operator](https://gitlab.com/yaook/operator)
 
-            This release is supported by **all** 8 components at chart ${{ steps.fetch.outputs.ref }} (verified via intersection of per-component `RELEASES` lists).
+            ### Upgrade plan
+
+            ${{ steps.upgrade.outputs.summary }}
+
+            Each component is upgraded to the **next single-step release** from its own `RELEASES` list. Components already at their latest are not changed.
 
             **Before merging:** verify the upgrade path is valid for your deployment. Check the [yaook upgrade documentation](https://yaook.cloud/docs/) for any breaking changes between releases.
           branch: "yaook-release-upgrade"

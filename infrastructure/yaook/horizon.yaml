@@ -16,4 +16,4 @@ spec:
     port: 443
   issuerRef:
     name: yaook-internal
-  targetRelease: "2025.2"
+  targetRelease: "2026.1"

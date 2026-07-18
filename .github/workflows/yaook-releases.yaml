@@ -13,16 +13,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Fetch latest yaook operator releases
+      - name: Fetch supported releases from yaook operator
         id: fetch
         run: |
-          # Fetch the latest default branch HEAD
-          YAOOK_DEFAULT=$(curl -s "https://gitlab.com/api/v4/projects/yaook%2Foperator/repository/branches/main" | jq -r '.commit.id')
-          echo "yaook_commit=$YAOOK_DEFAULT" >> "$GITHUB_OUTPUT"
+          # 1. Read our current yaook operator chart version from the
+          #    HelmRelease manifests. All operators share the same version.
+          CHART_VERSION=$(grep -roh 'version: "[0-9][^"]*"' infrastructure/yaook-operator/ \
+            | head -1 | grep -o '"[^"]*"' | tr -d '"')
+          echo "Current chart version: $CHART_VERSION"
 
-          # Components and their source file paths in the yaook repo.
-          # Each component's __init__.py (or cr.py for nova) contains a
-          # RELEASES = [...] list that defines the supported OpenStack releases.
+          # 2. Find the matching tag in the yaook GitLab repo.
+          #    Tags follow the pattern "v{chart_version}" (e.g. v3.0.0).
+          TAG="v${CHART_VERSION}"
+          TAG_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" \
+            "https://gitlab.com/api/v4/projects/yaook%2Foperator/repository/tags/${TAG}")
+          if [ "$TAG_EXISTS" != "200" ]; then
+            echo "WARNING: Tag $TAG not found on GitLab, falling back to default branch"
+            PROJECT_INFO=$(curl -s "https://gitlab.com/api/v4/projects/yaook%2Foperator")
+            REF=$(echo "$PROJECT_INFO" | jq -r '.default_branch')
+            TAG_INFO="(default branch: $REF)"
+          else
+            REF="$TAG"
+            TAG_INFO="(tag: $TAG)"
+          fi
+          echo "Using ref: $REF $TAG_INFO"
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "tag_info=$TAG_INFO" >> "$GITHUB_OUTPUT"
+
+          # 3. Components and their source file paths in the yaook repo.
+          #    Each component has a RELEASES = [...] list in its Python source.
           declare -A COMPONENT_FILES=(
             [keystone]="yaook/op/keystone/cr.py"
             [nova]="yaook/op/nova/cr.py"
@@ -34,41 +53,43 @@ jobs:
             [designate]="yaook/op/designate/__init__.py"
           )
 
-          # Collect all unique releases across all components
+          # 4. Collect all unique releases across all components
           ALL_RELEASES=""
 
           for component in "${!COMPONENT_FILES[@]}"; do
             file_path="${COMPONENT_FILES[$component]}"
             encoded_path=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$file_path', safe=''))")
 
-            content=$(curl -s "https://gitlab.com/api/v4/projects/yaook%2Foperator/repository/files/${encoded_path}/raw?ref=${YAOOK_DEFAULT}")
+            content=$(curl -s "https://gitlab.com/api/v4/projects/yaook%2Foperator/repository/files/${encoded_path}/raw?ref=${REF}")
 
-            # Extract the RELEASES list from the Python source.
-            # The list is formatted as:
-            #   RELEASES = [
-            #       "2025.1",
-            #       "2026.1",
-            #   ]
-            # We extract everything between RELEASES = [ and the closing ],
-            releases=$(echo "$content" | python3 -c "
+            if echo "$content" | jq -e '.message' >/dev/null 2>&1; then
+              echo "WARNING: Failed to fetch $file_path: $(echo "$content" | jq -r '.message')"
+              continue
+            fi
+
+            tmpfile=$(mktemp)
+            echo "$content" > "$tmpfile"
+            releases=$(python3 -c "
           import sys, re
-          text = sys.stdin.read()
+          with open(sys.argv[1]) as f:
+              text = f.read()
           m = re.search(r'RELEASES\s*=\s*\[(.*?)\]', text, re.DOTALL)
           if m:
               for line in m.group(1).splitlines():
                   line = line.strip().strip(',').strip('\"').strip(\"'\")
                   if re.match(r'^\d{4}\.\d+$', line):
                       print(line)
-          ")
+          " "$tmpfile")
+            rm -f "$tmpfile"
 
             echo "Component $component releases: $(echo $releases | tr '\n' ' ')"
             ALL_RELEASES="$ALL_RELEASES
           $releases"
           done
 
-          # Deduplicate and sort
-          UNIQUE_RELEASES=$(echo "$ALL_RELEASES" | sort -u | grep -v '^$')
-          echo "All unique yaook releases:"
+          # Deduplicate and sort (version sort: 2025.1 < 2025.2 < 2026.1)
+          UNIQUE_RELEASES=$(echo "$ALL_RELEASES" | sort -t. -k1,1n -k2,2n -u | grep -v '^$')
+          echo "All unique yaook releases for $REF:"
           echo "$UNIQUE_RELEASES"
           echo "releases<<EOF" >> "$GITHUB_OUTPUT"
           echo "$UNIQUE_RELEASES" >> "$GITHUB_OUTPUT"
@@ -77,7 +98,6 @@ jobs:
       - name: Check current targetRelease in CRs
         id: current
         run: |
-          # Find all targetRelease values in our yaook CRs
           CURRENT=$(grep -roh 'targetRelease: "[0-9]\{4\}\.[0-9]*"' infrastructure/yaook/ | grep -o '"[0-9]\{4\}\.[0-9]*"' | tr -d '"' | sort -u)
           echo "Current targetRelease values:"
           echo "$CURRENT"
@@ -90,13 +110,10 @@ jobs:
         run: |
           CURRENT="${{ steps.current.outputs.releases }}"
           AVAILABLE="${{ steps.fetch.outputs.releases }}"
-
-          # For each current release, find the latest available release
-          # that is >= the current one.
           LATEST_AVAILABLE=$(echo "$AVAILABLE" | tail -1)
 
-          echo "Current releases: $CURRENT"
-          echo "Latest available: $LATEST_AVAILABLE"
+          echo "Current: $CURRENT"
+          echo "Latest available for our chart version: $LATEST_AVAILABLE"
 
           NEEDS_UPGRADE=false
 
@@ -117,8 +134,6 @@ jobs:
         run: |
           TARGET="${{ steps.upgrade.outputs.target }}"
           echo "Updating all yaook CRs to targetRelease: $TARGET"
-
-          # Update targetRelease in all yaook deployment CRs
           for f in infrastructure/yaook/*.yaml; do
             if grep -q 'targetRelease:' "$f"; then
               sed -i "s/targetRelease:.*/targetRelease: \"$TARGET\"/" "$f"
@@ -136,9 +151,11 @@ jobs:
           body: |
             Automated upgrade of all yaook OpenStack service deployments to release **${{ steps.upgrade.outputs.target }}**.
 
-            **Source:** [yaook/operator](https://gitlab.com/yaook/operator) commit `${{ steps.fetch.outputs.yaook_commit }}`
+            **Operator chart version:** ${{ steps.fetch.outputs.ref }} ${{ steps.fetch.outputs.tag_info }}
 
-            Supported releases per component (from operator source):
+            **Source:** [yaook/operator](https://gitlab.com/yaook/operator)
+
+            Supported releases per component (from operator source at ${{ steps.fetch.outputs.ref }}):
             ```
             ${{ steps.fetch.outputs.releases }}
             ```

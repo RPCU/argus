@@ -1,0 +1,150 @@
+name: yaook openstack releases
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1" # Monday 03:00 UTC
+permissions:
+  contents: "write"
+  pull-requests: "write"
+jobs:
+  check-releases:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch latest yaook operator releases
+        id: fetch
+        run: |
+          # Fetch the latest default branch HEAD
+          YAOOK_DEFAULT=$(curl -s "https://gitlab.com/api/v4/projects/yaook%2Foperator/repository/branches/main" | jq -r '.commit.id')
+          echo "yaook_commit=$YAOOK_DEFAULT" >> "$GITHUB_OUTPUT"
+
+          # Components and their source file paths in the yaook repo.
+          # Each component's __init__.py (or cr.py for nova) contains a
+          # RELEASES = [...] list that defines the supported OpenStack releases.
+          declare -A COMPONENT_FILES=(
+            [keystone]="yaook/op/keystone/cr.py"
+            [nova]="yaook/op/nova/cr.py"
+            [glance]="yaook/op/glance/__init__.py"
+            [neutron]="yaook/op/neutron/__init__.py"
+            [cinder]="yaook/op/cinder/__init__.py"
+            [horizon]="yaook/op/horizon/__init__.py"
+            [octavia]="yaook/op/octavia/__init__.py"
+            [designate]="yaook/op/designate/__init__.py"
+          )
+
+          # Collect all unique releases across all components
+          ALL_RELEASES=""
+
+          for component in "${!COMPONENT_FILES[@]}"; do
+            file_path="${COMPONENT_FILES[$component]}"
+            encoded_path=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$file_path', safe=''))")
+
+            content=$(curl -s "https://gitlab.com/api/v4/projects/yaook%2Foperator/repository/files/${encoded_path}/raw?ref=${YAOOK_DEFAULT}")
+
+            # Extract the RELEASES list from the Python source.
+            # The list is formatted as:
+            #   RELEASES = [
+            #       "2025.1",
+            #       "2026.1",
+            #   ]
+            # We extract everything between RELEASES = [ and the closing ],
+            releases=$(echo "$content" | python3 -c "
+          import sys, re
+          text = sys.stdin.read()
+          m = re.search(r'RELEASES\s*=\s*\[(.*?)\]', text, re.DOTALL)
+          if m:
+              for line in m.group(1).splitlines():
+                  line = line.strip().strip(',').strip('\"').strip(\"'\")
+                  if re.match(r'^\d{4}\.\d+$', line):
+                      print(line)
+          ")
+
+            echo "Component $component releases: $(echo $releases | tr '\n' ' ')"
+            ALL_RELEASES="$ALL_RELEASES
+          $releases"
+          done
+
+          # Deduplicate and sort
+          UNIQUE_RELEASES=$(echo "$ALL_RELEASES" | sort -u | grep -v '^$')
+          echo "All unique yaook releases:"
+          echo "$UNIQUE_RELEASES"
+          echo "releases<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$UNIQUE_RELEASES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Check current targetRelease in CRs
+        id: current
+        run: |
+          # Find all targetRelease values in our yaook CRs
+          CURRENT=$(grep -roh 'targetRelease: "[0-9]\{4\}\.[0-9]*"' infrastructure/yaook/ | grep -o '"[0-9]\{4\}\.[0-9]*"' | tr -d '"' | sort -u)
+          echo "Current targetRelease values:"
+          echo "$CURRENT"
+          echo "current<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Determine upgrade target
+        id: upgrade
+        run: |
+          CURRENT="${{ steps.current.outputs.releases }}"
+          AVAILABLE="${{ steps.fetch.outputs.releases }}"
+
+          # For each current release, find the latest available release
+          # that is >= the current one.
+          LATEST_AVAILABLE=$(echo "$AVAILABLE" | tail -1)
+
+          echo "Current releases: $CURRENT"
+          echo "Latest available: $LATEST_AVAILABLE"
+
+          NEEDS_UPGRADE=false
+
+          while IFS= read -r cur; do
+            [ -z "$cur" ] && continue
+            if [ "$cur" != "$LATEST_AVAILABLE" ]; then
+              echo "Upgrade needed: $cur -> $LATEST_AVAILABLE"
+              NEEDS_UPGRADE=true
+              TARGET="$LATEST_AVAILABLE"
+            fi
+          done <<< "$CURRENT"
+
+          echo "needs_upgrade=$NEEDS_UPGRADE" >> "$GITHUB_OUTPUT"
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+
+      - name: Update targetRelease in CRs
+        if: steps.upgrade.outputs.needs_upgrade == 'true'
+        run: |
+          TARGET="${{ steps.upgrade.outputs.target }}"
+          echo "Updating all yaook CRs to targetRelease: $TARGET"
+
+          # Update targetRelease in all yaook deployment CRs
+          for f in infrastructure/yaook/*.yaml; do
+            if grep -q 'targetRelease:' "$f"; then
+              sed -i "s/targetRelease:.*/targetRelease: \"$TARGET\"/" "$f"
+              echo "Updated $f"
+            fi
+          done
+
+      - name: Create Pull Request
+        if: steps.upgrade.outputs.needs_upgrade == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(yaook): upgrade OpenStack release to ${{ steps.upgrade.outputs.target }}"
+          title: "chore(yaook): upgrade OpenStack release to ${{ steps.upgrade.outputs.target }}"
+          body: |
+            Automated upgrade of all yaook OpenStack service deployments to release **${{ steps.upgrade.outputs.target }}**.
+
+            **Source:** [yaook/operator](https://gitlab.com/yaook/operator) commit `${{ steps.fetch.outputs.yaook_commit }}`
+
+            Supported releases per component (from operator source):
+            ```
+            ${{ steps.fetch.outputs.releases }}
+            ```
+
+            This PR updates `targetRelease` in all `infrastructure/yaook/*.yaml` CRs.
+
+            **Before merging:** verify the upgrade path is valid for your deployment. Check the [yaook upgrade documentation](https://yaook.cloud/docs/) for any breaking changes between releases.
+          branch: "yaook-release-upgrade"
+          delete-branch: true

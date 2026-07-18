@@ -108,7 +108,7 @@ jobs:
       - name: Determine upgrade target
         id: upgrade
         run: |
-          CURRENT="${{ steps.current.outputs.releases }}"
+          CURRENT="${{ steps.current.outputs.current }}"
           AVAILABLE="${{ steps.fetch.outputs.releases }}"
           LATEST_AVAILABLE=$(echo "$AVAILABLE" | tail -1)
 

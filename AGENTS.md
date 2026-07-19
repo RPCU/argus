@@ -2339,6 +2339,35 @@ MTU manually (`ip link set dev <iface> mtu 1362`) as a stopgap to verify the
 fix. Cilium auto-detects MTU from the device, so its inner overlay sizes itself
 below the corrected VM MTU automatically.
 
+#### Cilium 1.19 `packetizationLayerPMTUDMode: blackhole` silently drops cross-node TCP (all clusters)
+
+Cilium Helm chart **1.19.x** introduced a new default:
+`pmtuDiscovery.packetizationLayerPMTUDMode: "blackhole"`. This did not exist
+in 1.18.6. With `blackhole` mode, Cilium's BPF program silently drops any
+**inner** packet that exceeds the route MTU — no ICMP, no TCP PMTU discovery,
+just a timeout.
+
+The mismatch is structural: pod `eth0` MTU = `cilium_vxlan` MTU (auto-detected
+from physical NIC = 1342), but the host route to remote pod CIDRs has
+MTU = 1342 − 50 (VXLAN overhead) = **1292**. Pod TCP MSS = 1342 − 40 = **1302**,
+which is 10 bytes larger than the route MTU. Every cross-node TCP segment
+
+> 1292 bytes gets blackholed.
+
+Impact: TCP SYN/ACK (~60 bytes) always works. TLS handshakes (multi-segment
+ServerHello/Certificate ~1200 bytes each) always fail cross-node from regular
+pods. Same-node and host-network pods are unaffected (no VXLAN path).
+
+Fix (PR #405): set `pmtuDiscovery.enabled: true` +
+`packetizationLayerPMTUDMode: "always"` in `infrastructure/cilium/values.yaml`
+and `infrastructure/sveltos/clusterprofiles/cilium.yaml`. `always` makes BPF
+send ICMP "fragmentation needed" back to the pod, triggering TCP PMTU
+discovery. The pod reduces its MSS to 1252 (fitting the 1292 route MTU).
+
+**When upgrading Cilium charts**: always check `helm show values` for new
+defaults under `pmtuDiscovery` — a new `packetizationLayerPMTUDMode` default
+can silently break all cross-node TLS without any error in logs.
+
 ### Code Quality
 
 - Always format code before committing (prettier, nixfmt)
@@ -2405,7 +2434,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 2026 (OCCM health monitor timeout fix: added explicit `monitor-delay=10s`, `monitor-timeout=10s`, `monitor-max-retries=3` to `infrastructure/openstack-ccm-identity/externalsecret.yaml` cloud.conf — OVN defaults (~5s timeout) caused intermittent TLS handshake timeouts on Kamaji tenant API server pods under CPU load. Also added `loadbalancer.openstack.org/floating-ip` annotation to the Kamaji ClusterClass `externalNetwork` patch so the API server LoadBalancer floating IP can be pinned via the `apiServerFloatingIP` variable. — Prior: New `.github/workflows/yaook-releases.yaml` workflow: scrapes yaook operator GitLab source weekly to detect new OpenStack releases and opens upgrade PRs for all yaook Deployment CRs. Renovate is now self-hosted in GitHub Actions: new `.github/workflows/renovate.yaml` runs the `renovatebot/github-action` hourly + on-dispatch, minting a token from the `rpcu-bot` GitHub App via `actions/create-github-app-token`, reusing the org-level `APP_ID`/`PRIVATE_KEY` secrets. Replaces the Mend-hosted App. See "Dependency Updates (Renovate)" in Section 5. — Prior: 2026-07-10 Ceph OSD-full incident: `osd.2`/quinn hit 95% full_ratio and blocked writes cluster-wide at only ~73% cluster usage because `rpcu-fs-data0` — ~70% of the data — was left at `pg_num: 32`, splitting 26/19/19 across the 3 OSDs; the PG-count upmap balancer couldn't correct the byte skew. Fixed live by splitting `rpcu-fs-data0` pg_num 32→128 + `upmap_max_deviation 1` + `osd_mclock_profile high_recovery_ops` for the drain; `infrastructure/rook/configs/cephfilesystem.yaml` `data0` pool now declares `pg_autoscale_mode: on` + `target_size_ratio: 0.8` so it never collapses back to 32. See the new "Ceph single OSD full from too-few PGs on the dominant pool" note in Section 8. Prior update — NFS resilience after the 2026-07-06/07 incidents: `cephnfs.yaml` gateway now has `system-cluster-critical` priority + resources + a relaxed liveness probe; new `nfs-export-ensure.yaml` CronJob declaratively enforces the export incl. `security_label: false`; `infrastructure/kamaji/values.yaml` adds `required` etcd pod anti-affinity so etcd members spread across mgmt nodes and one node event no longer degrades every tenant control plane)
+**Last Updated**: July 2026 (Cilium 1.19 PMTUD fix: `packetizationLayerPMTUDMode: "blackhole"` was a new default in Cilium Helm chart 1.19.x (not present in 1.18.6) that silently drops cross-node TCP segments exceeding the route MTU (pod veth MTU =1342, route MTU =1292, TCP MSS =1302). Fixed by setting `pmtuDiscovery.enabled: true` + `packetizationLayerPMTUDMode: "always"` in `infrastructure/cilium/values.yaml` and `infrastructure/sveltos/clusterprofiles/cilium.yaml` — PRs #404/#405. Note: the Helm value is nested under `pmtuDiscovery:` (not top-level), and valid values are `always`/`blackhole`/`disabled`/`unset` (not `native`). — OCCM health monitor timeout fix: added explicit `monitor-delay=10s`, `monitor-timeout=10s`, `monitor-max-retries=3` to `infrastructure/openstack-ccm-identity/externalsecret.yaml` cloud.conf — OVN defaults (~5s timeout) caused intermittent TLS handshake timeouts on Kamaji tenant API server pods under CPU load. Also added `loadbalancer.openstack.org/floating-ip` annotation to the Kamaji ClusterClass `externalNetwork` patch so the API server LoadBalancer floating IP can be pinned via the `apiServerFloatingIP` variable. — Prior: New `.github/workflows/yaook-releases.yaml` workflow: scrapes yaook operator GitLab source weekly to detect new OpenStack releases and opens upgrade PRs for all yaook Deployment CRs. Renovate is now self-hosted in GitHub Actions: new `.github/workflows/renovate.yaml` runs the `renovatebot/github-action` hourly + on-dispatch, minting a token from the `rpcu-bot` GitHub App via `actions/create-github-app-token`, reusing the org-level `APP_ID`/`PRIVATE_KEY` secrets. Replaces the Mend-hosted App. See "Dependency Updates (Renovate)" in Section 5. — Prior: 2026-07-10 Ceph OSD-full incident: `osd.2`/quinn hit 95% full_ratio and blocked writes cluster-wide at only ~73% cluster usage because `rpcu-fs-data0` — ~70% of the data — was left at `pg_num: 32`, splitting 26/19/19 across the 3 OSDs; the PG-count upmap balancer couldn't correct the byte skew. Fixed live by splitting `rpcu-fs-data0` pg_num 32→128 + `upmap_max_deviation 1` + `osd_mclock_profile high_recovery_ops` for the drain; `infrastructure/rook/configs/cephfilesystem.yaml` `data0` pool now declares `pg_autoscale_mode: on` + `target_size_ratio: 0.8` so it never collapses back to 32. See the new "Ceph single OSD full from too-few PGs on the dominant pool" note in Section 8. Prior update — NFS resilience after the 2026-07-06/07 incidents: `cephnfs.yaml` gateway now has `system-cluster-critical` priority + resources + a relaxed liveness probe; new `nfs-export-ensure.yaml` CronJob declaratively enforces the export incl. `security_label: false`; `infrastructure/kamaji/values.yaml` adds `required` etcd pod anti-affinity so etcd members spread across mgmt nodes and one node event no longer degrades every tenant control plane)
 **Repository**: <https://github.com/RPCU/argus.git>
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

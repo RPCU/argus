@@ -1,4 +1,6 @@
-packetizationLayerPMTUDMode: native
+pmtuDiscovery:
+  enabled: true
+  packetizationLayerPMTUDMode: "always"
 l2announcements:
   enabled: true
 socketLB:

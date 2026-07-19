@@ -62,6 +62,8 @@ spec:
           enabled: false
         socketLB:
           hostNamespaceOnly: false
+        mssClamping:
+          enabled: true
         envoy:
           enabled: false
         cni:

@@ -8,6 +8,16 @@ socketLB:
   # clusters/openstack/cilium.yaml.
   hostNamespaceOnly: false
 kubeProxyReplacement: true
+# TCP MSS clamping: ensure TCP SYN MSS options account for VXLAN overhead
+# (50 bytes). Without this, the pod's TCP stack negotiates MSS based on the
+# veth MTU (which equals the device MTU, 1342), producing segments of 1302B.
+# After VXLAN encapsulation (+50B = 1352B) these exceed the physical NIC MTU
+# (1342) and are silently dropped by packetization-layer-pmtud-mode: blackhole
+# — TCP connect (small SYN/ACK) succeeds but TLS (multi-segment ServerHello +
+# Certificate) hangs until timeout. Clamping rewrites the MSS to 1252 so
+# segments fit the VXLAN path after encapsulation.
+mssClamping:
+  enabled: true
 envoy:
   enabled: false
 cni:

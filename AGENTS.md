@@ -2172,6 +2172,106 @@ NixOS containerd unit didn't raise it; upstream containerd.service ships
 effect. If mons ever crash-loop with that backtrace again, check
 `cat /proc/1/limits` inside a mon container first.
 
+#### Nova cold-migration / node eviction fails: two ssh bugs (openstack cluster)
+
+A yaook **NovaComputeNode eviction** (rolling recreate, or `deleteNode: true`
+node teardown) drains a node by **cold-migrating** every VM off it. Because the
+openstack cluster uses **local qcow2 root disks** (`images_type` unset →
+`/var/lib/nova/instances`), cold migration copies the disk **node-to-node over
+SSH** as the `nova` user (sshd on port 8022, locked down by
+`restricted-ssh-commands`). TWO independent bugs each break this and wedge the
+eviction (node stuck `Evicting` / `WaitingForDependency`, VMs looping
+`EXPONENTIALBACKOFF` → eventually `ERROR`/`UNHANDLEABLE`):
+
+1. **`remote_filesystem_transport` must be `rsync` (fixed in-repo).** Nova
+   defaults to `scp`, but OpenSSH 9+ `scp` uses the **SFTP** subsystem, which is
+   NOT in the `restricted-ssh-commands` allow-list (only legacy SCP wire protocol
+   - rsync are) → every copy is rejected → migration rolls back. Fixed
+     permanently via `infrastructure/yaook/nova.yaml`
+     `spec.…libvirt.remote_filesystem_transport: rsync`. This IS reconciled by the
+     operator into the generated compute config — **but only when the operator
+     regenerates that config**, which it will NOT do while the node is mid-eviction
+     (chicken-and-egg: the rsync fix that would let the eviction finish can't be
+     applied until the eviction finishes). See the unwedge runbook below.
+
+2. **`IdentityFile` missing from `/etc/ssh/ssh_config` (yaook IMAGE bug — NOT
+   fixable via CR).** The `nova-compute-*` image's ssh_config has no
+   `IdentityFile` line, and the `nova` user's **passwd home is `/var/empty`**
+   (which doesn't even exist in the container), so ssh's `~/.ssh/id_ed25519`
+   default expands to `/var/empty/.ssh/id_ed25519` (missing) instead of the real
+   key at **`/home/nova/.ssh/id_ed25519`**. Result:
+   `nova@<ip>: Permission denied (publickey)`. Setting `$HOME` does NOT help — ssh
+   uses the **passwd** home (`getpwuid`), not `$HOME`, for `~` expansion. The
+   NovaDeployment CRD exposes **no** ssh_config override / lifecycle hook /
+   extraVolumes / sidecar, so there is no GitOps fix. **Every freshly-created
+   nova-compute pod must be live-patched** (below) until the yaook image ships an
+   `IdentityFile` (or sets the nova user's home to `/home/nova`). Report upstream.
+
+**Symptom trail** (in the `compute-evict-<node>-*` pod logs and the node's
+`nova-compute` container): `is failing to be moved … will start
+ExponentialBackoff` → later `UNHANDLEABLE: … (ERROR)`; in the compute log
+`Resize error: not able to execute ssh command … ssh -o BatchMode=yes <ip>
+mkdir -p /var/lib/nova/instances/<uuid> … Permission denied (publickey)` (bug 2)
+or an scp/SFTP `Connection closed` (bug 1).
+
+**Unwedge runbook** (what was done 2026-07-19 for lucy):
+
+1. **Live-patch `IdentityFile` on ALL 3 nova-compute pods** (bug 2, lost on every
+   pod restart — the ssh_config is a writable image-layer file):
+
+   ```sh
+   for p in $(kubectl get pods -n yaook -o name | grep nova-compute-.*-0); do
+     kubectl exec -n yaook ${p#pod/} -c nova-compute -- sh -c \
+       'grep -q "IdentityFile /home/nova/.ssh/id_ed25519" /etc/ssh/ssh_config || \
+        sed -i "/Host \*/a\    IdentityFile /home/nova/.ssh/id_ed25519" /etc/ssh/ssh_config'
+   done
+   ```
+
+   Verify auth: `kubectl exec -n yaook <pod> -c nova-compute -- su -s /bin/sh nova
+-c 'ssh -o BatchMode=yes <other-node-ip> mkdir -p
+/var/lib/nova/instances/00000000-0000-0000-0000-000000000000'` (a real-UUID
+   `mkdir` IS allow-listed; `echo`/bogus paths are correctly rejected).
+
+2. **Fix rsync on the SOURCE node's live config if its config secret is stale**
+   (bug 1). The source node drives the transport choice. If its
+   `/etc/nova/nova.conf` `[libvirt]` lacks `remote_filesystem_transport = rsync`
+   (compare with a healthy node), the config secret
+   (`nova-compute-<hash>`, key `novacompute.conf`, owned by the NovaComputeNode,
+   **immutable**) is stale and won't regenerate mid-eviction. Recreate it with the
+   line added under `[libvirt]` and restart the pod:
+
+   ```sh
+   # dump, edit, recreate the immutable secret (mutable), then restart the pod
+   kubectl get secret <sec> -n yaook -o jsonpath='{.data.novacompute\.conf}' | base64 -d > /tmp/n.conf
+   sed -i '/^hw_disk_discard = unmap$/a remote_filesystem_transport = rsync' /tmp/n.conf
+   kubectl delete secret <sec> -n yaook          # immutable → must delete+recreate
+   # recreate with the SAME name/labels/ownerReferences (see live yaml) and the new data
+   kubectl delete pod nova-compute-<hash>-0 -n yaook   # StatefulSet remounts the tmpfs
+   ```
+
+   Re-apply step 1's IdentityFile patch to the fresh pod.
+
+3. **Reset ERROR'd VMs back to `active`** (the failed attempts + the pod restart
+   dropping libvirt leave them `vm_state=error`, often with
+   `task_state=resize_migrating` or "Connection to the hypervisor is broken").
+   Use the admin `os-resetState` action (creds in the `keystone-admin` secret in
+   ns `yaook`; run from a `nova-api` pod which can reach the internal keystone —
+   the local `~/.config/openstack/clouds.yaml` points at leaf.cloud, NOT this
+   cluster). POST `{"os-resetState":{"state":"active"}}` to
+   `/servers/<id>/action`.
+
+4. **Restart the eviction pod** (`kubectl delete pod compute-evict-<node>-*`) to
+   clear the exponential backoff; the operator recreates it and retries
+   immediately. Migrations then proceed (2 parallel; RESIZE→ACTIVE per VM). When
+   the node is drained (0 VMs on it) the eviction completes; with
+   `deleteNode: true` the operator recreates the NovaComputeNode fresh — its new
+   compute config finally includes rsync, so bug 1 is durably fixed on that node
+   (bug 2 still needs the step-1 live-patch on the fresh pod).
+
+Once all VMs are off and every node is back `Updated/Success/Enabled`, confirm
+`nova-compute` services are `up` (nova `os-services`) and no VMs remain on the
+drained host (`servers/detail?all_tenants=1&host=<node>`).
+
 #### Tenant network MTU is pinned to 1400 (no jumbo frames)
 
 `infrastructure/yaook/neutron.yaml` pins the tenant/provider network MTU to

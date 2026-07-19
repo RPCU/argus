@@ -510,7 +510,11 @@ abort the CCM HelmRelease apply (same blast-radius rationale as `capo-identity`)
   Octavia config with `floating-network-id` = the Cluster's `externalNetworkId`;
   `lb-provider=ovn` — the mgmt cluster's OpenStack uses the OVN backend, NOT
   Amphora; `lb-method=SOURCE_IP_PORT` — OVN does not support ROUND_ROBIN or
-  SOURCE_IP).
+  SOURCE_IP; `create-monitor=true` with explicit `monitor-delay=10s`,
+  `monitor-timeout=10s`, `monitor-max-retries=3` — the OVN defaults are too
+  aggressive (~5s timeout) and cause intermittent TLS handshake timeouts on
+  Kamaji tenant API server pods under CPU load; see "OCCM health monitor
+  timeouts" in Section 8).
 - `README.md` - Rationale, contents, Flux wiring, caveats.
 - `kustomization.yaml` - Kustomization manifest.
 
@@ -2083,6 +2087,40 @@ machines; delete `-v2` once confirmed. Verify with
 `openstack-default` class runs the apiserver ON a control-plane VM inside the
 managed SGs, so it reaches the kubelet via the node-to-node 10250 rule already.
 
+#### OCCM health monitor timeouts cause intermittent TLS handshake failures (mgmt cluster)
+
+The OCCM `cloud.conf` sets `create-monitor=true` for Octavia health monitors,
+but for a long time had **no explicit timeout parameters** (`monitor-delay`,
+`monitor-timeout`, `monitor-max-retries`). OVN's default health monitor
+timeouts are aggressive (~5s delay, ~5s timeout, ~2 retries). When a
+`type: LoadBalancer` backend (e.g. the Kamaji tenant API server pod) takes
+longer than ~5s to respond to the TCP health probe — due to TLS handshake CPU
+cost, transient load, or GC pause — the OVN health monitor marks the backend
+DOWN and Octavia stops routing new connections to it. The client's TCP
+connection to the floating IP succeeds (the VIP is always reachable), but
+Octavia has no healthy backends → the TLS ServerHello never arrives → the
+client sees `net/http: TLS handshake timeout`. This is intermittent because it
+only triggers when the backend is under load and the health probe is slow.
+
+Fix: `infrastructure/openstack-ccm-identity/externalsecret.yaml` now includes
+explicit monitor parameters:
+
+```ini
+monitor-delay=10s
+monitor-timeout=10s
+monitor-max-retries=3
+```
+
+This gives backends 10s to respond (vs the ~5s default), and only marks a
+backend DOWN after 3 consecutive failures (vs ~2). The Kamaji tenant API server
+pods perform TLS handshakes with asymmetric crypto; under concurrent load the
+CPU-bound work can exceed 5s on a shared mgmt node. The 10s window accommodates
+this without sacrificing health detection (a truly dead backend is caught within
+30s = 3 × 10s). These values apply cluster-wide to ALL `type: LoadBalancer`
+Services on mgmt (kgateway, Vault, NFS gateway, etc.) — the longer timeout is
+safe because a healthy backend responds in <1s; the timeout only matters when
+the backend is degraded.
+
 #### Ceph PG autoscaler silently breaks on overlapping CRUSH roots (openstack cluster)
 
 ALL Ceph pools must use **nvme-classed CRUSH rules**. If even one pool uses a
@@ -2367,7 +2405,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 2026 (New `.github/workflows/yaook-releases.yaml` workflow: scrapes yaook operator GitLab source weekly to detect new OpenStack releases and opens upgrade PRs for all yaook Deployment CRs. Renovate is now self-hosted in GitHub Actions: new `.github/workflows/renovate.yaml` runs the `renovatebot/github-action` hourly + on-dispatch, minting a token from the `rpcu-bot` GitHub App via `actions/create-github-app-token`, reusing the org-level `APP_ID`/`PRIVATE_KEY` secrets. Replaces the Mend-hosted App. See "Dependency Updates (Renovate)" in Section 5. — Prior: 2026-07-10 Ceph OSD-full incident: `osd.2`/quinn hit 95% full_ratio and blocked writes cluster-wide at only ~73% cluster usage because `rpcu-fs-data0` — ~70% of the data — was left at `pg_num: 32`, splitting 26/19/19 across the 3 OSDs; the PG-count upmap balancer couldn't correct the byte skew. Fixed live by splitting `rpcu-fs-data0` pg_num 32→128 + `upmap_max_deviation 1` + `osd_mclock_profile high_recovery_ops` for the drain; `infrastructure/rook/configs/cephfilesystem.yaml` `data0` pool now declares `pg_autoscale_mode: on` + `target_size_ratio: 0.8` so it never collapses back to 32. See the new "Ceph single OSD full from too-few PGs on the dominant pool" note in Section 8. Prior update — NFS resilience after the 2026-07-06/07 incidents: `cephnfs.yaml` gateway now has `system-cluster-critical` priority + resources + a relaxed liveness probe; new `nfs-export-ensure.yaml` CronJob declaratively enforces the export incl. `security_label: false`; `infrastructure/kamaji/values.yaml` adds `required` etcd pod anti-affinity so etcd members spread across mgmt nodes and one node event no longer degrades every tenant control plane)
+**Last Updated**: July 2026 (OCCM health monitor timeout fix: added explicit `monitor-delay=10s`, `monitor-timeout=10s`, `monitor-max-retries=3` to `infrastructure/openstack-ccm-identity/externalsecret.yaml` cloud.conf — OVN defaults (~5s timeout) caused intermittent TLS handshake timeouts on Kamaji tenant API server pods under CPU load. Also added `loadbalancer.openstack.org/floating-ip` annotation to the Kamaji ClusterClass `externalNetwork` patch so the API server LoadBalancer floating IP can be pinned via the `apiServerFloatingIP` variable. — Prior: New `.github/workflows/yaook-releases.yaml` workflow: scrapes yaook operator GitLab source weekly to detect new OpenStack releases and opens upgrade PRs for all yaook Deployment CRs. Renovate is now self-hosted in GitHub Actions: new `.github/workflows/renovate.yaml` runs the `renovatebot/github-action` hourly + on-dispatch, minting a token from the `rpcu-bot` GitHub App via `actions/create-github-app-token`, reusing the org-level `APP_ID`/`PRIVATE_KEY` secrets. Replaces the Mend-hosted App. See "Dependency Updates (Renovate)" in Section 5. — Prior: 2026-07-10 Ceph OSD-full incident: `osd.2`/quinn hit 95% full_ratio and blocked writes cluster-wide at only ~73% cluster usage because `rpcu-fs-data0` — ~70% of the data — was left at `pg_num: 32`, splitting 26/19/19 across the 3 OSDs; the PG-count upmap balancer couldn't correct the byte skew. Fixed live by splitting `rpcu-fs-data0` pg_num 32→128 + `upmap_max_deviation 1` + `osd_mclock_profile high_recovery_ops` for the drain; `infrastructure/rook/configs/cephfilesystem.yaml` `data0` pool now declares `pg_autoscale_mode: on` + `target_size_ratio: 0.8` so it never collapses back to 32. See the new "Ceph single OSD full from too-few PGs on the dominant pool" note in Section 8. Prior update — NFS resilience after the 2026-07-06/07 incidents: `cephnfs.yaml` gateway now has `system-cluster-critical` priority + resources + a relaxed liveness probe; new `nfs-export-ensure.yaml` CronJob declaratively enforces the export incl. `security_label: false`; `infrastructure/kamaji/values.yaml` adds `required` etcd pod anti-affinity so etcd members spread across mgmt nodes and one node event no longer degrades every tenant control plane)
 **Repository**: <https://github.com/RPCU/argus.git>
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

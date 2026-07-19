@@ -58,6 +58,7 @@ spec:
         k8sServiceHost: "{{ .Cluster.spec.controlPlaneEndpoint.host }}"
         k8sServicePort: "{{ .Cluster.spec.controlPlaneEndpoint.port }}"
         kubeProxyReplacement: true
+        packetizationLayerPMTUDMode: native
         l2announcements:
           enabled: false
         socketLB:

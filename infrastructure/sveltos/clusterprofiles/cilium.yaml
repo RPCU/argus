@@ -62,7 +62,6 @@ spec:
           enabled: false
         socketLB:
           hostNamespaceOnly: false
-        MTU: 1292
         envoy:
           enabled: false
         cni:

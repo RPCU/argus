@@ -233,6 +233,7 @@ spec:
                 template: |
                   service.beta.kubernetes.io/openstack-internal-load-balancer: "false"
                   loadbalancer.openstack.org/floating-network-id: '{{ .externalNetworkId }}'
+                  {{ if .apiServerFloatingIP }}loadbalancer.openstack.org/floating-ip: '{{ .apiServerFloatingIP }}'{{ end }}
 
     - name: managedSubnet
       definitions:

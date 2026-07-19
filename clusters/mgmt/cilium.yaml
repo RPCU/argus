@@ -34,7 +34,7 @@ spec:
             # can produce outer packets of 1392 bytes, exceeding enp3s0 MTU and
             # getting silently dropped. Setting MTU to 1200 (1342-142 headroom)
             # ensures inner packets fit within the VXLAN tunnel.
-            mtu: 1200
+            MTU: 1200
             # Octavia (OpenStack CCM) owns LoadBalancer services on mgmt; the
             # Cilium L2 announcer is not used. Disabling it stops the agent from
             # ARP-announcing any LoadBalancer/external IPs.

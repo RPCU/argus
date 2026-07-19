@@ -55,7 +55,7 @@ spec:
       # the announcer is sufficient to keep Cilium from racing the CCM for
       # type: LoadBalancer IPs.
       values: |
-        mtu: 1200
+        MTU: 1200
         k8sServiceHost: "{{ .Cluster.spec.controlPlaneEndpoint.host }}"
         k8sServicePort: "{{ .Cluster.spec.controlPlaneEndpoint.port }}"
         kubeProxyReplacement: true

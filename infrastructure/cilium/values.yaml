@@ -8,16 +8,6 @@ socketLB:
   # clusters/openstack/cilium.yaml.
   hostNamespaceOnly: false
 kubeProxyReplacement: true
-# Override auto-detected MTU (default 0 = auto-detect from physical NIC).
-# The physical NIC MTU is 1342, but VXLAN encapsulation adds 50 bytes of
-# overhead. Cilium auto-detects 1342 and sets both cilium_vxlan and the pod
-# veth to 1342 — the pod TCP stack then negotiates MSS=1302 (1342-40 headers),
-# which after VXLAN encapsulation becomes 1352B, exceeding the physical NIC
-# MTU and being silently dropped by packetization-layer-pmtud-mode: blackhole.
-# Setting MTU=1292 forces the pod veth to 1292 so TCP MSS=1252; after VXLAN
-# +50B = 1302B < 1342. This fixes TLS (large multi-segment handshakes) while
-# TCP SYN/ACK (tiny packets) was always fine.
-MTU: 1292
 envoy:
   enabled: false
 cni:

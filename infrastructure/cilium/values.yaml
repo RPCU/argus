@@ -1,3 +1,4 @@
+packetizationLayerPMTUDMode: native
 l2announcements:
   enabled: true
 socketLB:

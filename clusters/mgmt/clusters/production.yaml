@@ -40,6 +40,13 @@ spec:
               - name: workerFlavor
                 value: large
         - class: default-worker
+          name: worker-xlarge
+          replicas: 1
+          variables:
+            overrides:
+              - name: workerFlavor
+                value: xlarge
+        - class: default-worker
           name: worker
           replicas: 3
           variables:

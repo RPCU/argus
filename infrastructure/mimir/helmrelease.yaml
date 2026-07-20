@@ -45,9 +45,9 @@ spec:
       resources:
         requests:
           cpu: 50m
-          memory: 128Mi
+          memory: 256Mi
         limits:
-          memory: 512Mi
+          memory: 2Gi
 
     store_gateway:
       replicas: 1
@@ -58,9 +58,9 @@ spec:
       resources:
         requests:
           cpu: 30m
-          memory: 64Mi
+          memory: 128Mi
         limits:
-          memory: 256Mi
+          memory: 1Gi
 
     distributor:
       replicas: 1
@@ -69,25 +69,25 @@ spec:
           cpu: 30m
           memory: 64Mi
         limits:
-          memory: 256Mi
+          memory: 512Mi
 
     querier:
       replicas: 1
       resources:
         requests:
           cpu: 30m
-          memory: 64Mi
+          memory: 128Mi
         limits:
-          memory: 256Mi
+          memory: 1Gi
 
     query_frontend:
       replicas: 1
       resources:
         requests:
           cpu: 20m
-          memory: 32Mi
+          memory: 64Mi
         limits:
-          memory: 128Mi
+          memory: 256Mi
 
     compactor:
       replicas: 1
@@ -96,13 +96,15 @@ spec:
       resources:
         requests:
           cpu: 30m
-          memory: 64Mi
+          memory: 128Mi
         limits:
-          memory: 256Mi
+          memory: 1Gi
 
     # --- Filesystem storage & clean memberlist ring for single replica ---
     mimir:
       structuredConfig:
+        limits:
+          max_global_series_per_user: 500000
         memberlist:
           join_members:
             - mimir-gossip-ring.monitoring.svc.mgmt.local.

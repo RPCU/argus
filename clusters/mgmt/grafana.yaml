@@ -1,0 +1,25 @@
+# Grafana — centralised monitoring UI on mgmt only.
+#
+# Accessible at https://grafana.mgmt.rpcu.lan via the internal Gateway.
+# Queries Mimir for metrics (pre-configured datasource).
+#
+# dependsOn monitoring + mimir: namespace must exist and Mimir must be ready
+# for the datasource to resolve.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: grafana
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  path: ./infrastructure/grafana
+  prune: true
+  wait: true
+  timeout: 10m
+  dependsOn:
+    - name: monitoring
+    - name: mimir

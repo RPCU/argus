@@ -6,3 +6,4 @@ namespace: zitadel
 resources:
   - providerConfig.yaml
   - oidc-chihiro.yaml
+  - oidc-grafana.yaml

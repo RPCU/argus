@@ -1,0 +1,129 @@
+# Monitoring for OPT-IN workload clusters — kube-prometheus-stack delivered as a
+# Flux takeover (same pattern as csi-driver-nfs, external-dns, gateway-api).
+#
+# Deploys kube-prometheus-stack on each matching workload cluster with:
+#   1. Grafana DISABLED (centralised Grafana lives on mgmt only)
+#   2. remote_write pointing at the mgmt Mimir instance via the mgmt internal
+#      Gateway (https://mimir.mgmt.rpcu.lan/api/v1/push)
+#   3. externalLabels.cluster set to the cluster name for multi-tenant queries
+#   4. TLS trust: the root-mgmt CA is pushed as a Secret so Prometheus can
+#      verify the mgmt Gateway's TLS certificate
+#
+# The SAME base (infrastructure/monitoring) is used by mgmt (directly via Flux)
+# and workload clusters (via this ClusterProfile). Per-cluster values are
+# injected via Flux Kustomization patches — the base remains unchanged.
+#
+# Gated by the opt-in label sveltos.argus.rpcu.io/monitoring: enabled.
+#
+# dependsOn:
+#   - flux-instance: pushes Flux Kustomization + HelmRelease CRs that require
+#     the kustomize/helm controllers
+#   - cert-manager: the root-mgmt CA Secret must be available on mgmt for the
+#     templateResourceRef to resolve
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: monitoring
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  dependsOn:
+    - flux-instance
+    - cert-manager
+  clusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/monitoring: enabled
+  # Read the mgmt root CA so we can push it to the workload cluster for
+  # remote_write TLS verification (Prometheus → mimir.mgmt.rpcu.lan).
+  templateResourceRefs:
+    - resource:
+        apiVersion: v1
+        kind: Secret
+        name: root-mgmt
+        namespace: cert-manager
+      identifier: rootMgmtCA
+  policyRefs:
+    - name: monitoring-mimir-ca
+      namespace: projectsveltos
+      kind: ConfigMap
+    - name: monitoring-flux-kustomization
+      namespace: projectsveltos
+      kind: ConfigMap
+---
+# Push the monitoring namespace + root-mgmt CA bundle to the workload cluster.
+# The CA is needed by Prometheus to verify the mgmt Gateway's TLS cert when
+# remote_writing to https://mimir.mgmt.rpcu.lan.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: monitoring-mimir-ca
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/template: "true"
+data:
+  mimir-ca.yaml: |
+    apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: monitoring
+    ---
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: mimir-ca
+      namespace: monitoring
+    type: Opaque
+    data:
+      ca.crt: {{ index (getResource "rootMgmtCA").data "ca.crt" }}
+---
+# Flux Kustomization pushed to the workload cluster. Points at the SAME base
+# (./infrastructure/monitoring) as mgmt, patched with per-cluster values:
+#   - externalLabels.cluster: <cluster name> (for multi-tenant Mimir queries)
+#   - remoteWrite: https://mimir.mgmt.rpcu.lan (cross-cluster, TLS verified)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: monitoring-flux-kustomization
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/template: "true"
+data:
+  monitoring.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: monitoring
+      namespace: monitoring
+    spec:
+      interval: 10m
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/monitoring
+      prune: true
+      timeout: 10m
+      patches:
+        # Inject per-cluster remote_write + externalLabels into the HelmRelease.
+        - patch: |
+            apiVersion: helm.toolkit.fluxcd.io/v2
+            kind: HelmRelease
+            metadata:
+              name: kube-prometheus-stack
+            spec:
+              values:
+                prometheus:
+                  prometheusSpec:
+                    externalLabels:
+                      cluster: {{ .Cluster.metadata.name }}
+                    remoteWrite:
+                      - url: https://mimir.mgmt.rpcu.lan/api/v1/push
+                        tlsConfig:
+                          ca:
+                            secret:
+                              name: mimir-ca
+                              key: ca.crt
+          target:
+            kind: HelmRelease
+            name: kube-prometheus-stack

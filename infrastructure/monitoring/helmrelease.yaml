@@ -1,0 +1,92 @@
+# kube-prometheus-stack HelmRelease — shared base for mgmt and workload clusters.
+#
+# This base is deployed:
+#   - On mgmt: via clusters/mgmt/monitoring.yaml (Flux Kustomization with patches)
+#   - On workloads: via the monitoring Sveltos ClusterProfile (pushes a Flux
+#     Kustomization pointing here, with per-cluster patches)
+#
+# Per-cluster customisation (remoteWrite URL, externalLabels) is applied via
+# Flux Kustomization patches on the HelmRelease values — NOT in this file.
+# This keeps the base DRY: one set of manifests, N clusters.
+#
+# Grafana is DISABLED here — it is deployed separately on the mgmt cluster only
+# (infrastructure/grafana). Workload clusters only run Prometheus + exporters
+# and remote_write all metrics to the centralised Mimir on mgmt.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: monitoring
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      version: 87.17.0
+      interval: 24h
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: monitoring
+  # Upgrade strategy: force to handle CRD changes gracefully.
+  install:
+    crds: CreateReplace
+  upgrade:
+    crds: CreateReplace
+  values:
+    # --- Grafana: disabled (deployed separately on mgmt only) ---
+    grafana:
+      enabled: false
+
+    # --- Prometheus ---
+    prometheus:
+      prometheusSpec:
+        # Short local retention — all metrics are remote_written to Mimir.
+        retention: 2h
+        # No PVC: WAL is ephemeral. Prometheus is a scraper + forwarder here.
+        storageSpec: {}
+        resources:
+          requests:
+            cpu: 50m
+            memory: 256Mi
+          limits:
+            memory: 1Gi
+        externalLabels:
+          cluster: mgmt
+        remoteWrite:
+          - url: http://mimir-gateway.monitoring.svc:80/api/v1/push
+
+    # --- AlertManager ---
+    alertmanager:
+      enabled: true
+      alertmanagerSpec:
+        retention: 24h
+        storage: {}
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 128Mi
+
+    # --- Exporters ---
+    nodeExporter:
+      enabled: true
+    kubeStateMetrics:
+      enabled: true
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          memory: 128Mi
+
+    # --- Prometheus Operator ---
+    prometheusOperator:
+      enabled: true
+      resources:
+        requests:
+          cpu: 20m
+          memory: 64Mi
+        limits:
+          memory: 256Mi

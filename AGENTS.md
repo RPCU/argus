@@ -172,6 +172,9 @@ Key files:
 - `vault.yaml` - HashiCorp Vault (path `./infrastructure/vault`, dependsOn kgateway + openstack-cinder-csi). **HA Vault (3-node integrated Raft storage, no external Consul)** on the mgmt cluster. Adapted from the bealv `flux-mgmt` repo: the chart's bundled Ingress is disabled in favour of a Gateway API `HTTPRoute` at `vault.mgmt.rpcu.lan` (TLS terminated at the shared kgateway `https` Gateway with the `rpcu-lan-wildcard-tls` cert / root-mgmt CA — no per-app cert-manager issuer like the source's `bealv-mgmt`/`vault.bealv-mgmt.lan`), and each replica's `dataStorage` PVC explicitly requests the `cinder-delete` StorageClass (mgmt has no default StorageClass). The 3 replicas require 3 distinct schedulable nodes (chart `required` podAntiAffinity).
 - `kubernetes-rbac.yaml` - Flux Kustomization (path `./clusters/mgmt/apps/kubernetes-rbac`, no dependsOn) applying the OIDC group → RBAC bindings on the workload cluster: `apps/kubernetes-rbac/crb.yaml` binds the **bare** `kube-admin` Group → `cluster-admin` and `kube-user` Group → `view`. The bare group names match the shared Zitadel `groupsClaim` Action output and the ClusterClass's empty `groupsPrefix`. Mirrors the bealv reference (`gitops/apps/kubernetes/crb.yaml`). Harmless before OIDC is enabled (the groups simply never appear in any token).
 - `sveltos.yaml` - Flux Kustomization (path `./infrastructure/sveltos`, `prune: true`) deploying the shared `infrastructure/sveltos` base (Sveltos core + OIDC RBAC).
+- `monitoring.yaml` - kube-prometheus-stack for mgmt (path `./infrastructure/monitoring`, wait: true). Same base as workload clusters, patched with local Mimir remote_write URL (`http://mimir-gateway.monitoring.svc:80/api/v1/push`) and `externalLabels.cluster: mgmt`.
+- `mimir.yaml` - Grafana Mimir TSDB (path `./infrastructure/mimir`, dependsOn monitoring). Single-replica monolithic mode with filesystem storage (50Gi PVC).
+- `grafana.yaml` - Grafana UI (path `./infrastructure/grafana`, dependsOn monitoring + mimir). Accessible at `https://grafana.mgmt.rpcu.lan`.
 - `flux-operator.yaml` - Flux operator deployment
 - `fluxcd/` - Flux CD configuration
   - `flux-instance-patch.yaml` - Flux instance patch (sync path ./clusters/mgmt, domain mgmt.local)
@@ -256,6 +259,26 @@ _trust-manager/configs/_ - Trust bundle configuration
 - `helmrelease.yaml` - kgateway controller Helm chart
 - `gateway.yaml` - `Gateway` resource definition (openstack cluster)
 - `httplistenerpolicy.yaml` - `HTTPListenerPolicy` for WebSocket upgrades and access logs
+- `kustomization.yaml` - Kustomization manifest
+
+**monitoring/** - kube-prometheus-stack Base (v87.17.0)
+
+- `namespace.yaml` - Namespace `monitoring`
+- `helmrepo.yaml` - HelmRepository `prometheus-community`
+- `helmrelease.yaml` - Shared `kube-prometheus-stack` HelmRelease (Grafana disabled, short retention 2h, node-exporter, kube-state-metrics). Per-cluster `remoteWrite` and `externalLabels` are injected via Flux Kustomization patches.
+- `kustomization.yaml` - Kustomization manifest
+
+**mimir/** - Grafana Mimir TSDB (v5.6.0)
+
+- `helmrepo.yaml` - HelmRepository `grafana`
+- `helmrelease.yaml` - `mimir-distributed` HelmRelease in monolithic mode with filesystem storage (50Gi PVC).
+- `httproute.yaml` - HTTPRoute `mimir.mgmt.rpcu.lan` on mgmt internal Gateway for cross-cluster `remote_write`.
+- `kustomization.yaml` - Kustomization manifest
+
+**grafana/** - Grafana Central Monitoring UI (v8.12.1)
+
+- `helmrelease.yaml` - Grafana HelmRelease with pre-configured Mimir datasource (`http://mimir-gateway.monitoring.svc:80/prometheus`).
+- `httproute.yaml` - HTTPRoute `grafana.mgmt.rpcu.lan` on mgmt internal Gateway.
 - `kustomization.yaml` - Kustomization manifest
 
 **rook/** - Distributed Storage (Ceph v19.2.3)
@@ -2434,7 +2457,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 2026 (Cilium 1.19 PMTUD fix: `packetizationLayerPMTUDMode: "blackhole"` was a new default in Cilium Helm chart 1.19.x (not present in 1.18.6) that silently drops cross-node TCP segments exceeding the route MTU (pod veth MTU =1342, route MTU =1292, TCP MSS =1302). Fixed by setting `pmtuDiscovery.enabled: true` + `packetizationLayerPMTUDMode: "always"` in `infrastructure/cilium/values.yaml` and `infrastructure/sveltos/clusterprofiles/cilium.yaml` — PRs #404/#405. Note: the Helm value is nested under `pmtuDiscovery:` (not top-level), and valid values are `always`/`blackhole`/`disabled`/`unset` (not `native`). — OCCM health monitor timeout fix: added explicit `monitor-delay=10s`, `monitor-timeout=10s`, `monitor-max-retries=3` to `infrastructure/openstack-ccm-identity/externalsecret.yaml` cloud.conf — OVN defaults (~5s timeout) caused intermittent TLS handshake timeouts on Kamaji tenant API server pods under CPU load. Also added `loadbalancer.openstack.org/floating-ip` annotation to the Kamaji ClusterClass `externalNetwork` patch so the API server LoadBalancer floating IP can be pinned via the `apiServerFloatingIP` variable. — Prior: New `.github/workflows/yaook-releases.yaml` workflow: scrapes yaook operator GitLab source weekly to detect new OpenStack releases and opens upgrade PRs for all yaook Deployment CRs. Renovate is now self-hosted in GitHub Actions: new `.github/workflows/renovate.yaml` runs the `renovatebot/github-action` hourly + on-dispatch, minting a token from the `rpcu-bot` GitHub App via `actions/create-github-app-token`, reusing the org-level `APP_ID`/`PRIVATE_KEY` secrets. Replaces the Mend-hosted App. See "Dependency Updates (Renovate)" in Section 5. — Prior: 2026-07-10 Ceph OSD-full incident: `osd.2`/quinn hit 95% full_ratio and blocked writes cluster-wide at only ~73% cluster usage because `rpcu-fs-data0` — ~70% of the data — was left at `pg_num: 32`, splitting 26/19/19 across the 3 OSDs; the PG-count upmap balancer couldn't correct the byte skew. Fixed live by splitting `rpcu-fs-data0` pg_num 32→128 + `upmap_max_deviation 1` + `osd_mclock_profile high_recovery_ops` for the drain; `infrastructure/rook/configs/cephfilesystem.yaml` `data0` pool now declares `pg_autoscale_mode: on` + `target_size_ratio: 0.8` so it never collapses back to 32. See the new "Ceph single OSD full from too-few PGs on the dominant pool" note in Section 8. Prior update — NFS resilience after the 2026-07-06/07 incidents: `cephnfs.yaml` gateway now has `system-cluster-critical` priority + resources + a relaxed liveness probe; new `nfs-export-ensure.yaml` CronJob declaratively enforces the export incl. `security_label: false`; `infrastructure/kamaji/values.yaml` adds `required` etcd pod anti-affinity so etcd members spread across mgmt nodes and one node event no longer degrades every tenant control plane)
+**Last Updated**: July 20, 2026 (Monitoring add-on: added DRY `kube-prometheus-stack` base (`infrastructure/monitoring`), Grafana Mimir TSDB (`infrastructure/mimir`), Grafana UI with Zitadel OIDC (`infrastructure/grafana` & `clusters/mgmt/crossplane/zitadel/oidc-grafana.yaml`), and Sveltos opt-in ClusterProfile `monitoring` (`infrastructure/sveltos/clusterprofiles/monitoring.yaml`, label `sveltos.argus.rpcu.io/monitoring: enabled`). Mgmt deploys local monitoring via `clusters/mgmt/monitoring.yaml` + `mimir.yaml` + `grafana.yaml`; workload clusters push metrics to `https://mimir.mgmt.rpcu.lan/api/v1/push` via the mgmt Gateway.)
 **Repository**: <https://github.com/RPCU/argus.git>
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

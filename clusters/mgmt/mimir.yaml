@@ -1,0 +1,24 @@
+# Grafana Mimir — centralised TSDB on mgmt.
+#
+# Receives remote_write from all clusters (mgmt locally, workloads via
+# https://mimir.mgmt.rpcu.lan). Grafana queries Mimir for dashboards.
+#
+# dependsOn monitoring: the monitoring Kustomization creates the monitoring
+# namespace that Mimir deploys into.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: mimir
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  path: ./infrastructure/mimir
+  prune: true
+  wait: true
+  timeout: 10m
+  dependsOn:
+    - name: monitoring

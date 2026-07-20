@@ -34,4 +34,7 @@ resources:
   - flux-operator.yaml
   - kamaji.yaml
   - fluxcd/
+  - monitoring.yaml
+  - mimir.yaml
+  - grafana.yaml
   - clusters.yaml

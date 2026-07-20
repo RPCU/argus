@@ -1,0 +1,86 @@
+# Grafana — centralised monitoring UI on mgmt only.
+#
+# Queries Mimir via the nginx gateway (mimir-gateway:80/prometheus).
+# Uses the same grafana HelmRepository as Mimir (infrastructure/mimir/helmrepo.yaml).
+#
+# Authentication: chart-managed admin user for now. OIDC integration with
+# Zitadel (generic_oauth provider) can be added as a follow-up by setting
+# GF_AUTH_GENERIC_OAUTH_* env vars and creating a Zitadel Oidc app.
+#
+# NOTE: The Grafana community charts migrated to
+# https://grafana-community.github.io/helm-charts as of January 2026.
+# If the chart is not found in the grafana repo, update the sourceRef to the
+# community HelmRepository.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: grafana
+      version: 8.12.1
+      interval: 24h
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: monitoring
+  values:
+    replicas: 1
+
+    # --- Persistence ---
+    persistence:
+      enabled: true
+      size: 2Gi
+
+    # --- Resources ---
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
+
+    # --- Mimir datasource (pre-provisioned) ---
+    datasources:
+      datasources.yaml:
+        apiVersion: 1
+        datasources:
+          - name: Mimir
+            type: prometheus
+            url: http://mimir-gateway.monitoring.svc:80/prometheus
+            access: proxy
+            isDefault: true
+            editable: false
+
+    # --- Zitadel OIDC Authentication (generic_oauth) ---
+    envValueFrom:
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID:
+        secretKeyRef:
+          name: grafana-oidc-conn
+          key: attribute.client_id
+          optional: true
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET:
+        secretKeyRef:
+          name: grafana-oidc-conn
+          key: attribute.client_secret
+          optional: true
+
+    grafana.ini:
+      server:
+        root_url: https://grafana.mgmt.rpcu.lan
+      users:
+        auto_assign_org_role: Admin
+      auth.generic_oauth:
+        enabled: true
+        name: Zitadel
+        allow_sign_up: true
+        scopes: openid profile email groups
+        auth_url: https://rpcu-gabeck.eu1.zitadel.cloud/oauth/v2/authorize
+        token_url: https://rpcu-gabeck.eu1.zitadel.cloud/oauth/v2/token
+        api_url: https://rpcu-gabeck.eu1.zitadel.cloud/oauth/v2/userinfo
+        use_pkce: true
+        role_attribute_path: "'Admin'"
+        role_attribute_strict: false

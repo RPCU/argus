@@ -1,0 +1,43 @@
+# kube-prometheus-stack on the mgmt cluster.
+#
+# Uses the SAME base as workload clusters (infrastructure/monitoring), patched
+# for mgmt-specific values:
+#   - remoteWrite: local Mimir (http://mimir-gateway.monitoring.svc:80, no TLS)
+#   - externalLabels.cluster: mgmt
+#
+# Pattern: identical to clusters/mgmt/kgateway.yaml (shared base + patches).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: monitoring
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  path: ./infrastructure/monitoring
+  prune: true
+  wait: true
+  timeout: 10m
+  patches:
+    # Inject mgmt-specific remote_write + externalLabels.
+    # Local Mimir: no TLS needed (same cluster).
+    - patch: |
+        apiVersion: helm.toolkit.fluxcd.io/v2
+        kind: HelmRelease
+        metadata:
+          name: kube-prometheus-stack
+        spec:
+          values:
+            prometheus:
+              prometheusSpec:
+                externalLabels:
+                  cluster: mgmt
+                remoteWrite:
+                  - url: http://mimir-gateway.monitoring.svc:80/api/v1/push
+      target:
+        kind: HelmRelease
+        name: kube-prometheus-stack
+        namespace: monitoring

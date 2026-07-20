@@ -1,0 +1,14 @@
+# HelmRepository for Grafana charts (Mimir + Grafana).
+#
+# NOTE: As of January 2026, Grafana community charts migrated to
+# https://grafana-community.github.io/helm-charts. However, mimir-distributed
+# remains in the original grafana repo. If the chart is not found, update this
+# URL to the community repo.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  interval: 24h
+  url: https://grafana.github.io/helm-charts

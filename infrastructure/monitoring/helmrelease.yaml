@@ -41,10 +41,16 @@ spec:
     # --- Prometheus ---
     prometheus:
       prometheusSpec:
-        # Short local retention — all metrics are remote_written to Mimir.
-        retention: 2h
-        # No PVC: WAL is ephemeral. Prometheus is a scraper + forwarder here.
-        storageSpec: {}
+        # Retention configured to 72h (3 days) with 5GB max retention size and 5Gi PVC storage.
+        retention: 72h
+        retentionSize: 5GB
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 5Gi
         resources:
           requests:
             cpu: 50m

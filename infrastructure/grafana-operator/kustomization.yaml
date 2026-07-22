@@ -1,0 +1,4 @@
+namespace: monitoring
+resources:
+  - helmrepo.yaml
+  - helmrelease.yaml

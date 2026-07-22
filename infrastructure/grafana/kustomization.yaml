@@ -1,4 +1,6 @@
 namespace: monitoring
 resources:
-  - helmrelease.yaml
+  - grafana.yaml
+  - mimir-datasource.yaml
+  - dashboards/cluster-overview-dashboard.yaml
   - httproute.yaml

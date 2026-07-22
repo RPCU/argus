@@ -174,7 +174,8 @@ Key files:
 - `sveltos.yaml` - Flux Kustomization (path `./infrastructure/sveltos`, `prune: true`) deploying the shared `infrastructure/sveltos` base (Sveltos core + OIDC RBAC).
 - `monitoring.yaml` - kube-prometheus-stack for mgmt (path `./infrastructure/monitoring`, wait: true). Same base as workload clusters, patched with local Mimir remote_write URL (`http://mimir-gateway.monitoring.svc:80/api/v1/push`) and `externalLabels.cluster: mgmt`.
 - `mimir.yaml` - Grafana Mimir TSDB (path `./infrastructure/mimir`, dependsOn monitoring). Single-replica monolithic mode with filesystem storage (50Gi PVC).
-- `grafana.yaml` - Grafana UI (path `./infrastructure/grafana`, dependsOn monitoring + mimir). Accessible at `https://grafana.mgmt.rpcu.lan`.
+- `grafana-operator.yaml` - Grafana Operator v5 deployment (path `./infrastructure/grafana-operator`, dependsOn monitoring) enabling cross-namespace DaaS.
+- `grafana.yaml` - Grafana CR & DaaS instance (path `./infrastructure/grafana`, dependsOn monitoring + mimir + grafana-operator). Accessible at `https://grafana.mgmt.rpcu.lan`.
 - `flux-operator.yaml` - Flux operator deployment
 - `fluxcd/` - Flux CD configuration
   - `flux-instance-patch.yaml` - Flux instance patch (sync path ./clusters/mgmt, domain mgmt.local)
@@ -265,20 +266,28 @@ _trust-manager/configs/_ - Trust bundle configuration
 
 - `namespace.yaml` - Namespace `monitoring`
 - `helmrepo.yaml` - HelmRepository `prometheus-community`
-- `helmrelease.yaml` - Shared `kube-prometheus-stack` HelmRelease (Grafana disabled, short retention 2h, node-exporter, kube-state-metrics). Per-cluster `remoteWrite` and `externalLabels` are injected via Flux Kustomization patches.
+- `helmrelease.yaml` - Shared `kube-prometheus-stack` HelmRelease (Grafana disabled, 72h retention, 5GB retention limit, 5Gi PVC, node-exporter, kube-state-metrics). Per-cluster `remoteWrite` and `externalLabels` are injected via Flux Kustomization patches.
 - `kustomization.yaml` - Kustomization manifest
 
 **mimir/** - Grafana Mimir TSDB (v5.6.0)
 
 - `helmrepo.yaml` - HelmRepository `grafana`
-- `helmrelease.yaml` - `mimir-distributed` HelmRelease in monolithic mode with filesystem storage (50Gi PVC).
+- `helmrelease.yaml` - `mimir-distributed` HelmRelease in monolithic mode with filesystem storage (5Gi PVC) and 72h retention policy (`compactor_blocks_retention_period: 72h`).
 - `httproute.yaml` - HTTPRoute `mimir.mgmt.rpcu.lan` on mgmt internal Gateway for cross-cluster `remote_write`.
 - `kustomization.yaml` - Kustomization manifest
 
-**grafana/** - Grafana Central Monitoring UI (v8.12.1)
+**grafana-operator/** - Grafana Operator v5 (v5.16.0)
 
-- `helmrelease.yaml` - Grafana HelmRelease with pre-configured Mimir datasource (`http://mimir-gateway.monitoring.svc:80/prometheus`).
-- `httproute.yaml` - HTTPRoute `grafana.mgmt.rpcu.lan` on mgmt internal Gateway.
+- `helmrepo.yaml` - OCI HelmRepository `grafana-operator` (`oci://ghcr.io/grafana/helm-charts`).
+- `helmrelease.yaml` - `grafana-operator` HelmRelease watching all namespaces for DaaS.
+- `kustomization.yaml` - Kustomization manifest
+
+**grafana/** - Grafana Central Monitoring UI & DaaS Instance (Grafana Operator CRDs v1beta1)
+
+- `grafana.yaml` - `Grafana` CR (v1beta1) with 5Gi PVC, `dashboards: grafana-central` label, and Zitadel OIDC integration (`grafana-oidc-conn`).
+- `mimir-datasource.yaml` - `GrafanaDatasource` CR for central Mimir (`http://mimir-gateway.monitoring.svc:80/prometheus`).
+- `dashboards/cluster-overview-dashboard.yaml` - `GrafanaDashboard` CR for CPU/RAM cluster & node metrics with a dropdown cluster selector.
+- `httproute.yaml` - HTTPRoute `grafana.mgmt.rpcu.lan` pointing to `grafana-service:3000` on mgmt internal Gateway.
 - `kustomization.yaml` - Kustomization manifest
 
 **rook/** - Distributed Storage (Ceph v19.2.3)
@@ -2457,7 +2466,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 20, 2026 (Monitoring add-on: added DRY `kube-prometheus-stack` base (`infrastructure/monitoring`), Grafana Mimir TSDB (`infrastructure/mimir`), Grafana UI with Zitadel OIDC (`infrastructure/grafana` & `clusters/mgmt/crossplane/zitadel/oidc-grafana.yaml`), and Sveltos opt-in ClusterProfile `monitoring` (`infrastructure/sveltos/clusterprofiles/monitoring.yaml`, label `sveltos.argus.rpcu.io/monitoring: enabled`). Mgmt deploys local monitoring via `clusters/mgmt/monitoring.yaml` + `mimir.yaml` + `grafana.yaml`; workload clusters push metrics to `https://mimir.mgmt.rpcu.lan/api/v1/push` via the mgmt Gateway.)
+**Last Updated**: July 22, 2026 (Grafana Operator & DaaS transition: added Grafana Operator v5 (`infrastructure/grafana-operator`, `clusters/mgmt/grafana-operator.yaml`) watching all namespaces, migrated Grafana instance to `Grafana` CR (v1beta1) in `infrastructure/grafana/grafana.yaml` preserving Zitadel OIDC & 2Gi PVC, added `GrafanaDatasource` for Mimir, updated HTTPRoute to `grafana-service:3000`, and enabled `allowCrossNamespaceImport: true` for cross-namespace DaaS.)
 **Repository**: <https://github.com/RPCU/argus.git>
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

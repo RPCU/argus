@@ -1,0 +1,69 @@
+# Grafana — centralised monitoring UI on mgmt managed by Grafana Operator v5.
+#
+# Declarative Grafana instance definition (DaaS root).
+# Connects to Mimir via GrafanaDatasource and authenticates users via Zitadel OIDC.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: Grafana
+metadata:
+  name: grafana
+  namespace: monitoring
+  labels:
+    dashboards: "grafana-central"
+spec:
+  # Grafana configuration (grafana.ini)
+  config:
+    server:
+      root_url: https://grafana.mgmt.rpcu.lan
+    users:
+      auto_assign_org_role: Admin
+    auth.generic_oauth:
+      enabled: "true"
+      name: "Zitadel"
+      allow_sign_up: "true"
+      scopes: "openid profile email groups"
+      auth_url: "https://rpcu-gabeck.eu1.zitadel.cloud/oauth/v2/authorize"
+      token_url: "https://rpcu-gabeck.eu1.zitadel.cloud/oauth/v2/token"
+      api_url: "https://rpcu-gabeck.eu1.zitadel.cloud/oauth/v2/userinfo"
+      use_pkce: "true"
+      role_attribute_path: "'Admin'"
+      role_attribute_strict: "false"
+
+  # Deployment specification & env vars for Zitadel OIDC secret
+  deployment:
+    spec:
+      template:
+        spec:
+          securityContext:
+            fsGroup: 472
+            runAsNonRoot: true
+            runAsUser: 472
+          containers:
+            - name: grafana
+              env:
+                - name: GF_AUTH_GENERIC_OAUTH_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: grafana-oidc-conn
+                      key: attribute.client_id
+                      optional: true
+                - name: GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: grafana-oidc-conn
+                      key: attribute.client_secret
+                      optional: true
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 64Mi
+                limits:
+                  memory: 256Mi
+
+  # Persistent storage for Grafana state
+  persistentVolumeClaim:
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 5Gi

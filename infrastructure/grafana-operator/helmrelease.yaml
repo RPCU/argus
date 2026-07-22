@@ -18,3 +18,9 @@ spec:
   values:
     # Watch all namespaces to enable cross-namespace DaaS for workload/tenant teams
     watchNamespaces: ""
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 512Mi

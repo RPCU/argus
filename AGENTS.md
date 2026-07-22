@@ -287,6 +287,7 @@ _trust-manager/configs/_ - Trust bundle configuration
 - `grafana.yaml` - `Grafana` CR (v1beta1) with 5Gi PVC, `dashboards: grafana-central` label, and Zitadel OIDC integration (`grafana-oidc-conn`).
 - `mimir-datasource.yaml` - `GrafanaDatasource` CR for central Mimir (`http://mimir-gateway.monitoring.svc:80/prometheus`).
 - `dashboards/cluster-overview-dashboard.yaml` - `GrafanaDashboard` CR for CPU/RAM cluster & node metrics with a dropdown cluster selector.
+- `dashboards/pvc-storage-dashboard.yaml` - `GrafanaDashboard` CR for PVC storage & volume usage with dropdown cluster and namespace filters.
 - `httproute.yaml` - HTTPRoute `grafana.mgmt.rpcu.lan` pointing to `grafana-service:3000` on mgmt internal Gateway.
 - `kustomization.yaml` - Kustomization manifest
 

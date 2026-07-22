@@ -3,4 +3,5 @@ resources:
   - grafana.yaml
   - mimir-datasource.yaml
   - dashboards/cluster-overview-dashboard.yaml
+  - dashboards/pvc-storage-dashboard.yaml
   - httproute.yaml

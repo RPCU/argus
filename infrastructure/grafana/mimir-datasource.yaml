@@ -11,6 +11,7 @@ spec:
       dashboards: "grafana-central"
   datasource:
     name: Mimir
+    uid: Mimir
     type: prometheus
     access: proxy
     url: http://mimir-gateway.monitoring.svc:80/prometheus

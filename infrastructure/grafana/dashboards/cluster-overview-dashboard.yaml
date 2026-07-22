@@ -1,0 +1,340 @@
+# GrafanaDashboard — Cluster CPU & RAM Overview Dashboard with Cluster Filter.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: cluster-cpu-ram-overview
+  namespace: monitoring
+spec:
+  allowCrossNamespaceImport: true
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana-central"
+  folder: "Infrastructure & Clusters"
+  json: |
+    {
+      "annotations": {
+        "list": []
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "liveNow": false,
+      "panels": [
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+          "id": 1,
+          "title": "Cluster Overview Metrics",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null }
+                ]
+              },
+              "unit": "short"
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+          "id": 2,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "count(count(node_cpu_seconds_total{cluster=~\"$cluster\"}) by (cluster))",
+              "legendFormat": "Active Clusters",
+              "refId": "A"
+            }
+          ],
+          "title": "Active Clusters",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 70 },
+                  { "color": "red", "value": 85 }
+                ]
+              },
+              "unit": "percent"
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+          "id": 3,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\", cluster=~\"$cluster\"}[5m])) * 100)",
+              "legendFormat": "Avg CPU Usage",
+              "refId": "A"
+            }
+          ],
+          "title": "Global Avg CPU Usage",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 75 },
+                  { "color": "red", "value": 90 }
+                ]
+              },
+              "unit": "percent"
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+          "id": 4,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "(1 - (sum(node_memory_MemAvailable_bytes{cluster=~\"$cluster\"}) / sum(node_memory_MemTotal_bytes{cluster=~\"$cluster\"}))) * 100",
+              "legendFormat": "Avg RAM Usage",
+              "refId": "A"
+            }
+          ],
+          "title": "Global Avg RAM Usage",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "blue", "value": null }
+                ]
+              },
+              "unit": "bytes"
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+          "id": 5,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "sum(node_memory_MemTotal_bytes{cluster=~\"$cluster\"}) - sum(node_memory_MemAvailable_bytes{cluster=~\"$cluster\"})",
+              "legendFormat": "Used RAM",
+              "refId": "A"
+            }
+          ],
+          "title": "Total RAM Consumed",
+          "type": "stat"
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+          "id": 6,
+          "title": "CPU & RAM Trends per Cluster and Node",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "lineWidth": 2
+              },
+              "unit": "percent"
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+          "id": 7,
+          "options": {
+            "legend": { "displayMode": "table", "placement": "bottom" },
+            "tooltip": { "mode": "multi" }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "(100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\", cluster=~\"$cluster\"}[5m])) by (cluster, instance) * 100))",
+              "legendFormat": "{{cluster}} - {{instance}}",
+              "refId": "A"
+            }
+          ],
+          "title": "CPU Usage (%) per Node",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "smooth",
+                "lineWidth": 2
+              },
+              "unit": "percent"
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+          "id": 8,
+          "options": {
+            "legend": { "displayMode": "table", "placement": "bottom" },
+            "tooltip": { "mode": "multi" }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "(1 - (node_memory_MemAvailable_bytes{cluster=~\"$cluster\"} / node_memory_MemTotal_bytes{cluster=~\"$cluster\"})) * 100",
+              "legendFormat": "{{cluster}} - {{instance}}",
+              "refId": "A"
+            }
+          ],
+          "title": "RAM Usage (%) per Node",
+          "type": "timeseries"
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+          "id": 9,
+          "title": "Top Pods CPU & Memory Consumption",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "unit": "short"
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+          "id": 10,
+          "options": {
+            "displayMode": "gradient",
+            "orientation": "horizontal",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "showUnfilled": true
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "topk(10, sum(rate(container_cpu_usage_seconds_total{container!=\"\", cluster=~\"$cluster\"}[5m])) by (cluster, namespace, pod))",
+              "legendFormat": "{{cluster}} | {{namespace}}/{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Top 10 Pods by CPU Usage (Cores)",
+          "type": "bargauge"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "unit": "bytes"
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+          "id": 11,
+          "options": {
+            "displayMode": "gradient",
+            "orientation": "horizontal",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "showUnfilled": true
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "topk(10, sum(container_memory_working_set_bytes{container!=\"\", cluster=~\"$cluster\"}) by (cluster, namespace, pod))",
+              "legendFormat": "{{cluster}} | {{namespace}}/{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Top 10 Pods by Memory Working Set (RAM)",
+          "type": "bargauge"
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 38,
+      "style": "dark",
+      "tags": ["infrastructure", "cpu", "memory", "clusters"],
+      "templating": {
+        "list": [
+          {
+            "allValue": ".*",
+            "current": { "selected": true, "text": "All", "value": "$__all" },
+            "datasource": { "type": "prometheus", "uid": "Mimir" },
+            "definition": "label_values(node_cpu_seconds_total, cluster)",
+            "includeAll": true,
+            "label": "Cluster Filter",
+            "multi": true,
+            "name": "cluster",
+            "options": [],
+            "query": {
+              "query": "label_values(node_cpu_seconds_total, cluster)",
+              "refId": "StandardVariableQuery"
+            },
+            "refresh": 1,
+            "regex": "",
+            "skipUrlSync": false,
+            "sort": 1,
+            "type": "query"
+          }
+        ]
+      },
+      "time": { "from": "now-1h", "to": "now" },
+      "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"] },
+      "timezone": "browser",
+      "title": "Cluster Resources & Infrastructure (CPU / RAM)",
+      "uid": "cluster-cpu-ram-overview"
+    }

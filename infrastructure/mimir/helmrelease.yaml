@@ -42,6 +42,9 @@ spec:
       replicas: 1
       zoneAwareReplication:
         enabled: false
+      persistentVolume:
+        enabled: true
+        size: 5Gi
       resources:
         requests:
           cpu: 50m
@@ -55,6 +58,9 @@ spec:
         enabled: false
       readinessProbe:
         initialDelaySeconds: 60
+      persistentVolume:
+        enabled: true
+        size: 2Gi
       resources:
         requests:
           cpu: 30m
@@ -93,6 +99,9 @@ spec:
       replicas: 1
       readinessProbe:
         initialDelaySeconds: 60
+      persistentVolume:
+        enabled: true
+        size: 2Gi
       resources:
         requests:
           cpu: 30m
@@ -105,6 +114,7 @@ spec:
       structuredConfig:
         limits:
           max_global_series_per_user: 500000
+          compactor_blocks_retention_period: 72h
         memberlist:
           join_members:
             - mimir-gossip-ring.monitoring.svc.mgmt.local.

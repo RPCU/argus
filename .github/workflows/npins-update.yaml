@@ -45,7 +45,9 @@ jobs:
         uses: actions/checkout@v4
       - id: set-pins
         run: |
-          PINS=$(jq -c '.pins | keys' npins/sources.json)
+          # Exclude frozen pins: `npins update <frozen>` ignores them and then
+          # exits 1 with "no valid pin selected for update", failing the job.
+          PINS=$(jq -c '[.pins | to_entries[] | select(.value.frozen != true) | .key]' npins/sources.json)
           echo "pins=$PINS" >> "$GITHUB_OUTPUT"
   npins-update:
     needs: get-pins

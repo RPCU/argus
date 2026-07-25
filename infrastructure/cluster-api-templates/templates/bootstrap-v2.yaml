@@ -1,0 +1,75 @@
+# -----------------------------------------------------------------------------
+# Worker bootstrap template (KubeadmConfig) — v2.
+#
+# WHAT CHANGED vs -v1: node-stability kubelet flags (resource reservations,
+# eviction thresholds, image GC). See the rationale block below.
+#
+# IMMUTABILITY: like the control-plane template, the spec is immutable once a
+# ClusterClass references it. To change it, create a new -v3 and repoint the
+# matching machineDeployment class in clusterclass.yaml. The topology controller
+# will roll the affected MachineDeployment.
+#
+# -----------------------------------------------------------------------------
+# WHY THESE FLAGS EXIST (2026-07-25 incident)
+# -----------------------------------------------------------------------------
+# Worker `mgmt-md-0-285vl-xqztp-jz5cb` went NotReady with "Kubelet stopped
+# posting node status", then hard-rebooted, then took >10 min to bring
+# containerd up. Root cause was resource starvation, and -v1 ran the kubelet
+# with UPSTREAM DEFAULTS, i.e.:
+#
+#   * `--kube-reserved` / `--system-reserved` UNSET → node Allocatable ==
+#     node Capacity. The scheduler is therefore free to commit 100% of the
+#     node's CPU/RAM to Pods, leaving nothing for the kubelet, containerd,
+#     systemd and sshd themselves. On these 4 vCPU / 8 GiB workers the observed
+#     memory-LIMIT overcommit was 209%, so a burst past requests starves the
+#     kubelet — which is exactly "kubelet stopped posting node status".
+#   * `--eviction-hard` defaults to `memory.available<100Mi`, far too tight to
+#     react in time: by the time only 100 MiB is left the kernel OOM killer
+#     (or livelock) usually wins the race against the kubelet's eviction loop.
+#
+# Because `--enforce-node-allocatable` defaults to `pods`, setting the two
+# reservation flags is not merely scheduler bookkeeping — the kubelet caps the
+# `kubepods` cgroup at (capacity - kube-reserved - system-reserved -
+# eviction-hard). Pods then OOM inside their own cgroup instead of taking the
+# node's control processes down with them. That is the durable fix.
+#
+# Sizing note: values are deliberately absolute (not percentages) and tuned for
+# the smallest flavor in use (`large` = 4 vCPU / 8 GiB). They cost ~400m CPU
+# and ~1.5 GiB of Allocatable on such a node, which is the intended trade:
+# slightly less schedulable capacity in exchange for a node that stays
+# reachable and remediable under pressure.
+# -----------------------------------------------------------------------------
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
+kind: KubeadmConfigTemplate
+metadata:
+  name: openstack-default-worker-v2
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      joinConfiguration:
+        nodeRegistration:
+          kubeletExtraArgs:
+            - name: provider-id
+              value: openstack:///'{{ instance_id }}'
+            # Carve out capacity for the kubelet/CRI and for the OS.
+            - name: kube-reserved
+              value: cpu=200m,memory=768Mi,ephemeral-storage=2Gi
+            - name: system-reserved
+              value: cpu=200m,memory=768Mi,ephemeral-storage=2Gi
+            # React well before the kernel OOM killer does.
+            - name: eviction-hard
+              value: memory.available<500Mi,nodefs.available<10%,imagefs.available<10%,nodefs.inodesFree<5%
+            - name: eviction-soft
+              value: memory.available<1Gi,nodefs.available<15%,imagefs.available<15%
+            - name: eviction-soft-grace-period
+              value: memory.available=2m,nodefs.available=2m,imagefs.available=2m
+            - name: eviction-max-pod-grace-period
+              value: "60"
+            # The `large` flavor only has a 50Gi root disk; reclaim images
+            # earlier than the 85%/80% defaults so DiskPressure is rare.
+            - name: image-gc-high-threshold
+              value: "80"
+            - name: image-gc-low-threshold
+              value: "65"
+          name: "{{ local_hostname }}"

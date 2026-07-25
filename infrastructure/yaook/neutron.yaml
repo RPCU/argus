@@ -55,7 +55,72 @@ spec:
       ovn_emit_need_to_frag: True
   neutronML2Config:
     ml2:
-      path_mtu: 1400
+      # -----------------------------------------------------------------------
+      # TENANT (geneve) MTU — sized from MEASUREMENT, not arithmetic. DO NOT
+      # RAISE back to 1400 without re-running the DF sweep documented below.
+      #
+      # Neutron derives a geneve network's MTU as
+      #     mtu = min(global_physnet_mtu, path_mtu) - 58   # geneve header
+      # so this knob (not global_physnet_mtu) is what tenant VMs receive over
+      # DHCP. With path_mtu 1400 VMs got 1400-58 = 1342.
+      #
+      # WHY 1342 WAS WRONG — measured 2026-07-26 with DF-set pings
+      # (`ping -M do -s <payload>`, totalIP = payload+28):
+      #
+      #   underlay, hypervisor->hypervisor over eno1.4000 (the Hetzner vSwitch):
+      #       totalIP 1400 .......... OK      <- vSwitch really is 1400
+      #   tenant east-west, VM->VM:
+      #       totalIP 1342 .......... OK
+      #       totalIP 1358 .......... DROP    <- matches advertised 1342
+      #   tenant north-south, VM->internet (via the OVN gateway/SNAT):
+      #       totalIP 1284 .......... OK
+      #       totalIP 1292 .......... DROP    <- 58 BYTES LESS THAN ADVERTISED
+      #
+      # East-west is correct at 1342 (1342 + 58 geneve = 1400 = the vSwitch
+      # limit, exactly). But north-south crosses the OVN distributed gateway
+      # port, and with `ovn_emit_need_to_frag: True` (set above) OVN reserves a
+      # further tunnel header on that path, enforcing 1342 - 58 = 1284. So
+      # Neutron ADVERTISED 1342 while the router ENFORCED 1284: every VM
+      # overshot by 58 bytes on every flow leaving the tenant network.
+      #
+      # TCP then depended entirely on PMTUD to recover, which fails silently
+      # wherever ICMP frag-needed is filtered. Measured from a mgmt worker,
+      # IPv4, 10 TLS handshakes each:
+      #     registry.k8s.io   ok=10 fail=0   (ICMP honoured; cache learned 1284)
+      #     ghcr.io           ok=10 fail=0   (ICMP honoured; cache learned 1284)
+      #     xpkg.upbound.io   ok=0  fail=10  (ICMP filtered -> HARD BLACK HOLE)
+      # The same 10 handshakes from the hypervisor host netns (MTU 1500, no
+      # geneve) were ok=10 fail=0, proving the internet path is healthy and the
+      # loss is purely the tenant-MTU overshoot.
+      #
+      # This is the real source of the recurring `net/http: TLS handshake
+      # timeout` on image pulls and the long-standing "flaky etcd / works after
+      # a retry" symptoms: a TLS ServerHello+Certificate is several full-MSS
+      # segments, so it is the first thing to hit the black hole while the tiny
+      # SYN/ACK sail through.
+      #
+      # 1342 here => tenant MTU 1342 - 58 = 1284, matching what the gateway
+      # actually forwards. `enable_tcp_mss_clamping` then clamps MSS off the
+      # correct value too (it previously clamped to 1302 against a real ceiling
+      # of 1244).
+      #
+      # NOT A vSWITCH CHANGE: hephaestus `nixosModules/vlanConfiguration.nix`
+      # keeps eno1.4000 at MTU 1400. That is CORRECT per Hetzner's vSwitch docs
+      # and is confirmed by the DF sweep above — do not lower it.
+      #
+      # ROLLOUT: Neutron fixes a port's MTU at CREATION time, so existing VMs
+      # keep 1342 until their ports are recreated (roll the machines via CAPI).
+      # Stopgap on a running VM: `ip link set dev enp3s0 mtu 1284`.
+      # Cilium is pinned to MTU 1200 in-cluster (1200 + 50 vxlan = 1250 < 1284)
+      # so it needs no change.
+      # -----------------------------------------------------------------------
+      path_mtu: 1342
+      # physnet `public` is a FLAT network on enp3s0 (a 1500-MTU NIC that does
+      # not cross the vSwitch). NOTE: this key is matched by PHYSNET name, and
+      # the physnet is called `public`, not `enp3s0` — so this entry never
+      # matches and the flat net falls back to global_physnet_mtu. Left as-is
+      # (the live `ext` network is already stored at 1342); fixing the name
+      # would silently resize the external network, which is a separate change.
       physical_network_mtus: enp3s0:1400
     ml2_type_flat:
       flat_networks:

@@ -1,0 +1,93 @@
+# -----------------------------------------------------------------------------
+# Control plane template (KubeadmControlPlane) — v2.
+#
+# WHAT CHANGED vs -v1:
+#   1. Node-stability kubelet flags on both init and join node registration —
+#      identical rationale to templates/bootstrap-v2.yaml, read that header for
+#      the full 2026-07-25 incident write-up. In short: -v1 left
+#      `--kube-reserved`/`--system-reserved` unset (Allocatable == Capacity, so
+#      Pods can starve the kubelet) and relied on the far-too-tight
+#      `memory.available<100Mi` default eviction threshold.
+#   2. kube-controller-manager node lifecycle timers made explicit and tightened
+#      (`node-monitor-grace-period=40s`), so an unreachable node is marked
+#      NotReady promptly and the MachineHealthCheck (see clusterclass.yaml
+#      `healthCheck`) starts its remediation countdown sooner. With the defaults
+#      a dead node lingered long enough that every StatefulSet Pod on it
+#      (Prometheus, Mimir, Vault, kamaji-etcd) stayed stuck Terminating — a
+#      StatefulSet will not create a replacement while the old Pod is
+#      unreachable-but-not-deleted.
+#
+# IMMUTABILITY: KubeadmControlPlaneTemplate.spec.template.spec is effectively
+# immutable once referenced by a running ClusterClass. To change anything here,
+# create a NEW template with a bumped version suffix (e.g. -v3), point the
+# ClusterClass controlPlane.templateRef at it, and let the topology controller
+# roll the control-plane machines. Never edit -v2 in place on a live cluster.
+# -----------------------------------------------------------------------------
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+kind: KubeadmControlPlaneTemplate
+metadata:
+  name: openstack-default-control-plane-v2
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      kubeadmConfigSpec:
+        clusterConfiguration:
+          apiServer:
+            extraArgs:
+              - name: kubelet-preferred-address-types
+                value: "InternalIP,Hostname,ExternalIP"
+          controllerManager:
+            extraArgs:
+              # Mark an unreachable Node NotReady quickly so the CAPI
+              # MachineHealthCheck can start remediating it.
+              - name: node-monitor-grace-period
+                value: 40s
+              - name: node-monitor-period
+                value: 5s
+        initConfiguration:
+          skipPhases:
+            - addon/kube-proxy
+          nodeRegistration:
+            kubeletExtraArgs:
+              - name: provider-id
+                value: openstack:///'{{ instance_id }}'
+              - name: kube-reserved
+                value: cpu=200m,memory=768Mi,ephemeral-storage=2Gi
+              - name: system-reserved
+                value: cpu=200m,memory=768Mi,ephemeral-storage=2Gi
+              - name: eviction-hard
+                value: memory.available<500Mi,nodefs.available<10%,imagefs.available<10%,nodefs.inodesFree<5%
+              - name: eviction-soft
+                value: memory.available<1Gi,nodefs.available<15%,imagefs.available<15%
+              - name: eviction-soft-grace-period
+                value: memory.available=2m,nodefs.available=2m,imagefs.available=2m
+              - name: eviction-max-pod-grace-period
+                value: "60"
+              - name: image-gc-high-threshold
+                value: "80"
+              - name: image-gc-low-threshold
+                value: "65"
+            name: "{{ local_hostname }}"
+        joinConfiguration:
+          nodeRegistration:
+            kubeletExtraArgs:
+              - name: provider-id
+                value: openstack:///'{{ instance_id }}'
+              - name: kube-reserved
+                value: cpu=200m,memory=768Mi,ephemeral-storage=2Gi
+              - name: system-reserved
+                value: cpu=200m,memory=768Mi,ephemeral-storage=2Gi
+              - name: eviction-hard
+                value: memory.available<500Mi,nodefs.available<10%,imagefs.available<10%,nodefs.inodesFree<5%
+              - name: eviction-soft
+                value: memory.available<1Gi,nodefs.available<15%,imagefs.available<15%
+              - name: eviction-soft-grace-period
+                value: memory.available=2m,nodefs.available=2m,imagefs.available=2m
+              - name: eviction-max-pod-grace-period
+                value: "60"
+              - name: image-gc-high-threshold
+                value: "80"
+              - name: image-gc-low-threshold
+                value: "65"
+            name: "{{ local_hostname }}"

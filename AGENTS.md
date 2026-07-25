@@ -833,7 +833,7 @@ cilium`** so the CNI is fully installed before Flux — Flux's pods (and the
   Kustomization uses a single `$patch: delete` targeting that label to strip
   them, yielding a core-only install. A templated `sveltos-core-values`
   ConfigMap provides per-cluster values (`kubernetesClusterDomain:
-  <cluster-name>.local`, `managementCluster: true`) via a values swap patch.
+<cluster-name>.local`, `managementCluster: true`) via a values swap patch.
   The new cluster's own ClusterProfiles are re-pushed as raw manifests by the
   `capi-management-sveltos-profiles` ConfigMap. This is consistent with how
   other profiles (openstack-ccm, cinder-csi, external-snapshotter) push Flux
@@ -1159,7 +1159,9 @@ and the `-vN` immutability/rotation workflow.
 - `clusterclass.yaml` - ClusterClass `openstack-default` (renamed from `openstack-mgmt`) with variables: identityRef, externalNetworkId, managedSubnetCIDR, managedSubnetAllocationPools, imageName, controlPlaneFlavor, workerFlavor, sshKeyName, apiServerFloatingIP, **oidc**. Template refs use the versioned `openstack-default-*-v1` names, except `infrastructure.templateRef` which now points at `openstack-default-cluster-v3` (no redundant Cilium rules). The **`oidc`** object variable (`enabled`/`issuerURL`/`clientID`/`usernameClaim`/`usernamePrefix`/`groupsClaim`/`groupsPrefix`) is an `enabledIf` patch that appends the `--oidc-*` kube-apiserver `extraArgs` (issuer-url, client-id, username-claim, username-prefix, groups-claim, groups-prefix) onto the control-plane `KubeadmControlPlaneTemplate`. It targets the shared Zitadel **`kubernetes`** OIDC client (a public/native PKCE app with **no client secret** — see `clusters/openstack/crossplane/zitadel/oidc-apps.yaml`); the apiserver only validates ID tokens so no secret is plumbed to mgmt. The Zitadel-generated `clientID` must be copied by hand into the `Cluster` CR's `oidc.clientID` and `enabled` flipped to true (don't enable with an empty clientID; enabling rolls the control-plane machines). **Group mapping**: the shared Zitadel `groupsClaim` Action (`clusters/openstack/crossplane/zitadel/actions.yaml`) injects each user's granted project role keys into the token's `groups` claim as **bare names** (`kube-admin`/`kube-user`, no prefix), so the ClusterClass defaults `usernamePrefix`/`groupsPrefix` to **empty**. The RBAC bindings for those bare groups live at `clusters/mgmt/apps/kubernetes-rbac/` (`kube-admin` → `cluster-admin`, `kube-user` → `view`), mirroring the bealv reference (`gitops/apps/kubernetes/crb.yaml`). A non-empty `groupsPrefix` would require renaming the binding subjects to `<prefix>kube-admin`.
 - `clusterclass-v1.yaml` - ClusterClass `openstack-default-v1` — legacy class for clusters originally created from `openstack-default-cluster-v2` (which includes the remoteManagedGroups Cilium rules). CAPO's admission webhook makes `OpenStackCluster.spec` immutable after creation, so changing the `infrastructure.templateRef` on a live cluster creates an unreconcilable topology diff (the CAPI topology controller tries to remove the rules, CAPO blocks the spec modification). This class preserves the `-v2` templateRef for existing clusters (e.g. `mgmt`). New clusters should use `openstack-default` (which points at `-v3` and avoids the `409 SecurityGroupRuleExists`). Identical to `openstack-default` in variables/patches; only the `infrastructure.templateRef` differs.
 - `templates/controlplane.yaml` - KubeadmControlPlaneTemplate `openstack-default-control-plane-v1`
+- `templates/controlplane-v2.yaml` - KubeadmControlPlaneTemplate `openstack-default-control-plane-v2` (referenced by `openstack-default`). Adds kubelet `--kube-reserved`/`--system-reserved`/`--eviction-hard`/`--eviction-soft`/image-GC flags on both init and join, plus kube-controller-manager `node-monitor-grace-period=40s`/`node-monitor-period=5s`. See the "Node resilience" note in Section 8.
 - `templates/bootstrap.yaml` - KubeadmConfigTemplate `openstack-default-worker-v1`
+- `templates/bootstrap-v2.yaml` - KubeadmConfigTemplate `openstack-default-worker-v2` (referenced by `openstack-default` and `openstack-kamaji`). Same kubelet reservation/eviction flags as the control-plane `-v2`.
 - `templates/infracluster.yaml` - OpenStackClusterTemplate `openstack-default-cluster-v1`, `-v2` **and** `-v3` (ClusterClass points `infrastructure.templateRef` at `-v3`). The `managedSecurityGroups` sets `allowAllInClusterTraffic: true` (opens ALL node-to-node traffic on every port/protocol, which already covers the Cilium overlay) plus **only** rules scoped to `0.0.0.0/0`: SSH ingress, DNS egress, and (since `-v2`) the Kubernetes NodePort range (TCP 30000–32767) — REQUIRED for external `type: LoadBalancer` Services via the OpenStack CCM + Octavia (the Octavia/OVN VIP DNATs to `<node IP>:<nodePort>`; without this rule the managed SG drops it and the LB floating IP times out at the TCP layer despite correct VIP/floating-IP/DNS). **`-v3` REMOVES the explicit `remoteManagedGroups: [controlplane, worker]` Cilium data-plane rules (VXLAN UDP 8472 / health TCP 4240 / Hubble TCP 4244 / ICMP)** that `-v1`/`-v2` carried: because `allowAllInClusterTraffic` already opens all traffic between the managed groups, each of those rules normalizes to a Neutron rule tuple CAPO also creates, so on a fresh cluster the second POST returns `409 SecurityGroupRuleExists` and aborts the whole SG reconcile (wedged new cluster `testb`). They were labelled "redundant but harmless" — they are redundant AND harmful (a duplicate rule is a hard 409, not a no-op). `-v1`/`-v2` are retained only until the rotation to `-v3` is confirmed, then deleted (per the README `-vN` workflow — an `OpenStackClusterTemplate` rotation reconciles the SGs onto the live `OpenStackCluster` without rolling machines). `identityRef` is hardcoded to `mgmt-cloud-config` (CAPO requires it at admission time); the ClusterClass `identityRef` variable/patch overrides this default per-cluster when the topology controller synthesizes the concrete `OpenStackCluster`.
 - `templates/machines.yaml` - OpenStackMachineTemplate `openstack-default-control-plane-v1` and `openstack-default-worker-v1` (flavor/image are `dummy` placeholders overwritten by patches)
 - `namespace.yaml` - Namespace `mgmt`
@@ -2343,13 +2345,112 @@ Once all VMs are off and every node is back `Updated/Success/Enabled`, confirm
 `nova-compute` services are `up` (nova `os-services`) and no VMs remain on the
 drained host (`servers/detail?all_tenants=1&host=<node>`).
 
-#### Tenant network MTU is pinned to 1400 (no jumbo frames)
+#### Node resilience: MachineHealthCheck + kubelet reservations
 
-`infrastructure/yaook/neutron.yaml` pins the tenant/provider network MTU to
-**1400** (`DEFAULT.global_physnet_mtu: 1400`, `ml2.path_mtu: 1400`,
-`ml2.physical_network_mtus: enp3s0:1400`). Combined with `advertise_mtu: True`,
-Neutron advertises the derived overlay MTU (OVN geneve = 38B overhead →
-~**1362**) to tenant VMs over DHCP.
+**2026-07-26.** Two gaps made a single sick node escalate into a cluster-wide
+incident (worker `mgmt-md-0-285vl-xqztp-jz5cb` went `Ready=Unknown` with
+"Kubelet stopped posting node status" and stayed that way):
+
+1. **There was NO `MachineHealthCheck` anywhere in the repo**, so an unreachable
+   node was never remediated. Deployment Pods taint-evict and reschedule, but
+   every **StatefulSet** Pod on the node stays stuck `Terminating` FOREVER — a
+   StatefulSet cannot create a replacement while the old Pod is
+   unreachable-but-not-deleted (at-most-one semantics). Prometheus, the Mimir
+   ingester, Vault and kamaji-etcd were all wedged this way, and 48 Pods total
+   were stranded. Deleting the Machine is the only action that removes the Node
+   object and releases them. All four ClusterClasses now define `healthCheck`
+   (workers: remediate after 300s, `unhealthyLessThanOrEqualTo: 40%`,
+   `maxInFlight: 1`; kubeadm control planes: 600s and
+   `unhealthyLessThanOrEqualTo: 1`). NOTE `maxInFlight` is **workers-only** in
+   the ClusterClass schema — the API rejects it under `controlPlane`.
+   `healthCheck` is a ClusterClass field, not part of the immutable templates,
+   so adding it to the legacy `-v1` classes does **not** roll their Machines.
+2. **The kubelet ran with upstream defaults**: no `--kube-reserved` /
+   `--system-reserved` (so Allocatable == Capacity and Pods may commit 100% of
+   the node), and the default `--eviction-hard=memory.available<100Mi` which is
+   far too tight to beat the kernel OOM killer. Observed memory-LIMIT overcommit
+   on the 4 vCPU / 8 GiB workers was **209%**. The `-v2` templates set
+   reservations and wider eviction thresholds; since
+   `--enforce-node-allocatable` defaults to `pods`, this genuinely caps the
+   `kubepods` cgroup so Pods OOM inside their own cgroup instead of taking the
+   kubelet down with them.
+
+Contributing factor worth watching: the VMs are packed unevenly across
+hypervisors — `lucy` was at **load average 41** on 12 cores (6 VMs) and `quinn`
+at 32 on 8 cores (5 VMs), while `makise` sat at load 2.5 with **zero** VMs. Nova
+does not rebalance existing instances, so this is historical placement, not a
+live scheduler bug; new/replaced VMs should land on `makise`. Do **not** "fix"
+it by editing `compute.configTemplates[].novaComputeConfig` — that makes the
+operator flag every `NovaComputeNode` `RequiresRecreation` and start a rolling
+eviction, which is broken on this cluster (see the nova cold-migration note).
+
+#### Tenant MTU: `path_mtu` is 1342 so VMs get 1284 (measured, do NOT raise)
+
+**2026-07-26.** `ml2.path_mtu` is **1342**, giving tenant VMs `1342 − 58` =
+**1284**. It was previously 1400 (→ VMs got 1342), which was **58 bytes too big
+for the north-south path** and was the true cause of the recurring
+`net/http: TLS handshake timeout` on image pulls and the long-standing "flaky
+etcd / works after a retry" symptoms.
+
+Neutron derives a geneve network's MTU as
+`min(global_physnet_mtu, path_mtu) − 58`, so **`path_mtu` — not
+`global_physnet_mtu` — is the knob that sets the tenant VM MTU.**
+
+Measured with DF pings (`ping -M do -s <payload>`, totalIP = payload+28):
+
+| path                                         | largest totalIP that passes |
+| -------------------------------------------- | --------------------------- |
+| underlay, hypervisor↔hypervisor (eno1.4000) | **1400** OK                 |
+| tenant east-west, VM→VM                      | **1342** OK, 1358 drops     |
+| tenant north-south, VM→internet (OVN SNAT)   | **1284** OK, 1292 drops     |
+
+East-west at 1342 is correct (1342 + 58 geneve = 1400 = the vSwitch limit,
+exactly). But north-south crosses the OVN distributed gateway port, and with
+`ovn_emit_need_to_frag: True` OVN reserves a further tunnel header there,
+enforcing 1284. So Neutron **advertised 1342 while the router enforced 1284**.
+
+TCP then depended entirely on PMTUD, which fails silently wherever ICMP
+frag-needed is filtered. Measured from a mgmt worker, IPv4, 10 TLS handshakes:
+
+```
+registry.k8s.io   ok=10 fail=0    (ICMP honoured; PMTU cache learned 1284)
+ghcr.io           ok=10 fail=0    (ICMP honoured; PMTU cache learned 1284)
+xpkg.upbound.io   ok=0  fail=10   (ICMP filtered -> HARD BLACK HOLE)
+```
+
+The same 10 handshakes from the **hypervisor** host netns (MTU 1500, no geneve)
+were `ok=10 fail=0`, proving the internet path is healthy and the loss is purely
+the tenant-MTU overshoot. A TLS ServerHello+Certificate is several full-MSS
+segments, so it is the first thing to hit the black hole while the tiny SYN/ACK
+sail through.
+
+Diagnostic tells, in order of usefulness:
+
+- `ip -4 route show cache` on a VM showing `mtu 1284` on external destinations
+  while `ip link` says the NIC is 1342 — the kernel is silently papering over
+  the misconfiguration, one stall per new destination IP.
+- A DF ping that fails with **no ICMP and no local error** (pure `100% packet
+loss`) is a REMOTE silent drop. If it fails with `sendmsg: Message too long`
+  that is a LOCAL EMSGSIZE, i.e. just the NIC/route MTU — a different problem.
+
+**This is NOT a vSwitch problem and NOT a Cilium problem:**
+
+- hephaestus `nixosModules/vlanConfiguration.nix` keeps `eno1.4000` at **1400**,
+  which is correct per Hetzner's vSwitch docs and confirmed by the DF sweep
+  above. Do not lower it.
+- Cilium is not in this path: the probe ran in the VM's **root** netns to a
+  non-pod-CIDR destination, so `cilium_vxlan` never sees it, and a Cilium
+  BPF/PMTUD cap surfaces as a local error or ICMP rather than a silent drop.
+  Cilium's own `MTU: 1200` is a separate, independent reservation (1200 + 50
+  vxlan = 1250 < 1284, so it still fits and needs no change).
+
+**Rollout:** Neutron fixes a port's MTU at CREATION time. Existing VMs keep 1342
+until their ports are recreated (roll the machines via CAPI). Stopgap on a
+running VM: `ip link set dev enp3s0 mtu 1284`.
+
+---
+
+Historical context (why 1400 rather than jumbo) follows.
 
 Why 1400 and not jumbo (9000): the underlay is not jumbo-clean end to end. On
 the hephaestus hosts the Hetzner vSwitch VLAN `eno1.4000` is capped at 1400 and
@@ -2467,7 +2568,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 22, 2026 (Grafana Operator & DaaS transition: added Grafana Operator v5 (`infrastructure/grafana-operator`, `clusters/mgmt/grafana-operator.yaml`) watching all namespaces, migrated Grafana instance to `Grafana` CR (v1beta1) in `infrastructure/grafana/grafana.yaml` preserving Zitadel OIDC & 2Gi PVC, added `GrafanaDatasource` for Mimir, updated HTTPRoute to `grafana-service:3000`, and enabled `allowCrossNamespaceImport: true` for cross-namespace DaaS.)
+**Last Updated**: July 26, 2026 (Networking + node resilience: fixed the tenant MTU black hole — `ml2.path_mtu` 1400 → 1342 in `infrastructure/yaook/neutron.yaml` so tenant VMs get 1284 instead of an unusable 1342, measured with DF sweeps (underlay 1400 OK, east-west 1342 OK, north-south capped at 1284 by the OVN gateway); added the repo's first `MachineHealthCheck`s to all four ClusterClasses so unreachable nodes are remediated instead of stranding StatefulSet Pods; added `openstack-default-control-plane-v2` / `openstack-default-worker-v2` templates with kubelet `--kube-reserved`/`--system-reserved`/eviction thresholds.)
 **Repository**: <https://github.com/RPCU/argus.git>
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

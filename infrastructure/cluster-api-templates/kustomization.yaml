@@ -5,10 +5,12 @@ resources:
   - clusterclass-kamaji.yaml
   - clusterclass-kamaji-v1.yaml
   - templates/controlplane.yaml
+  - templates/controlplane-v2.yaml
   - templates/controlplane-kamaji.yaml
   - templates/controlplane-kamaji-v2.yaml
   - templates/controlplane-kamaji-v3.yaml
   - templates/bootstrap.yaml
+  - templates/bootstrap-v2.yaml
   - templates/infracluster.yaml
   - templates/machines.yaml
   - templates/infrakamaji.yaml

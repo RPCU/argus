@@ -25,6 +25,27 @@ spec:
       apiVersion: controlplane.cluster.x-k8s.io/v1beta2
       kind: KubeadmControlPlaneTemplate
       name: openstack-default-control-plane-v1
+    # NOTE: the control-plane templateRef stays at -v1 on purpose. This legacy
+    # class exists precisely to avoid rolling clusters created from it; the
+    # kubelet-hardening flags live in the -v2 templates used by
+    # `openstack-default`. `healthCheck` below, by contrast, is a ClusterClass
+    # field rather than part of the immutable template, so adding it here is
+    # safe and does NOT roll any Machine.
+    healthCheck:
+      checks:
+        nodeStartupTimeoutSeconds: 1200
+        unhealthyNodeConditions:
+          - type: Ready
+            status: Unknown
+            timeoutSeconds: 600
+          - type: Ready
+            status: "False"
+            timeoutSeconds: 600
+      remediation:
+        # `maxInFlight` is workers-only in the ClusterClass schema; the API
+        # rejects it under controlPlane. See clusterclass.yaml.
+        triggerIf:
+          unhealthyLessThanOrEqualTo: 1
     machineInfrastructure:
       templateRef:
         apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -56,6 +77,23 @@ spec:
             apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
             kind: OpenStackMachineTemplate
             name: openstack-default-worker-v1
+        # See clusterclass.yaml for the full rationale: without a
+        # MachineHealthCheck an unreachable node is never remediated, and every
+        # StatefulSet Pod on it stays stuck Terminating indefinitely.
+        healthCheck:
+          checks:
+            nodeStartupTimeoutSeconds: 1200
+            unhealthyNodeConditions:
+              - type: Ready
+                status: Unknown
+                timeoutSeconds: 300
+              - type: Ready
+                status: "False"
+                timeoutSeconds: 300
+          remediation:
+            maxInFlight: 1
+            triggerIf:
+              unhealthyLessThanOrEqualTo: 40%
 
   # ---------------------------------------------------------------------------
   # Variables — identical to openstack-default

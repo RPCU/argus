@@ -51,6 +51,25 @@ spec:
             apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
             kind: OpenStackMachineTemplate
             name: openstack-default-worker-v1
+        # Legacy class: the bootstrap templateRef intentionally stays at -v1 so
+        # clusters created from it are not rolled. `healthCheck` is a
+        # ClusterClass field (not part of the immutable template), so adding it
+        # is safe and does NOT roll any Machine. See clusterclass.yaml for the
+        # full rationale.
+        healthCheck:
+          checks:
+            nodeStartupTimeoutSeconds: 1200
+            unhealthyNodeConditions:
+              - type: Ready
+                status: Unknown
+                timeoutSeconds: 300
+              - type: Ready
+                status: "False"
+                timeoutSeconds: 300
+          remediation:
+            maxInFlight: 1
+            triggerIf:
+              unhealthyLessThanOrEqualTo: 40%
 
   # ---------------------------------------------------------------------------
   # Variables — identical to openstack-kamaji

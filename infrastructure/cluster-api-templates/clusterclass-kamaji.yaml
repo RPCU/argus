@@ -48,12 +48,35 @@ spec:
           templateRef:
             apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
             kind: KubeadmConfigTemplate
-            name: openstack-default-worker-v1
+            name: openstack-default-worker-v2
         infrastructure:
           templateRef:
             apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
             kind: OpenStackMachineTemplate
             name: openstack-default-worker-v1
+        # See clusterclass.yaml for the full rationale: without a
+        # MachineHealthCheck an unreachable node is never remediated, and every
+        # StatefulSet Pod on it stays stuck Terminating indefinitely.
+        #
+        # This matters MORE on Kamaji clusters than on kubeadm ones: the
+        # control plane lives as Pods on the management cluster, so a dead
+        # worker never affects the API server and the failure is easy to miss.
+        # There is deliberately no control-plane healthCheck here — a
+        # KamajiControlPlane is not Machine-based, so CAPI cannot remediate it.
+        healthCheck:
+          checks:
+            nodeStartupTimeoutSeconds: 1200
+            unhealthyNodeConditions:
+              - type: Ready
+                status: Unknown
+                timeoutSeconds: 300
+              - type: Ready
+                status: "False"
+                timeoutSeconds: 300
+          remediation:
+            maxInFlight: 1
+            triggerIf:
+              unhealthyLessThanOrEqualTo: 40%
 
   # ---------------------------------------------------------------------------
   # Variables

@@ -40,6 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       pins: ${{ steps.set-pins.outputs.pins }}
+      has-pins: ${{ steps.set-pins.outputs.has-pins }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -49,8 +50,12 @@ jobs:
           # exits 1 with "no valid pin selected for update", failing the job.
           PINS=$(jq -c '[.pins | to_entries[] | select(.value.frozen != true) | .key]' npins/sources.json)
           echo "pins=$PINS" >> "$GITHUB_OUTPUT"
+          # Guard the matrix: an empty pin list makes the npins-update job fail
+          # at matrix expansion ("does not contain any values"). Skip it instead.
+          if [ "$PINS" = "[]" ]; then echo "has-pins=false" >> "$GITHUB_OUTPUT"; else echo "has-pins=true" >> "$GITHUB_OUTPUT"; fi
   npins-update:
     needs: get-pins
+    if: needs.get-pins.outputs.has-pins == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:

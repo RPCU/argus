@@ -36,7 +36,16 @@ spec:
                 externalLabels:
                   cluster: mgmt
                 remoteWrite:
+                  # queueConfig MUST be repeated here: this patch replaces the
+                  # whole remoteWrite list (a strategic-merge patch treats an
+                  # unkeyed list as atomic), so omitting it would silently drop
+                  # the base's queue bounds and let the shards grow unbounded.
                   - url: http://mimir-gateway.monitoring.svc:80/api/v1/push
+                    queueConfig:
+                      capacity: 2500
+                      maxShards: 5
+                      minShards: 1
+                      maxSamplesPerSend: 1000
       target:
         kind: HelmRelease
         name: kube-prometheus-stack

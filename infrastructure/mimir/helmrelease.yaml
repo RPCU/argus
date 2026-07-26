@@ -151,14 +151,23 @@ spec:
         ingest_storage:
           enabled: false
         limits:
-          # Lowered from 500k. The mgmt Prometheus alone was pushing 313k active
-          # series before the kube-apiserver histogram drop; a limit far above
-          # what the cluster should ever legitimately emit is not a safety net,
-          # it just lets a cardinality explosion land in the ingester's memory
-          # before anything complains. 200k is comfortably above the expected
-          # post-drop steady state (~150k across all clusters) and low enough to
-          # fail loudly and early.
-          max_global_series_per_user: 200000
+          # Guard rail against a cardinality explosion, NOT a target. Must stay
+          # comfortably ABOVE the real series count or Mimir rejects writes with
+          # 400 err-mimir-max-series-per-user and the whole pipeline silently
+          # stops storing data.
+          #
+          # Do NOT size this from the projected post-relabel count. Dropping a
+          # metric only stops NEW samples: the existing series stay in the
+          # Prometheus head until the ~2h head-block rotation, so for a couple of
+          # hours after a relabel change the pushed series count is still the OLD
+          # one. Setting 200k against a projected ~108k did exactly this and put
+          # remote_write into 81% failure (2.19M of 2.70M samples rejected) while
+          # the head was still at 323k.
+          #
+          # 400k leaves room for the transition, for the other clusters that
+          # remote_write into this same tenant, and for normal growth, while
+          # still failing loudly long before the ingester eats all its memory.
+          max_global_series_per_user: 400000
           compactor_blocks_retention_period: 72h
         memberlist:
           join_members:

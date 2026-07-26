@@ -196,6 +196,60 @@ spec:
     name: hetzner
   setup:
     ovn:
+      # =========================================================================
+      # RESOURCE REQUESTS — the OVN control plane must NEVER be BestEffort.
+      #
+      # 2026-07-26 outage. Every OVN pod (NB ovsdb, SB ovsdb, relay, northd,
+      # ovn-controller) shipped with `resources: {}` => QoS BestEffort => cgroup
+      # v2 `cpu.weight` of 1, the minimum. On these hyperconverged hosts that
+      # means they lose every scheduling contest against the Ceph OSDs (which
+      # DO request 2 CPU / 5Gi, see rook/configs/cephcluster.yaml) and against
+      # the qemu processes of the tenant VMs.
+      #
+      # lucy was measured at load average 69 on 12 cores (69/37/20 over
+      # 1/5/15min) when this was written. Under that contention:
+      #
+      #   1. `ovsdb-server` (single-threaded, latency-critical) is starved so
+      #      hard it cannot answer even a LOCAL unix-socket appctl — a manual
+      #      `ovs-appctl cluster/status OVN_Northbound` hung for >120s.
+      #   2. The ovsdb liveness probe IS that command, with a 20s timeout. It
+      #      fails, so kubelet kills the container.
+      #   3. The member rejoins and must replay its uncommitted raft log
+      #      (`Log: [285404, 289300]` ~ 3.9k entries), which costs more CPU, so
+      #      the probe fails again. Death spiral.
+      #   4. Quorum is never reached: NB sat at `Role: candidate`, `Term: 676`,
+      #      `Leader: unknown`, peers unheard for 167s. Restart counts were
+      #      nb-2=12, sb-2=21.
+      #   5. With no NB leader, `ovn-northd` can never attach ("clustered
+      #      database server is not cluster leader; trying another server", in a
+      #      loop over all three servers) so it fails ITS probes and goes 0/1 —
+      #      northd was the visible symptom but never the cause.
+      #   6. No logical-network change compiles into the dataplane => Neutron
+      #      cannot bind ports => new VMs never get a vif-plugged event and fail
+      #      to boot.
+      #
+      # NOTE this is why the raftElectionTimerMs tuning below was NOT enough on
+      # its own: the timer was correctly applied (`Election timer: 60000`) yet
+      # peers were still unheard for ~3x that. You cannot tune your way out of a
+      # process that cannot get scheduled.
+      #
+      # NO CPU LIMITS ANYWHERE, deliberately — same rationale as the Ceph
+      # daemons: CFS throttling of a single-threaded raft/dataplane process
+      # destroys tail latency, which is the exact failure we are fixing.
+      # CPU *requests* cost nothing when the node is idle; they only bind under
+      # contention, which is precisely when OVN must win.
+      #
+      # Memory limits are set ~100x observed RSS (northd peaked at 18MB; NB
+      # idl-cells 2751, SB idl-cells 14818) purely as a runaway backstop —
+      # EXCEPT ovs-vswitchd, which is deliberately left unlimited because an
+      # OOM-kill there takes down the whole node's dataplane.
+      #
+      # LIMITATION: the NeutronDeployment CRD exposes no `priorityClassName` /
+      # scheduling knob for these components, so they can NOT be marked
+      # `system-cluster-critical` declaratively the way the Ceph mons/mgr/osd
+      # are. Requests are the only lever available here; the priority-class half
+      # of this fix needs an upstream yaook change.
+      # =========================================================================
       northboundOVSDB:
         # Same tuning as southboundOVSDB below — the OVN defaults (raft election
         # timer 1s, inactivity probe 5s) are far too aggressive for these
@@ -216,11 +270,36 @@ spec:
         inactivityProbeMs: 60000
         raftElectionTimerMs: 60000
         replicas: 3
+        resources:
+          # The raft member itself. Single-threaded, so a 500m request is a real
+          # half-core of weight rather than a token value.
+          ovsdb:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+          # In the connection path for EVERY northd/neutron client (TLS is
+          # terminated here, not in ovsdb). Starving this stalls connections
+          # just as effectively as starving ovsdb.
+          ssl-terminator:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
         backup:
           schedule: 0 12 * * *
       northd:
         # northd remote probe interval (to nb or nb relay) can be adjusted individually
         remoteInactivityProbeMs: 60000
+        resources:
+          northd:
+            requests:
+              cpu: 300m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
       southboundOVSDB:
         # recommended to increase inactivityProbe and raftElectionTimer at scale (default 5s/1s)
         inactivityProbeMs: 60000
@@ -230,12 +309,82 @@ spec:
           inactivityProbeMs: 120000
           remoteInactivityProbeMs: 60000
           replicas: 3
+          resources:
+            # Every ovn-controller in the cloud reads SB THROUGH the relay, so a
+            # starved relay stalls the dataplane on all nodes at once.
+            ovn-relay:
+              requests:
+                cpu: 300m
+                memory: 256Mi
+              limits:
+                memory: 1Gi
+            ssl-terminator:
+              requests:
+                cpu: 100m
+                memory: 64Mi
+              limits:
+                memory: 256Mi
         replicas: 3
+        resources:
+          # SB is the larger of the two DBs (idl-cells 14818 vs NB's 2751) and
+          # is read by every ovn-controller, hence more headroom than NB.
+          ovsdb:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              memory: 3Gi
+          ssl-terminator:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
         backup:
           schedule: 0 12 * * *
       controller:
         # ovn-controller remote probe interval (to sb or sb relay) can be adjusted individually
         remoteInactivityProbeMs: 60000
+        # These are the per-node DATAPLANE agents, not strictly "control plane",
+        # but they were BestEffort too and were visibly suffering for it:
+        # neutron-ovn-controller-* had restarted 9-11 times. A starved
+        # ovs-vswitchd does not just flap a probe, it drops packets.
+        resources:
+          # Translates SB logical flows into OpenFlow. Starved => the node's
+          # flows go stale => VMs silently lose connectivity.
+          ovn-controller:
+            requests:
+              cpu: 300m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+          # NO memory limit on purpose: vswitchd growth scales with port/flow
+          # count, and an OOM-kill here severs the whole node's dataplane
+          # (every tenant VM on it). A request without a limit gives it
+          # scheduling weight while keeping that failure mode impossible.
+          ovs-vswitchd:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+          ovs-vswitchd-monitoring:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          # Local (non-raft) conf.db for the node's own OVS instance.
+          ovsdb-server:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          neutron-ovn-metadata-agent:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
         configTemplates:
           - nodeSelectors:
               - matchLabels: {}

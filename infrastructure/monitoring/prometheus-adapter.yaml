@@ -1,0 +1,80 @@
+# prometheus-adapter — serves the Kubernetes Metrics API (metrics.k8s.io) from
+# Prometheus, so `kubectl top`, the CPU/memory columns in k9s, and
+# HorizontalPodAutoscaler all work WITHOUT running a separate metrics-server.
+#
+# Deployed as part of the monitoring stack rather than as its own per-cluster
+# Kustomization: it is meaningless without a local Prometheus, its config is
+# identical on every cluster (the kube-prometheus-stack Service name is the
+# same everywhere), and bundling it means any cluster that gets monitoring gets
+# working `kubectl top` for free. No per-cluster patch is required.
+#
+# It REPLACES metrics-server: both register the same v1beta1.metrics.k8s.io
+# APIService, so they cannot coexist. Any hand-installed metrics-server must be
+# deleted first or the APIService will flap between the two backends.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: prometheus-adapter
+  namespace: monitoring
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: prometheus-adapter
+      version: 5.1.0
+      interval: 24h
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: monitoring
+  values:
+    prometheus:
+      url: http://kube-prometheus-stack-prometheus.monitoring.svc
+      port: 9090
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        memory: 192Mi
+    rules:
+      # Only the resource rules are wanted (cpu/memory for top/HPA). The chart's
+      # default custom-metrics rules enumerate every series in Prometheus, which
+      # is expensive and pointless here.
+      default: false
+      resource:
+        cpu:
+          containerQuery: |
+            sum by (<<.GroupBy>>) (
+              rate(container_cpu_usage_seconds_total{<<.LabelMatchers>>, container!="", pod!=""}[3m])
+            )
+          nodeQuery: |
+            sum by (<<.GroupBy>>) (
+              rate(node_cpu_seconds_total{mode!="idle", mode!="iowait", <<.LabelMatchers>>}[3m])
+            )
+          resources:
+            overrides:
+              node: { resource: node }
+              namespace: { resource: namespace }
+              pod: { resource: pod }
+          containerLabel: container
+        memory:
+          containerQuery: |
+            sum by (<<.GroupBy>>) (
+              container_memory_working_set_bytes{<<.LabelMatchers>>, container!="", pod!=""}
+            )
+          nodeQuery: |
+            sum by (<<.GroupBy>>) (
+              node_memory_MemTotal_bytes{<<.LabelMatchers>>}
+              - node_memory_MemAvailable_bytes{<<.LabelMatchers>>}
+            )
+          resources:
+            overrides:
+              node: { resource: node }
+              namespace: { resource: namespace }
+              pod: { resource: pod }
+          containerLabel: container
+        # MUST be >= 2x the scrape interval or rate() sees too few samples and
+        # returns nothing, which shows up as blank columns in k9s. The stack now
+        # scrapes at 60s (see helmrelease.yaml), so 3m gives three samples.
+        window: 3m

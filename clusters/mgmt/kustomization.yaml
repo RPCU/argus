@@ -31,7 +31,6 @@ resources:
   - vault-unsealer.yaml
   - sveltos.yaml
   - kubernetes-rbac.yaml
-  - prometheus-adapter.yaml
   - flux-operator.yaml
   - kamaji.yaml
   - fluxcd/

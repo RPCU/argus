@@ -27,6 +27,27 @@ spec:
         kind: HelmRepository
         name: prometheus-community
         namespace: monitoring
+  # Do NOT let Helm block on readiness here. The chart's APIService
+  # (v1beta1.metrics.k8s.io) only reports Available once the aggregation layer
+  # has successfully proxied to the adapter, which races the adapter's own
+  # startup: Helm times out waiting, Flux treats the install as failed and ROLLS
+  # BACK, deleting the very APIService it was waiting for. Observed symptom is a
+  # healthy 1/1 adapter Pod alongside
+  #   "timeout waiting for: [APIService/v1beta1.metrics.k8s.io status: 'NotFound']"
+  # and no metrics API at all. Worse, because the monitoring Kustomization
+  # health-checks its HelmReleases, that failure blocked the whole stack behind
+  # it (the Grafana dashboards stopped reconciling).
+  #
+  # Applying without waiting lets the APIService settle asynchronously, which is
+  # the normal pattern for aggregated API servers.
+  install:
+    disableWait: true
+    remediation:
+      retries: 3
+  upgrade:
+    disableWait: true
+    remediation:
+      retries: 3
   values:
     prometheus:
       url: http://kube-prometheus-stack-prometheus.monitoring.svc

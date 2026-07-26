@@ -188,6 +188,21 @@ spec:
     # --- Exporters ---
     nodeExporter:
       enabled: true
+      # prometheus-adapter needs a `node` label on node-exporter metrics to map
+      # Prometheus time-series to Kubernetes node names. node-exporter only emits
+      # `instance` (IP:port) and `nodename` (kernel hostname), not `node`. The
+      # kubelet SD meta label `__meta_kubernetes_pod_node_name` carries the
+      # Kubernetes node name and is available as a relabel source.
+      prometheus:
+        monitor:
+          relabelings:
+            - sourceLabels: [__meta_kubernetes_pod_node_name]
+              targetLabel: node
+            # Keep the chart's own metrics_path relabeling (the chart adds it
+            # by default but replaces it wholesale if we set relabelings).
+            - action: replace
+              sourceLabels: [__metrics_path__]
+              targetLabel: metrics_path
     kubeStateMetrics:
       enabled: true
       resources:

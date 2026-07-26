@@ -1,0 +1,201 @@
+# Node / hypervisor filesystem capacity, usage and free space.
+#
+# Sourced from node-exporter (node_filesystem_*), so it covers the REAL disks
+# of every monitored machine - including the baremetal openstack hypervisors
+# (lucy/makise/quinn) now that cluster ships metrics to the central Mimir.
+# This is deliberately separate from the PVC dashboard: that one measures
+# Kubernetes claims, this one measures physical filesystems.
+#
+# Pseudo-filesystems (tmpfs/overlay/squashfs/...) and kubelet bind-mounts are
+# excluded, otherwise every container mount is double-counted against the
+# underlying disk.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: node-filesystem-overview
+  namespace: monitoring
+spec:
+  resyncPeriod: 5m
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana-central
+  json:
+    "{\n  \"annotations\": {\n    \"list\": []\n  },\n  \"editable\": true,\n  \"graphTooltip\": 1,\n\
+    \  \"schemaVersion\": 39,\n  \"title\": \"Node Filesystem / Hypervisor Storage\",\n  \"uid\": \"node-filesystem-overview\"\
+    ,\n  \"tags\": [\n    \"storage\",\n    \"nodes\",\n    \"hypervisor\"\n  ],\n  \"time\": {\n    \"\
+    from\": \"now-6h\",\n    \"to\": \"now\"\n  },\n  \"refresh\": \"1m\",\n  \"panels\": [\n    {\n \
+    \     \"datasource\": {\n        \"type\": \"prometheus\",\n        \"uid\": \"Mimir\"\n      },\n\
+    \      \"fieldConfig\": {\n        \"defaults\": {\n          \"unit\": \"bytes\",\n          \"color\"\
+    : {\n            \"mode\": \"thresholds\"\n          },\n          \"thresholds\": {\n           \
+    \ \"mode\": \"absolute\",\n            \"steps\": [\n              {\n                \"color\": \"\
+    green\",\n                \"value\": null\n              }\n            ]\n          }\n        },\n\
+    \        \"overrides\": []\n      },\n      \"gridPos\": {\n        \"h\": 4,\n        \"w\": 6,\n\
+    \        \"x\": 0,\n        \"y\": 0\n      },\n      \"id\": 1,\n      \"options\": {\n        \"\
+    colorMode\": \"value\",\n        \"graphMode\": \"area\",\n        \"justifyMode\": \"auto\",\n  \
+    \      \"orientation\": \"auto\",\n        \"reduceOptions\": {\n          \"calcs\": [\n        \
+    \    \"lastNotNull\"\n          ],\n          \"fields\": \"\",\n          \"values\": false\n   \
+    \     },\n        \"textMode\": \"auto\"\n      },\n      \"targets\": [\n        {\n          \"\
+    datasource\": {\n            \"type\": \"prometheus\",\n            \"uid\": \"Mimir\"\n         \
+    \ },\n          \"expr\": \"sum(node_filesystem_size_bytes{cluster=~\\\"$cluster\\\", instance=~\\\
+    \"$node\\\", fstype!~\\\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\\\", mountpoint!~\\\"\
+    /(run|var/lib/kubelet|boot/efi).*\\\"})\",\n          \"instant\": true,\n          \"refId\": \"\
+    A\"\n        }\n      ],\n      \"title\": \"Total Filesystem Size\",\n      \"type\": \"stat\"\n\
+    \    },\n    {\n      \"datasource\": {\n        \"type\": \"prometheus\",\n        \"uid\": \"Mimir\"\
+    \n      },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"unit\": \"bytes\",\n  \
+    \        \"color\": {\n            \"mode\": \"thresholds\"\n          },\n          \"thresholds\"\
+    : {\n            \"mode\": \"absolute\",\n            \"steps\": [\n              {\n            \
+    \    \"color\": \"green\",\n                \"value\": null\n              }\n            ]\n    \
+    \      }\n        },\n        \"overrides\": []\n      },\n      \"gridPos\": {\n        \"h\": 4,\n\
+    \        \"w\": 6,\n        \"x\": 6,\n        \"y\": 0\n      },\n      \"id\": 2,\n      \"options\"\
+    : {\n        \"colorMode\": \"value\",\n        \"graphMode\": \"area\",\n        \"justifyMode\"\
+    : \"auto\",\n        \"orientation\": \"auto\",\n        \"reduceOptions\": {\n          \"calcs\"\
+    : [\n            \"lastNotNull\"\n          ],\n          \"fields\": \"\",\n          \"values\"\
+    : false\n        },\n        \"textMode\": \"auto\"\n      },\n      \"targets\": [\n        {\n \
+    \         \"datasource\": {\n            \"type\": \"prometheus\",\n            \"uid\": \"Mimir\"\
+    \n          },\n          \"expr\": \"sum(node_filesystem_size_bytes{cluster=~\\\"$cluster\\\", instance=~\\\
+    \"$node\\\", fstype!~\\\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\\\", mountpoint!~\\\"\
+    /(run|var/lib/kubelet|boot/efi).*\\\"}) - sum(node_filesystem_avail_bytes{cluster=~\\\"$cluster\\\"\
+    , instance=~\\\"$node\\\", fstype!~\\\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\\\", mountpoint!~\\\
+    \"/(run|var/lib/kubelet|boot/efi).*\\\"})\",\n          \"instant\": true,\n          \"refId\": \"\
+    A\"\n        }\n      ],\n      \"title\": \"Total Used\",\n      \"type\": \"stat\"\n    },\n   \
+    \ {\n      \"datasource\": {\n        \"type\": \"prometheus\",\n        \"uid\": \"Mimir\"\n    \
+    \  },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"unit\": \"bytes\",\n       \
+    \   \"color\": {\n            \"mode\": \"thresholds\"\n          },\n          \"thresholds\": {\n\
+    \            \"mode\": \"absolute\",\n            \"steps\": [\n              {\n                \"\
+    color\": \"green\",\n                \"value\": null\n              }\n            ]\n          }\n\
+    \        },\n        \"overrides\": []\n      },\n      \"gridPos\": {\n        \"h\": 4,\n      \
+    \  \"w\": 6,\n        \"x\": 12,\n        \"y\": 0\n      },\n      \"id\": 3,\n      \"options\"\
+    : {\n        \"colorMode\": \"value\",\n        \"graphMode\": \"area\",\n        \"justifyMode\"\
+    : \"auto\",\n        \"orientation\": \"auto\",\n        \"reduceOptions\": {\n          \"calcs\"\
+    : [\n            \"lastNotNull\"\n          ],\n          \"fields\": \"\",\n          \"values\"\
+    : false\n        },\n        \"textMode\": \"auto\"\n      },\n      \"targets\": [\n        {\n \
+    \         \"datasource\": {\n            \"type\": \"prometheus\",\n            \"uid\": \"Mimir\"\
+    \n          },\n          \"expr\": \"sum(node_filesystem_avail_bytes{cluster=~\\\"$cluster\\\", instance=~\\\
+    \"$node\\\", fstype!~\\\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\\\", mountpoint!~\\\"\
+    /(run|var/lib/kubelet|boot/efi).*\\\"})\",\n          \"instant\": true,\n          \"refId\": \"\
+    A\"\n        }\n      ],\n      \"title\": \"Total Available\",\n      \"type\": \"stat\"\n    },\n\
+    \    {\n      \"datasource\": {\n        \"type\": \"prometheus\",\n        \"uid\": \"Mimir\"\n \
+    \     },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"unit\": \"percent\",\n  \
+    \        \"color\": {\n            \"mode\": \"thresholds\"\n          },\n          \"thresholds\"\
+    : {\n            \"mode\": \"absolute\",\n            \"steps\": [\n              {\n            \
+    \    \"color\": \"green\",\n                \"value\": null\n              }\n            ]\n    \
+    \      }\n        },\n        \"overrides\": []\n      },\n      \"gridPos\": {\n        \"h\": 4,\n\
+    \        \"w\": 6,\n        \"x\": 18,\n        \"y\": 0\n      },\n      \"id\": 4,\n      \"options\"\
+    : {\n        \"colorMode\": \"value\",\n        \"graphMode\": \"area\",\n        \"justifyMode\"\
+    : \"auto\",\n        \"orientation\": \"auto\",\n        \"reduceOptions\": {\n          \"calcs\"\
+    : [\n            \"lastNotNull\"\n          ],\n          \"fields\": \"\",\n          \"values\"\
+    : false\n        },\n        \"textMode\": \"auto\"\n      },\n      \"targets\": [\n        {\n \
+    \         \"datasource\": {\n            \"type\": \"prometheus\",\n            \"uid\": \"Mimir\"\
+    \n          },\n          \"expr\": \"(1 - sum(node_filesystem_avail_bytes{cluster=~\\\"$cluster\\\
+    \", instance=~\\\"$node\\\", fstype!~\\\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\\\"\
+    , mountpoint!~\\\"/(run|var/lib/kubelet|boot/efi).*\\\"}) / sum(node_filesystem_size_bytes{cluster=~\\\
+    \"$cluster\\\", instance=~\\\"$node\\\", fstype!~\\\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\\\
+    \", mountpoint!~\\\"/(run|var/lib/kubelet|boot/efi).*\\\"})) * 100\",\n          \"instant\": true,\n\
+    \          \"refId\": \"A\"\n        }\n      ],\n      \"title\": \"Used %\",\n      \"type\": \"\
+    stat\"\n    },\n    {\n      \"datasource\": {\n        \"type\": \"prometheus\",\n        \"uid\"\
+    : \"Mimir\"\n      },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"unit\": \"percent\"\
+    ,\n          \"custom\": {\n            \"fillOpacity\": 8,\n            \"lineWidth\": 2\n      \
+    \    },\n          \"min\": 0,\n          \"max\": 100\n        },\n        \"overrides\": []\n  \
+    \    },\n      \"gridPos\": {\n        \"h\": 9,\n        \"w\": 24,\n        \"x\": 0,\n        \"\
+    y\": 4\n      },\n      \"id\": 5,\n      \"options\": {\n        \"legend\": {\n          \"displayMode\"\
+    : \"table\",\n          \"placement\": \"right\",\n          \"calcs\": [\n            \"lastNotNull\"\
+    ,\n            \"max\"\n          ]\n        },\n        \"tooltip\": {\n          \"mode\": \"multi\"\
+    ,\n          \"sort\": \"desc\"\n        }\n      },\n      \"targets\": [\n        {\n          \"\
+    datasource\": {\n            \"type\": \"prometheus\",\n            \"uid\": \"Mimir\"\n         \
+    \ },\n          \"expr\": \"(1 - node_filesystem_avail_bytes{cluster=~\\\"$cluster\\\", instance=~\\\
+    \"$node\\\", fstype!~\\\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\\\", mountpoint!~\\\"\
+    /(run|var/lib/kubelet|boot/efi).*\\\"} / node_filesystem_size_bytes{cluster=~\\\"$cluster\\\", instance=~\\\
+    \"$node\\\", fstype!~\\\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\\\", mountpoint!~\\\"\
+    /(run|var/lib/kubelet|boot/efi).*\\\"}) * 100\",\n          \"legendFormat\": \"{{cluster}} / {{instance}}\
+    \ {{mountpoint}}\",\n          \"refId\": \"A\"\n        }\n      ],\n      \"title\": \"Filesystem\
+    \ Used % per Mountpoint\",\n      \"type\": \"timeseries\"\n    },\n    {\n      \"datasource\": {\n\
+    \        \"type\": \"prometheus\",\n        \"uid\": \"Mimir\"\n      },\n      \"fieldConfig\": {\n\
+    \        \"defaults\": {\n          \"custom\": {\n            \"align\": \"auto\"\n          }\n\
+    \        },\n        \"overrides\": [\n          {\n            \"matcher\": {\n              \"id\"\
+    : \"byName\",\n              \"options\": \"Size\"\n            },\n            \"properties\": [\n\
+    \              {\n                \"id\": \"unit\",\n                \"value\": \"bytes\"\n      \
+    \        }\n            ]\n          },\n          {\n            \"matcher\": {\n              \"\
+    id\": \"byName\",\n              \"options\": \"Available\"\n            },\n            \"properties\"\
+    : [\n              {\n                \"id\": \"unit\",\n                \"value\": \"bytes\"\n  \
+    \            }\n            ]\n          },\n          {\n            \"matcher\": {\n           \
+    \   \"id\": \"byName\",\n              \"options\": \"Used\"\n            },\n            \"properties\"\
+    : [\n              {\n                \"id\": \"unit\",\n                \"value\": \"bytes\"\n  \
+    \            }\n            ]\n          },\n          {\n            \"matcher\": {\n           \
+    \   \"id\": \"byName\",\n              \"options\": \"Used %\"\n            },\n            \"properties\"\
+    : [\n              {\n                \"id\": \"unit\",\n                \"value\": \"percent\"\n\
+    \              },\n              {\n                \"id\": \"custom.cellOptions\",\n            \
+    \    \"value\": {\n                  \"type\": \"gauge\",\n                  \"mode\": \"gradient\"\
+    \n                }\n              },\n              {\n                \"id\": \"max\",\n       \
+    \         \"value\": 100\n              },\n              {\n                \"id\": \"min\",\n  \
+    \              \"value\": 0\n              },\n              {\n                \"id\": \"thresholds\"\
+    ,\n                \"value\": {\n                  \"mode\": \"absolute\",\n                  \"steps\"\
+    : [\n                    {\n                      \"color\": \"green\",\n                      \"\
+    value\": null\n                    },\n                    {\n                      \"color\": \"\
+    yellow\",\n                      \"value\": 75\n                    },\n                    {\n  \
+    \                    \"color\": \"red\",\n                      \"value\": 90\n                  \
+    \  }\n                  ]\n                }\n              }\n            ]\n          }\n      \
+    \  ]\n      },\n      \"gridPos\": {\n        \"h\": 12,\n        \"w\": 24,\n        \"x\": 0,\n\
+    \        \"y\": 13\n      },\n      \"id\": 6,\n      \"options\": {\n        \"showHeader\": true,\n\
+    \        \"sortBy\": [\n          {\n            \"desc\": true,\n            \"displayName\": \"\
+    Used %\"\n          }\n        ]\n      },\n      \"targets\": [\n        {\n          \"datasource\"\
+    : {\n            \"type\": \"prometheus\",\n            \"uid\": \"Mimir\"\n          },\n       \
+    \   \"expr\": \"node_filesystem_size_bytes{cluster=~\\\"$cluster\\\", instance=~\\\"$node\\\", fstype!~\\\
+    \"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\\\", mountpoint!~\\\"/(run|var/lib/kubelet|boot/efi).*\\\
+    \"}\",\n          \"format\": \"table\",\n          \"instant\": true,\n          \"refId\": \"Size\"\
+    \n        },\n        {\n          \"datasource\": {\n            \"type\": \"prometheus\",\n    \
+    \        \"uid\": \"Mimir\"\n          },\n          \"expr\": \"node_filesystem_avail_bytes{cluster=~\\\
+    \"$cluster\\\", instance=~\\\"$node\\\", fstype!~\\\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\\\
+    \", mountpoint!~\\\"/(run|var/lib/kubelet|boot/efi).*\\\"}\",\n          \"format\": \"table\",\n\
+    \          \"instant\": true,\n          \"refId\": \"Available\"\n        },\n        {\n       \
+    \   \"datasource\": {\n            \"type\": \"prometheus\",\n            \"uid\": \"Mimir\"\n   \
+    \       },\n          \"expr\": \"node_filesystem_size_bytes{cluster=~\\\"$cluster\\\", instance=~\\\
+    \"$node\\\", fstype!~\\\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\\\", mountpoint!~\\\"\
+    /(run|var/lib/kubelet|boot/efi).*\\\"} - node_filesystem_avail_bytes{cluster=~\\\"$cluster\\\", instance=~\\\
+    \"$node\\\", fstype!~\\\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\\\", mountpoint!~\\\"\
+    /(run|var/lib/kubelet|boot/efi).*\\\"}\",\n          \"format\": \"table\",\n          \"instant\"\
+    : true,\n          \"refId\": \"Used\"\n        },\n        {\n          \"datasource\": {\n     \
+    \       \"type\": \"prometheus\",\n            \"uid\": \"Mimir\"\n          },\n          \"expr\"\
+    : \"(1 - node_filesystem_avail_bytes{cluster=~\\\"$cluster\\\", instance=~\\\"$node\\\", fstype!~\\\
+    \"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\\\", mountpoint!~\\\"/(run|var/lib/kubelet|boot/efi).*\\\
+    \"} / node_filesystem_size_bytes{cluster=~\\\"$cluster\\\", instance=~\\\"$node\\\", fstype!~\\\"\
+    tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\\\", mountpoint!~\\\"/(run|var/lib/kubelet|boot/efi).*\\\
+    \"}) * 100\",\n          \"format\": \"table\",\n          \"instant\": true,\n          \"refId\"\
+    : \"Used %\"\n        }\n      ],\n      \"title\": \"Filesystem Inventory (per Node & Mountpoint)\"\
+    ,\n      \"type\": \"table\",\n      \"transformations\": [\n        {\n          \"id\": \"joinByField\"\
+    ,\n          \"options\": {\n            \"byField\": \"instance\",\n            \"mode\": \"outer\"\
+    \n          }\n        },\n        {\n          \"id\": \"organize\",\n          \"options\": {\n\
+    \            \"excludeByName\": {\n              \"Time\": true,\n              \"Time 1\": true,\n\
+    \              \"Time 2\": true,\n              \"Time 3\": true,\n              \"Time 4\": true,\n\
+    \              \"__name__\": true,\n              \"__name__ 1\": true,\n              \"__name__\
+    \ 2\": true,\n              \"__name__ 3\": true,\n              \"__name__ 4\": true,\n         \
+    \     \"job\": true,\n              \"job 1\": true,\n              \"job 2\": true,\n           \
+    \   \"job 3\": true,\n              \"job 4\": true,\n              \"endpoint\": true,\n        \
+    \      \"endpoint 1\": true,\n              \"endpoint 2\": true,\n              \"endpoint 3\": true,\n\
+    \              \"endpoint 4\": true,\n              \"container\": true,\n              \"container\
+    \ 1\": true,\n              \"container 2\": true,\n              \"container 3\": true,\n       \
+    \       \"container 4\": true,\n              \"namespace\": true,\n              \"namespace 1\"\
+    : true,\n              \"namespace 2\": true,\n              \"namespace 3\": true,\n            \
+    \  \"namespace 4\": true,\n              \"pod\": true,\n              \"pod 1\": true,\n        \
+    \      \"pod 2\": true,\n              \"pod 3\": true,\n              \"pod 4\": true,\n        \
+    \      \"service\": true,\n              \"service 1\": true,\n              \"service 2\": true,\n\
+    \              \"service 3\": true,\n              \"service 4\": true,\n              \"device 2\"\
+    : true,\n              \"device 3\": true,\n              \"device 4\": true,\n              \"fstype\
+    \ 2\": true,\n              \"fstype 3\": true,\n              \"fstype 4\": true,\n             \
+    \ \"mountpoint 2\": true,\n              \"mountpoint 3\": true,\n              \"mountpoint 4\":\
+    \ true,\n              \"cluster 2\": true,\n              \"cluster 3\": true,\n              \"\
+    cluster 4\": true\n            },\n            \"renameByName\": {\n              \"cluster 1\": \"\
+    Cluster\",\n              \"instance\": \"Node\",\n              \"device 1\": \"Device\",\n     \
+    \         \"fstype 1\": \"FS\",\n              \"mountpoint 1\": \"Mountpoint\",\n              \"\
+    Value #Size\": \"Size\",\n              \"Value #Available\": \"Available\",\n              \"Value\
+    \ #Used\": \"Used\",\n              \"Value #Used %\": \"Used %\"\n            }\n          }\n  \
+    \      }\n      ]\n    }\n  ],\n  \"templating\": {\n    \"list\": [\n      {\n        \"name\": \"\
+    cluster\",\n        \"label\": \"Cluster\",\n        \"type\": \"query\",\n        \"datasource\"\
+    : {\n          \"type\": \"prometheus\",\n          \"uid\": \"Mimir\"\n        },\n        \"query\"\
+    : \"label_values(node_filesystem_size_bytes, cluster)\",\n        \"refresh\": 2,\n        \"includeAll\"\
+    : true,\n        \"multi\": true,\n        \"current\": {\n          \"text\": \"All\",\n        \
+    \  \"value\": \"$__all\"\n        }\n      },\n      {\n        \"name\": \"node\",\n        \"label\"\
+    : \"Node\",\n        \"type\": \"query\",\n        \"datasource\": {\n          \"type\": \"prometheus\"\
+    ,\n          \"uid\": \"Mimir\"\n        },\n        \"query\": \"label_values(node_filesystem_size_bytes{cluster=~\\\
+    \"$cluster\\\"}, instance)\",\n        \"refresh\": 2,\n        \"includeAll\": true,\n        \"\
+    multi\": true,\n        \"current\": {\n          \"text\": \"All\",\n          \"value\": \"$__all\"\
+    \n        }\n      }\n    ]\n  }\n}"

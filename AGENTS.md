@@ -1271,7 +1271,21 @@ reconciled by the operators above. Deployed by the `yaook` Flux Kustomization
   Ceph copy-on-write clones instead of streaming a full copy through the
   glance API (images must be **raw** format for COW cloning; safe because
   glance/cinder share one Ceph cluster).
-- `neutron.yaml` - NeutronDeployment (networking)
+- `neutron.yaml` - NeutronDeployment (networking). The `setup.ovn` block sets
+  **`resources` on every OVN component** (`northboundOVSDB.ovsdb`/`ssl-terminator`,
+  `southboundOVSDB.ovsdb`/`ssl-terminator`, `southboundOVSDB.ovnRelay.ovn-relay`/
+  `ssl-terminator`, `northd.northd`, and the per-node `controller.*` agents).
+  They previously had `resources: {}` → QoS **BestEffort** → cgroup v2
+  `cpu.weight` of 1, so they lost every scheduling contest against the Ceph OSDs
+  (2 CPU / 5Gi requests) and the tenant qemu processes on these hyperconverged
+  nodes. See "OVN control plane must not be BestEffort" in Section 8 for the
+  2026-07-26 outage this caused. **No CPU limits** anywhere (throttling a
+  single-threaded raft/dataplane process destroys tail latency — same rationale
+  as the Ceph daemons), and **no memory limit on `ovs-vswitchd`** (an OOM-kill
+  there severs the whole node's dataplane). NOTE the CRD exposes **no
+  `priorityClassName`/scheduling knob** for these components, so unlike the Ceph
+  mons/mgr/osd they cannot be marked `system-cluster-critical` declaratively —
+  that half of the fix needs an upstream yaook change.
 - `nova.yaml` - NovaDeployment (compute). libvirt I/O tuning for RBD-backed
   disks: `disk_cachemodes: [network=writeback]` (librbd writeback cache —
   flushed on guest fsync, large guest write-latency win) and
@@ -2455,6 +2469,58 @@ Once all VMs are off and every node is back `Updated/Success/Enabled`, confirm
 `nova-compute` services are `up` (nova `os-services`) and no VMs remain on the
 drained host (`servers/detail?all_tenants=1&host=<node>`).
 
+#### OVN control plane must not be BestEffort (openstack cluster)
+
+**2026-07-26.** Every OVN pod — NB ovsdb, SB ovsdb, the SB relay, `ovn-northd`
+and the per-node `ovn-controller`/`ovs-vswitchd` — shipped with `resources: {}`,
+i.e. QoS **BestEffort**, i.e. cgroup v2 `cpu.weight` of **1** (the minimum). On
+these hyperconverged hosts they therefore lose every scheduling contest against
+the Ceph OSDs (which DO request 2 CPU / 5Gi) and the tenant qemu processes.
+
+With `lucy` at **load average 69 on 12 cores** (69/37/20 over 1/5/15min) this
+collapsed the whole logical network:
+
+1. `ovsdb-server` is single-threaded and latency-critical. Starved, it could not
+   answer even a **local unix-socket** appctl — a manual
+   `ovs-appctl cluster/status OVN_Northbound` hung for **>120s**.
+2. The ovsdb **liveness probe is that exact command**, with a 20s timeout. It
+   failed, so kubelet killed the container.
+3. The rejoining member had to replay ~3.9k uncommitted raft entries
+   (`Log: [285404, 289300]`), costing more CPU, so the probe failed again —
+   a probe-induced death spiral. Restart counts reached nb-2=**12**, sb-2=**21**.
+4. Quorum was never reached: NB sat at `Role: candidate`, `Term: 676`,
+   `Leader: unknown`, peers unheard for **167s**.
+5. With no NB leader, `ovn-northd` could never attach — its log looped
+   `clustered database server is not cluster leader; trying another server`
+   across all three servers — so it failed its own probe and went 0/1.
+   **northd is the visible symptom, never the cause: always check NB raft first
+   with `ovs-appctl -t /run/ovn/ovnnb_db.ctl cluster/status OVN_Northbound`.**
+6. No logical-network change could compile into the dataplane, so Neutron could
+   not bind ports and **new VMs failed to boot** (no vif-plugged event).
+
+**Tuning the raft timers is not sufficient and does not substitute for this.**
+The earlier `raftElectionTimerMs: 60000` fix applied correctly (status showed
+`Election timer: 60000`) yet peers were still unheard for ~3x that window. You
+cannot tune your way out of a process that cannot get scheduled.
+
+Fix: `resources` on every component in `infrastructure/yaook/neutron.yaml`
+`setup.ovn`. **No CPU limits** (CFS throttling of a single-threaded raft or
+dataplane process destroys tail latency — same rationale as the Ceph daemons);
+CPU _requests_ cost nothing on an idle node and only bind under contention,
+which is exactly when OVN must win. Memory limits are ~100x observed RSS as a
+runaway backstop, **except `ovs-vswitchd` which is deliberately left unlimited**
+because an OOM-kill there severs the entire node's dataplane.
+
+**Unfixable declaratively:** the `NeutronDeployment` CRD exposes no
+`priorityClassName`/scheduling field for these components, so they cannot be
+marked `system-cluster-critical` the way the Ceph mons/mgr/osd are. Needs an
+upstream yaook change.
+
+**Rollout caveat:** applying the `controller.*` resources restarts
+`ovs-vswitchd` on every node, which briefly interrupts the dataplane for all
+tenant VMs. The control-plane half (NB/SB/relay/northd) can be applied
+independently and is safe to do first.
+
 #### Node resilience: MachineHealthCheck + kubelet reservations
 
 **2026-07-26.** Two gaps made a single sick node escalate into a cluster-wide
@@ -2678,7 +2744,9 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 26, 2026 (Nova: `resume_guests_state_on_host_boot: true` in `infrastructure/yaook/nova.yaml` so instances Nova believes are ACTIVE are restarted automatically after a hypervisor reboot — previously a node reboot left every CAPO-provisioned VM SHUTOFF until manually started. Added `infrastructure/yaook/disruptionbudget.yaml`, the repo's first `YaookDisruptionBudget` (`preventDeletion: true`, match-all), so that edit — and any future `novaComputeConfig` edit — only FLAGS each `NovaComputeNode` `RequiresRecreation` instead of rolling-deleting it into a cold-migration drain that is broken on this cluster. Documented the mechanism from the operator source plus a per-node manual rollout runbook.)
+**Last Updated**: July 26, 2026 (OVN: set `resources` on every component in `infrastructure/yaook/neutron.yaml` `setup.ovn` — NB/SB ovsdb + their ssl-terminators, the SB relay, `northd`, and the per-node `controller.*` agents were ALL QoS BestEffort (`resources: {}`), so on a node at load 69/12-cores they were starved until `ovsdb-server` could not answer a local appctl within the 20s liveness timeout; kubelet then killed them in a loop, NB raft lost quorum (term 676, no leader), `ovn-northd` could never find a leader and flapped 0/1, and Neutron could not bind ports so new VMs failed to boot. No CPU limits anywhere, and no memory limit on `ovs-vswitchd`. The CRD exposes no `priorityClassName`, so the `system-cluster-critical` half of the fix needs an upstream yaook change. See "OVN control plane must not be BestEffort" in Section 8.)
+
+**Previously**: July 26, 2026 (Nova: `resume_guests_state_on_host_boot: true` in `infrastructure/yaook/nova.yaml` so instances Nova believes are ACTIVE are restarted automatically after a hypervisor reboot — previously a node reboot left every CAPO-provisioned VM SHUTOFF until manually started. Added `infrastructure/yaook/disruptionbudget.yaml`, the repo's first `YaookDisruptionBudget` (`preventDeletion: true`, match-all), so that edit — and any future `novaComputeConfig` edit — only FLAGS each `NovaComputeNode` `RequiresRecreation` instead of rolling-deleting it into a cold-migration drain that is broken on this cluster. Documented the mechanism from the operator source plus a per-node manual rollout runbook.)
 
 **Previously**: July 26, 2026 (Networking + node resilience: fixed the tenant MTU black hole — `ml2.path_mtu` 1400 → 1342 in `infrastructure/yaook/neutron.yaml` so tenant VMs get 1284 instead of an unusable 1342, measured with DF sweeps (underlay 1400 OK, east-west 1342 OK, north-south capped at 1284 by the OVN gateway); added the repo's first `MachineHealthCheck`s to all four ClusterClasses so unreachable nodes are remediated instead of stranding StatefulSet Pods; added `openstack-default-control-plane-v2` / `openstack-default-worker-v2` templates with kubelet `--kube-reserved`/`--system-reserved`/eviction thresholds.)
 **Repository**: <https://github.com/RPCU/argus.git>

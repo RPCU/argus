@@ -5,4 +5,6 @@ resources:
   - dashboards/cluster-overview-dashboard.yaml
   - dashboards/pvc-storage-dashboard.yaml
   - dashboards/node-filesystem-dashboard.yaml
+  - dashboards/ceph-storage-dashboard.yaml
+  - dashboards/openstack-control-plane-dashboard.yaml
   - httproute.yaml

@@ -204,8 +204,30 @@ spec:
             dir: /data/blocks
 
     # --- Disable heavy/optional subcharts ---
+    # query_scheduler MUST stay enabled. Chart 6.x unconditionally templates
+    #   frontend.scheduler_address        = mimir-query-scheduler-headless...
+    #   frontend_worker.scheduler_address = mimir-query-scheduler-headless...
+    # into the Mimir config REGARDLESS of this flag. Disabling it therefore does
+    # not remove the dependency, it just deletes the Service the config points
+    # at, and both the query-frontend and the querier then spin forever on
+    #   "failed DNS A record lookup: mimir-query-scheduler-headless...
+    #    no such host"
+    # Queriers never register for work, so EVERY query hangs until the caller
+    # gives up - which surfaces in Grafana as "upstream request timeout" and
+    # dashboards that are permanently empty even though ingestion is healthy.
+    #
+    # It is one small pod; that is the price of a working read path. If it ever
+    # needs removing again, the scheduler_address keys must be blanked out and
+    # frontend_worker pointed at the query-frontend directly.
     query_scheduler:
-      enabled: false
+      enabled: true
+      replicas: 1
+      resources:
+        requests:
+          cpu: 20m
+          memory: 64Mi
+        limits:
+          memory: 256Mi
     ruler:
       enabled: false
     alertmanager:

@@ -8,7 +8,7 @@ resources:
   - cilium.yaml
   - crossplane.yaml
   - external-secrets.yaml
-  - metrics-server.yaml
+  - prometheus-adapter.yaml
   - flux-operator.yaml
   - rook.yaml
   - monitoring.yaml

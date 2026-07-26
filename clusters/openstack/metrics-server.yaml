@@ -1,0 +1,22 @@
+# metrics-server on the openstack cluster — backs `kubectl top` and the CPU/memory
+# columns in k9s, and is what HorizontalPodAutoscaler reads.
+#
+# Uses the shared base (infrastructure/metrics-server) with NO patches: the
+# config is genuinely identical on every cluster here, so there is nothing to
+# override. Kept as a per-cluster Flux Kustomization only so each cluster
+# decides whether to deploy it.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: metrics-server
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  path: ./infrastructure/metrics-server
+  prune: true
+  wait: true
+  timeout: 5m

@@ -38,12 +38,88 @@ spec:
     grafana:
       enabled: false
 
+    # --- Default alerting/recording rules ---
+    # The kube-apiserver SLO rule groups are DISABLED because they are built on
+    # apiserver_request_duration_seconds_bucket, which we drop below (see the
+    # cardinality note). Leaving them enabled would evaluate rules against a
+    # metric that no longer exists — permanently empty recording rules and
+    # alerts that can never fire. Disabling them is also a memory saving in
+    # itself: the burnrate group alone is ~30 recording rules over the highest
+    # cardinality series in the cluster.
+    defaultRules:
+      rules:
+        kubeApiserverBurnrate: false
+        kubeApiserverHistogram: false
+        kubeApiserverSlos: false
+
+    # --- kube-apiserver scrape: drop the high-cardinality histograms ---
+    # MEASURED on mgmt (6 nodes): the Prometheus head held 313,505 active series,
+    # of which these nine bucket metrics alone were ~164,000 — 53% of the total.
+    # A Prometheus head costs roughly 2-4 KB per active series, so those buckets
+    # were on their own worth ~0.5 GB of RSS, which is why a 1Gi limit could only
+    # ever OOM-loop. They are per-(resource x verb x le) histograms and explode
+    # on a CAPI management cluster because of the CRD count.
+    #
+    # This REPLACES the chart's own default metricRelabelings, which only dropped
+    # selected `le` values of a few of these. Dropping the whole metric is a
+    # superset of that rule, so nothing is lost by replacing it.
+    kubeApiServer:
+      serviceMonitor:
+        metricRelabelings:
+          # (1) Whole histogram FAMILIES (_bucket + _sum + _count). Dropping the
+          # buckets but keeping _sum/_count would leave the two most expensive
+          # offenders' tails behind (etcd_request_duration_seconds_sum/_count
+          # were 3,926 series each) for data nothing queries once the SLO rule
+          # groups are off.
+          - action: drop
+            sourceLabels: [__name__]
+            regex: (apiserver_request_duration_seconds|apiserver_request_sli_duration_seconds|apiserver_request_slo_duration_seconds|apiserver_watch_list_duration_seconds|apiserver_watch_cache_read_wait_seconds|apiserver_watch_events_sizes|apiserver_request_body_size_bytes|apiserver_response_sizes|etcd_request_duration_seconds)_(bucket|sum|count)
+          # (2) Metrics that are simply not pertinent here:
+          #   kubernetes_feature_enabled            2,178 - a STATIC list of
+          #     feature-gate names/stages. It never changes at runtime; it is
+          #     configuration, not telemetry.
+          #   apiextensions_openapi_v2/v3_regen     4,263 - per-CRD OpenAPI spec
+          #     regeneration counters. Pure apiserver-internal bookkeeping, and
+          #     they scale with CRD count, which is exactly what is large here.
+          #   apiserver_{storage,cache}_list_*     ~11,200 - six near-identical
+          #     per-resource list-accounting families. Useful when debugging
+          #     apiserver LIST amplification; dead weight the other 99% of time.
+          #   etcd_requests_total                   3,926 - per-(operation x type)
+          #     counter already covered by the kubeEtcd job for alerting.
+          - action: drop
+            sourceLabels: [__name__]
+            regex: (kubernetes_feature_enabled|etcd_requests_total|apiextensions_openapi_v2_regeneration_count|apiextensions_openapi_v3_regeneration_count|apiserver_storage_list_.*|apiserver_cache_list_.*|apiserver_resource_objects)
+    # kubelet: prober_probe_duration_seconds is a per-(pod x container x probe)
+    # histogram (2,736 series) reporting how long liveness/readiness probes take.
+    # Probe FAILURES surface as pod restarts and events, which are already
+    # covered; probe latency is not something anyone alerts on here.
+    kubelet:
+      serviceMonitor:
+        metricRelabelings:
+          - action: drop
+            sourceLabels: [__name__]
+            regex: prober_probe_duration_seconds_(bucket|sum|count)
+
     # --- Prometheus ---
     prometheus:
       prometheusSpec:
-        # Retention configured to 72h (3 days) with 5GB max retention size and 5Gi PVC storage.
-        retention: 72h
-        retentionSize: 5GB
+        # This Prometheus is a SHIPPER, not a store: every sample is
+        # remote_written to the central Mimir, which owns long-term retention
+        # (compactor_blocks_retention_period). Local retention therefore only
+        # needs to cover remote-write buffering and short "what is happening
+        # right now" queries, so it is deliberately short. Cutting 72h -> 6h
+        # shrinks the on-disk blocks and, more importantly, the number of
+        # memory-mapped head chunks Prometheus keeps resident.
+        retention: 6h
+        retentionSize: 3GB
+        # walCompression is the chart default but pinned explicitly: it roughly
+        # halves WAL size/IO, which matters on Cinder-backed PVCs.
+        walCompression: true
+        # 30s -> 60s halves the ingestion rate (measured 10,903 samples/sec).
+        # This is the deliberate "sacrifice a bit of responsiveness" trade: the
+        # worst case is noticing a change up to 60s later.
+        scrapeInterval: 60s
+        evaluationInterval: 60s
         storageSpec:
           volumeClaimTemplate:
             spec:
@@ -51,16 +127,44 @@ spec:
               resources:
                 requests:
                   storage: 5Gi
+        # Sized from the post-drop series count (~150k), not guessed. Requests
+        # are what the scheduler reserves; the limit is headroom for WAL replay
+        # and query spikes. No CPU limit on purpose — CFS throttling a scrape
+        # loop causes missed scrapes, and the same rationale is already applied
+        # to the Ceph and OVN daemons elsewhere in this repo.
         resources:
           requests:
-            cpu: 50m
-            memory: 256Mi
+            cpu: 100m
+            memory: 512Mi
           limits:
-            memory: 1Gi
+            memory: 1536Mi
+        # GOMEMLIMIT is the key to "resilient instead of OOM-looping". A cgroup
+        # memory limit alone is a CLIFF: Go happily grows the heap until the
+        # kernel SIGKILLs it, so the pod dies, replays the WAL, and dies again.
+        # GOMEMLIMIT is a SOFT limit that makes the Go GC progressively more
+        # aggressive as the heap approaches it, trading CPU for memory instead
+        # of being killed. Set to ~80% of the hard limit so there is room for
+        # non-heap memory (mmapped chunks, stacks) under the cgroup cap.
+        containers:
+          - name: prometheus
+            env:
+              - name: GOMEMLIMIT
+                value: "1200MiB"
         externalLabels:
           cluster: mgmt
         remoteWrite:
           - url: http://mimir-gateway.monitoring.svc:80/api/v1/push
+            # Bound the remote-write buffers. Unbounded shards are a common
+            # hidden source of Prometheus memory growth when the remote is slow
+            # or down (as Mimir has been): each shard holds an in-memory queue,
+            # so a backlog silently inflates RSS. Capping shards makes the
+            # failure mode "remote-write falls behind" rather than "Prometheus
+            # OOMs because the remote is unhealthy".
+            queueConfig:
+              capacity: 2500
+              maxShards: 5
+              minShards: 1
+              maxSamplesPerSend: 1000
 
     # --- AlertManager ---
     alertmanager:

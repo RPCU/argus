@@ -37,6 +37,21 @@ spec:
       config:
         resolver: "10.96.0.10 valid=10s"
 
+    # --- Ingest-storage (Kafka) architecture: DISABLED ---
+    # Chart 6.x defaults BOTH `kafka.enabled: true` and the templated
+    # `ingest_storage.enabled: true`, so the Renovate major bump to v6 (8f5ff7f)
+    # silently switched Mimir onto the experimental Kafka-backed write path and
+    # added a whole Kafka StatefulSet (+5Gi PVC) nobody asked for. For a central
+    # TSDB serving 2-3 small clusters this is pure overhead: it buys durability
+    # and replay semantics that only matter at multi-tenant scale, in exchange
+    # for an extra stateful component to run, size and keep alive.
+    #
+    # Disabling it reverts to the classic distributor -> ingester gRPC path.
+    # NOTE: this changes the ingester topology (it drops the partitions ring),
+    # so the ingester is recreated on rollout.
+    kafka:
+      enabled: false
+
     # --- Minimal lightweight deployment (1 replica per component) ---
     ingester:
       replicas: 1
@@ -44,6 +59,22 @@ spec:
         enabled: false
       persistentVolume:
         enabled: true
+        # KEEP AT 5Gi. A StatefulSet's volumeClaimTemplates are IMMUTABLE, so
+        # raising this number does NOT resize an existing PVC — it makes the
+        # Helm upgrade fail outright with "updates to statefulset spec for
+        # fields other than 'replicas' ... are forbidden", wedging the release.
+        #
+        # The live STS template already carries 5Gi; the PVC was created earlier
+        # at 2Gi and filled up, which is what put the ingester into
+        # CrashLoopBackOff ("open /data/tsdb/anonymous/wal/00000256: no space
+        # left on device"). The fix is to expand the PVC IN PLACE to match this
+        # value (csi-cinder-sc-delete has allowVolumeExpansion: true):
+        #
+        #   kubectl patch pvc storage-mimir-ingester-0 -n monitoring \
+        #     -p '{"spec":{"resources":{"requests":{"storage":"5Gi"}}}}'
+        #
+        # 5Gi is ample now: the kube-apiserver histogram drop plus the 60s
+        # scrape interval cut ingestion roughly 4x.
         size: 5Gi
       resources:
         requests:
@@ -112,8 +143,22 @@ spec:
     # --- Filesystem storage & clean memberlist ring for single replica ---
     mimir:
       structuredConfig:
+        # Disable the Kafka-backed write path templated in by chart 6.x. Must be
+        # set here as well as `kafka.enabled: false` above: that flag only stops
+        # the Kafka StatefulSet being deployed, while this is what stops Mimir
+        # itself trying to produce to it (otherwise the ingester starts the
+        # partitions-ring modules and fails to reach a broker that isn't there).
+        ingest_storage:
+          enabled: false
         limits:
-          max_global_series_per_user: 500000
+          # Lowered from 500k. The mgmt Prometheus alone was pushing 313k active
+          # series before the kube-apiserver histogram drop; a limit far above
+          # what the cluster should ever legitimately emit is not a safety net,
+          # it just lets a cardinality explosion land in the ingester's memory
+          # before anything complains. 200k is comfortably above the expected
+          # post-drop steady state (~150k across all clusters) and low enough to
+          # fail loudly and early.
+          max_global_series_per_user: 200000
           compactor_blocks_retention_period: 72h
         memberlist:
           join_members:

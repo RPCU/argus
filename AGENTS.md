@@ -2521,6 +2521,67 @@ upstream yaook change.
 tenant VMs. The control-plane half (NB/SB/relay/northd) can be applied
 independently and is safe to do first.
 
+#### Monitoring: Prometheus OOM was cardinality, not tuning (mgmt cluster)
+
+**2026-07-26.** The mgmt monitoring stack had two INDEPENDENT faults that look
+alike from `kubectl get pods` but share no mechanism.
+
+**(a) `mimir-ingester-0` CrashLoopBackOff was DISK, not memory.** The log is
+explicit: `open /data/tsdb/anonymous/wal/00000256: no space left on device`.
+The live PVC was a stale **2Gi** while the StatefulSet template already carried
+5Gi. Fixed by expanding the PVC IN PLACE (`csi-cinder-sc-delete` has
+`allowVolumeExpansion: true`), then deleting the pod so the filesystem resize
+completes (the PVC sits at `FileSystemResizePending` until a pod restarts).
+
+> **Do NOT "fix" this by raising `ingester.persistentVolume.size`.** A
+> StatefulSet's `volumeClaimTemplates` are **immutable** — raising the value does
+> not resize anything, it makes the Helm upgrade fail outright with
+> `updates to statefulset spec for fields other than 'replicas' ... are
+forbidden`, wedging the release. Expand the PVC; leave the chart value alone.
+
+**(b) Prometheus OOM-looping with a 1Gi limit was CARDINALITY.** Measured:
+**313,505 active head series**. A head costs ~2-4 KB/series, so 1Gi could only
+ever OOM. The distribution is the whole story:
+
+```
+series by scrape job          top metrics by series
+  255,986  apiserver  (82%)     39,260  etcd_request_duration_seconds_bucket
+   31,832  kubelet               30,114  apiserver_watch_list_duration_seconds_bucket
+   12,733  kube-state-metrics    28,570  apiserver_request_duration_seconds_bucket
+    7,744  node-exporter         26,152  apiserver_watch_cache_read_wait_seconds_bucket
+```
+
+The apiserver is 82% of all series because this is a CAPI **management** cluster:
+most apiserver metrics are per-(resource x verb x le) and the CRD count is large.
+Dropping nine histogram families whole (`_bucket`+`_sum`+`_count`) plus genuinely
+inert metrics (`kubernetes_feature_enabled` — a STATIC feature-gate list;
+`apiextensions_openapi_v2/v3_regeneration_count`; six `apiserver_{storage,cache}_list_*`
+families; kubelet `prober_probe_duration_seconds`) takes it to **~108,600, a 65%
+cut**. `apiserver_request_total` is deliberately KEPT — `KubeAPIDown` and
+error-rate alerting need it. The `kubeApiserverSlos`/`Burnrate`/`Histogram`
+default rule groups are disabled to match, since they are built on the dropped
+buckets and would otherwise be permanently empty.
+
+**A memory limit alone is a CLIFF, not a safety net.** Go grows the heap until
+the kernel SIGKILLs it, so the pod dies, replays the WAL, and dies again — an OOM
+loop. `GOMEMLIMIT` (set to ~80% of the hard limit via
+`prometheusSpec.containers[].env`) is a SOFT limit that makes the GC trade CPU
+for memory instead of being killed. Also bound `remoteWrite.queueConfig.maxShards`:
+unbounded shards are a hidden memory sink when the remote is slow, which turns
+"Mimir is unhealthy" into "Prometheus OOMs".
+
+Local retention is 6h on purpose — this Prometheus is a **shipper**, not a store;
+Mimir owns retention via `compactor_blocks_retention_period`.
+
+**Renovate silently changed the Mimir architecture.** Chart 6.x defaults BOTH
+`kafka.enabled: true` and the templated `ingest_storage.enabled: true`, so the
+major bump (`8f5ff7f`) switched Mimir onto the experimental Kafka-backed write
+path and added a Kafka StatefulSet (+5Gi PVC) nobody asked for. Disabling it
+needs **both** flags: `kafka.enabled: false` stops the StatefulSet, and
+`mimir.structuredConfig.ingest_storage.enabled: false` stops Mimir trying to
+produce to a broker that no longer exists. Check `helm show values` on major
+chart bumps for defaults that change topology.
+
 #### Node resilience: MachineHealthCheck + kubelet reservations
 
 **2026-07-26.** Two gaps made a single sick node escalate into a cluster-wide
@@ -2814,7 +2875,9 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 26, 2026 (MTU: pinned `MTU: 1400` in `clusters/openstack/cilium.yaml`. ROOT CAUSE of the long-running `net/http: TLS handshake timeout` black hole: Cilium sets no explicit MTU, so it auto-detects the MINIMUM across its `--devices` — and this cluster attaches `br-int`, which OVN sizes to the TENANT MTU (1284). Cilium thus adopted the tenant MTU as its HOST MTU and, with `packetizationLayerPMTUDMode: always`, its BPF emitted ICMP frag-needed `mtu 1284` for ordinary host underlay traffic (captured: apiserver/6443 and kubelet/10250 between hypervisors), poisoning each hypervisor's PMTU cache for its peers. Geneve was then left `1284 − 58` = 1226 while Neutron advertised 1284 → a 58-byte silent black hole east-west AND north-south. This is a FEEDBACK LOOP (`path_mtu → br-int → Cilium MTU → ICMP → underlay PMTU`), so `dfe2403`'s `path_mtu` 1400→1342 could not fix it — it only moved the hole from 1342/1284 to 1284/1226. The underlay genuinely carries 1400 (proven with `ping -M probe` and a post-flush DF ping), so jumbo would not have helped either. Corrected the previous WRONG diagnosis that blamed the OVN distributed gateway port and explicitly ruled out Cilium. See "Cilium auto-MTU inherits `br-int`" in Section 8.)
+**Last Updated**: July 26, 2026 (Monitoring: made the mgmt stack minimalist and stable. TWO independent faults — `mimir-ingester-0` CrashLoopBackOff was DISK (stale 2Gi PVC vs a 5Gi StatefulSet template; expanded in place, since raising the chart value would instead wedge the Helm upgrade on the immutable `volumeClaimTemplates`), while Prometheus OOM-looping under a 1Gi limit was CARDINALITY: **313,505 active head series**, of which the apiserver job alone was 82%. Dropped nine apiserver/etcd histogram families whole plus inert metrics (`kubernetes_feature_enabled`, openapi regeneration counters, `apiserver_{storage,cache}_list_*`, kubelet `prober_probe_duration_seconds`) for a **65% cut to ~108,600 series**, keeping `apiserver_request_total` for `KubeAPIDown`; disabled the kube-apiserver SLO rule groups that depended on the dropped buckets. Added `GOMEMLIMIT` (a hard limit alone is a cliff → OOM loop; GOMEMLIMIT makes the GC trade CPU for memory), bounded `remoteWrite` shards, 60s scrape, 6h local retention (Mimir owns retention). Also disabled the Kafka/ingest-storage architecture that the Mimir v6 Renovate bump silently enabled, and added the missing `monitoring` Sveltos toggle to the chihiro ConfigMap. See "Monitoring: Prometheus OOM was cardinality, not tuning" in Section 8.)
+
+**Previously**: July 26, 2026 (MTU: pinned `MTU: 1400` in `clusters/openstack/cilium.yaml`. ROOT CAUSE of the long-running `net/http: TLS handshake timeout` black hole: Cilium sets no explicit MTU, so it auto-detects the MINIMUM across its `--devices` — and this cluster attaches `br-int`, which OVN sizes to the TENANT MTU (1284). Cilium thus adopted the tenant MTU as its HOST MTU and, with `packetizationLayerPMTUDMode: always`, its BPF emitted ICMP frag-needed `mtu 1284` for ordinary host underlay traffic (captured: apiserver/6443 and kubelet/10250 between hypervisors), poisoning each hypervisor's PMTU cache for its peers. Geneve was then left `1284 − 58` = 1226 while Neutron advertised 1284 → a 58-byte silent black hole east-west AND north-south. This is a FEEDBACK LOOP (`path_mtu → br-int → Cilium MTU → ICMP → underlay PMTU`), so `dfe2403`'s `path_mtu` 1400→1342 could not fix it — it only moved the hole from 1342/1284 to 1284/1226. The underlay genuinely carries 1400 (proven with `ping -M probe` and a post-flush DF ping), so jumbo would not have helped either. Corrected the previous WRONG diagnosis that blamed the OVN distributed gateway port and explicitly ruled out Cilium. See "Cilium auto-MTU inherits `br-int`" in Section 8.)
 
 **Previously**: July 26, 2026 (OVN: set `resources` on every component in `infrastructure/yaook/neutron.yaml` `setup.ovn` — NB/SB ovsdb + their ssl-terminators, the SB relay, `northd`, and the per-node `controller.*` agents were ALL QoS BestEffort (`resources: {}`), so on a node at load 69/12-cores they were starved until `ovsdb-server` could not answer a local appctl within the 20s liveness timeout; kubelet then killed them in a loop, NB raft lost quorum (term 676, no leader), `ovn-northd` could never find a leader and flapped 0/1, and Neutron could not bind ports so new VMs failed to boot. No CPU limits anywhere, and no memory limit on `ovs-vswitchd`. The CRD exposes no `priorityClassName`, so the `system-cluster-critical` half of the fix needs an upstream yaook change. See "OVN control plane must not be BestEffort" in Section 8.)
 

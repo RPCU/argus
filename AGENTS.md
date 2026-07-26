@@ -2581,9 +2581,18 @@ Measured with DF pings (`ping -M do -s <payload>`, totalIP = payload+28):
 | tenant north-south, VM→internet (OVN SNAT)   | **1284** OK, 1292 drops     |
 
 East-west at 1342 is correct (1342 + 58 geneve = 1400 = the vSwitch limit,
-exactly). But north-south crosses the OVN distributed gateway port, and with
-`ovn_emit_need_to_frag: True` OVN reserves a further tunnel header there,
-enforcing 1284. So Neutron **advertised 1342 while the router enforced 1284**.
+exactly). So Neutron **advertised 1342 while only 1284 got through**.
+
+> **CORRECTION (2026-07-26, later).** The original diagnosis below — that
+> north-south crossed the OVN distributed gateway port and that with
+> `ovn_emit_need_to_frag: True` OVN reserved a further tunnel header there — was
+> **WRONG**, and so was the "NOT a Cilium problem" conclusion. It is **Cilium**,
+> it is **not OVN**, and it hits **east-west identically** (a gateway-port
+> reservation could not do that). See "Cilium auto-MTU inherits `br-int`" below.
+> Lowering `path_mtu` to 1342 therefore did **not** fix anything — it moved the
+> black hole from 1342/1284 down to 1284/1226, preserving the 58-byte deficit
+> exactly. Keep `path_mtu: 1342`, but the actual fix is the Cilium `MTU` pin in
+> `clusters/openstack/cilium.yaml`.
 
 TCP then depended entirely on PMTUD, which fails silently wherever ICMP
 frag-needed is filtered. Measured from a mgmt worker, IPv4, 10 TLS handshakes:
@@ -2609,20 +2618,81 @@ Diagnostic tells, in order of usefulness:
 loss`) is a REMOTE silent drop. If it fails with `sendmsg: Message too long`
   that is a LOCAL EMSGSIZE, i.e. just the NIC/route MTU — a different problem.
 
-**This is NOT a vSwitch problem and NOT a Cilium problem:**
+**This is NOT a vSwitch problem** — hephaestus
+`nixosModules/vlanConfiguration.nix` keeps `eno1.4000` at **1400**, which is
+correct per Hetzner's vSwitch docs. The underlay genuinely carries 1400: proven
+with `ping -M probe` (which BYPASSES the PMTU cache) and with a plain DF ping
+after `sysctl -w net.ipv4.route.flush=1`, both passing at totalIP 1400
+hypervisor-to-hypervisor. Do not lower it, and do NOT raise it (see jumbo below).
 
-- hephaestus `nixosModules/vlanConfiguration.nix` keeps `eno1.4000` at **1400**,
-  which is correct per Hetzner's vSwitch docs and confirmed by the DF sweep
-  above. Do not lower it.
-- Cilium is not in this path: the probe ran in the VM's **root** netns to a
-  non-pod-CIDR destination, so `cilium_vxlan` never sees it, and a Cilium
-  BPF/PMTUD cap surfaces as a local error or ICMP rather than a silent drop.
-  Cilium's own `MTU: 1200` is a separate, independent reservation (1200 + 50
-  vxlan = 1250 < 1284, so it still fits and needs no change).
+#### Cilium auto-MTU inherits `br-int` and poisons the underlay PMTU (openstack cluster)
+
+**2026-07-26, ROOT CAUSE of the above.** Cilium sets no explicit `MTU`, so it
+**auto-detects it as the MINIMUM MTU across its attached `--devices`**. This
+cluster attaches `br-int` (`clusters/openstack/cilium.yaml`), and OVN sizes
+`br-int` to the **tenant** network MTU. So Cilium adopted the tenant MTU as its
+**host** MTU. Observed on lucy:
+
+```
+br-int = 1284    cilium_host = 1284    cilium_vxlan = 1284
+devices: eno1.4000 (1400), br-ex (1500), br-int (1284)
+enable-pmtu-discovery = true ; packetization-layer-pmtud-mode = always
+```
+
+With `packetizationLayerPMTUDMode: always` Cilium's BPF **actively emits ICMP
+frag-needed at its MTU** — and it does so for ORDINARY HOST traffic on the
+underlay, nothing to do with tenants. Captured on `eno1.4000`:
+
+```
+10.0.0.2 > 10.0.0.4: ICMP need to frag (mtu 1284)  inner: 10.0.0.4.6443  > 10.0.0.2  (kube-apiserver)
+10.0.0.3 > 10.0.0.4: ICMP need to frag (mtu 1284)  inner: 10.0.0.4.10250 > 10.0.0.3  (kubelet)
+```
+
+Each hypervisor therefore caches PMTU **1284** for its peers (re-poisons within
+**15 s** of a cache flush; `net.ipv4.route.min_pmtu` is the default 552, so
+nothing stops it). Geneve then has only `1284 − 58` = **1226** for tenant
+payload while Neutron advertises **1284** over DHCP → a 58-byte silent black
+hole in **both** directions.
+
+**It is a FEEDBACK LOOP, which is why tuning `path_mtu` can never fix it:**
+
+```
+path_mtu -> br-int -> Cilium auto-MTU -> ICMP needs-frag -> underlay PMTU -> geneve -58
+```
+
+The advertised tenant MTU is itself what sets the poison, so usable is ALWAYS
+`advertised − 58`:
+
+|                  | advertised | usable | deficit |
+| ---------------- | ---------- | ------ | ------- |
+| before `dfe2403` | 1342       | 1284   | 58      |
+| after `dfe2403`  | 1284       | 1226   | **58**  |
+
+**Fix:** pin `MTU: 1400` in the openstack Cilium patch
+(`clusters/openstack/cilium.yaml`). Cilium then reports the truth, the underlay
+stays 1400, and geneve yields 1342 vs 1284 advertised = **58 bytes of headroom**.
+`path_mtu: 1342` becomes correct and should stay. mgmt needs no pin (no `br-int`).
+
+Do **not** "fix" it by removing `br-int` from `--devices` — that breaks
+OpenStack VM connectivity (see "Cilium `--devices` must include the OVN bridges"
+above). Pinning keeps br-int attached and only stops Cilium inheriting its MTU.
+
+**Symptom signature:** TCP connects fine (`nc -z` succeeds, tiny SYN/ACK) but
+TLS never completes (`net/http: TLS handshake timeout`, `curl` shows
+`tls=0.000000` even after 30 s) — the multi-segment ServerHello/Certificate is
+the first thing to hit the hole. Confirm by comparing a path that stays inside
+the tenant network against one that does not: LB VIP east-west was **20/20 OK**
+while the same service via its floating IP was **0/20**.
 
 **Rollout:** Neutron fixes a port's MTU at CREATION time. Existing VMs keep 1342
 until their ports are recreated (roll the machines via CAPI). Stopgap on a
 running VM: `ip link set dev enp3s0 mtu 1284`.
+
+**External clients (VPN/laptop).** The same black hole applies inbound to any
+floating IP. A netbird/WireGuard client at `wt0` MTU 1280 still failed because
+the tunnel adds ~60 B of encapsulation on top, overshooting the usable ceiling.
+Stopgap until the Cilium pin is rolled out:
+`sudo ip route replace <floating-ip> dev wt0 mtu 1200`.
 
 ---
 
@@ -2744,7 +2814,9 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 26, 2026 (OVN: set `resources` on every component in `infrastructure/yaook/neutron.yaml` `setup.ovn` — NB/SB ovsdb + their ssl-terminators, the SB relay, `northd`, and the per-node `controller.*` agents were ALL QoS BestEffort (`resources: {}`), so on a node at load 69/12-cores they were starved until `ovsdb-server` could not answer a local appctl within the 20s liveness timeout; kubelet then killed them in a loop, NB raft lost quorum (term 676, no leader), `ovn-northd` could never find a leader and flapped 0/1, and Neutron could not bind ports so new VMs failed to boot. No CPU limits anywhere, and no memory limit on `ovs-vswitchd`. The CRD exposes no `priorityClassName`, so the `system-cluster-critical` half of the fix needs an upstream yaook change. See "OVN control plane must not be BestEffort" in Section 8.)
+**Last Updated**: July 26, 2026 (MTU: pinned `MTU: 1400` in `clusters/openstack/cilium.yaml`. ROOT CAUSE of the long-running `net/http: TLS handshake timeout` black hole: Cilium sets no explicit MTU, so it auto-detects the MINIMUM across its `--devices` — and this cluster attaches `br-int`, which OVN sizes to the TENANT MTU (1284). Cilium thus adopted the tenant MTU as its HOST MTU and, with `packetizationLayerPMTUDMode: always`, its BPF emitted ICMP frag-needed `mtu 1284` for ordinary host underlay traffic (captured: apiserver/6443 and kubelet/10250 between hypervisors), poisoning each hypervisor's PMTU cache for its peers. Geneve was then left `1284 − 58` = 1226 while Neutron advertised 1284 → a 58-byte silent black hole east-west AND north-south. This is a FEEDBACK LOOP (`path_mtu → br-int → Cilium MTU → ICMP → underlay PMTU`), so `dfe2403`'s `path_mtu` 1400→1342 could not fix it — it only moved the hole from 1342/1284 to 1284/1226. The underlay genuinely carries 1400 (proven with `ping -M probe` and a post-flush DF ping), so jumbo would not have helped either. Corrected the previous WRONG diagnosis that blamed the OVN distributed gateway port and explicitly ruled out Cilium. See "Cilium auto-MTU inherits `br-int`" in Section 8.)
+
+**Previously**: July 26, 2026 (OVN: set `resources` on every component in `infrastructure/yaook/neutron.yaml` `setup.ovn` — NB/SB ovsdb + their ssl-terminators, the SB relay, `northd`, and the per-node `controller.*` agents were ALL QoS BestEffort (`resources: {}`), so on a node at load 69/12-cores they were starved until `ovsdb-server` could not answer a local appctl within the 20s liveness timeout; kubelet then killed them in a loop, NB raft lost quorum (term 676, no leader), `ovn-northd` could never find a leader and flapped 0/1, and Neutron could not bind ports so new VMs failed to boot. No CPU limits anywhere, and no memory limit on `ovs-vswitchd`. The CRD exposes no `priorityClassName`, so the `system-cluster-critical` half of the fix needs an upstream yaook change. See "OVN control plane must not be BestEffort" in Section 8.)
 
 **Previously**: July 26, 2026 (Nova: `resume_guests_state_on_host_boot: true` in `infrastructure/yaook/nova.yaml` so instances Nova believes are ACTIVE are restarted automatically after a hypervisor reboot — previously a node reboot left every CAPO-provisioned VM SHUTOFF until manually started. Added `infrastructure/yaook/disruptionbudget.yaml`, the repo's first `YaookDisruptionBudget` (`preventDeletion: true`, match-all), so that edit — and any future `novaComputeConfig` edit — only FLAGS each `NovaComputeNode` `RequiresRecreation` instead of rolling-deleting it into a cold-migration drain that is broken on this cluster. Documented the mechanism from the operator source plus a per-node manual rollout runbook.)
 

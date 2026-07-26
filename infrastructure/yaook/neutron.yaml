@@ -197,6 +197,24 @@ spec:
   setup:
     ovn:
       northboundOVSDB:
+        # Same tuning as southboundOVSDB below — the OVN defaults (raft election
+        # timer 1s, inactivity probe 5s) are far too aggressive for these
+        # hyperconverged hosts, which routinely sit at load 30-40 because they
+        # run the OpenStack control plane, Ceph AND the tenant VMs.
+        #
+        # 2026-07-26: northbound was the ONLY OVSDB left on the defaults (the
+        # southbound block had already been tuned). It lost RAFT quorum and sat
+        # in a re-election loop — `cluster/status OVN_Northbound` showed
+        # `Status: disconnected from the cluster (election timeout)`,
+        # `Role: candidate`, `Leader: unknown` at term 662, with members having
+        # restarted 4 and 7 times. All three `ovn-northd` pods went 0/1 with
+        # "clustered database server is disconnected from cluster", so no
+        # logical-network change could be compiled into the dataplane.
+        #
+        # A 1s election timer means a single CPU-starvation stall longer than
+        # one second costs a leader election; at load 40 that is constant.
+        inactivityProbeMs: 60000
+        raftElectionTimerMs: 60000
         replicas: 3
         backup:
           schedule: 0 12 * * *

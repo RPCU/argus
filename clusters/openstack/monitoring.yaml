@@ -1,0 +1,80 @@
+# kube-prometheus-stack on the BAREMETAL openstack cluster.
+#
+# Uses the SAME base as mgmt and the workload clusters
+# (infrastructure/monitoring), patched only for the two things that are
+# per-cluster: where to remote_write, and what to call this cluster.
+#
+# Pattern: identical to clusters/mgmt/monitoring.yaml (shared base + patches).
+#
+# UNLIKE mgmt, this cluster has no local Mimir — it ships every sample to the
+# central Mimir on the mgmt cluster over the PUBLIC gateway endpoint
+# (https://mimir.mgmt.rpcu.lan, TLS terminated by kgateway with the
+# rpcu-lan-wildcard-tls cert issued by the root-mgmt CA). That is the same
+# endpoint the Sveltos `monitoring` ClusterProfile points workload clusters at
+# (infrastructure/sveltos/clusterprofiles/monitoring.yaml), so all clusters land
+# in one tenant and the shared Grafana dashboards can select between them with
+# the `cluster` label.
+#
+# PREREQUISITE (manual, one-off): the `mimir-ca` secret in the `monitoring`
+# namespace, holding the root-mgmt CA under key `ca.crt`. Without it the
+# remote_write TLS handshake fails, because this cluster's trust bundle is the
+# RPCU root CA and knows nothing about root-mgmt. Workload clusters get this
+# pushed by Sveltos from the mgmt `root-mgmt` secret; the baremetal cluster is
+# not Sveltos-managed, so it is placed by hand:
+#
+#   kubectl --context mgmt -n cert-manager get secret root-mgmt \
+#     -o jsonpath='{.data.ca\.crt}' | base64 -d > /tmp/root-mgmt.crt
+#   kubectl --context openstack -n monitoring create secret generic mimir-ca \
+#     --from-file=ca.crt=/tmp/root-mgmt.crt
+#
+# `wait: false` for exactly that reason: until the secret exists the Prometheus
+# pod runs fine but remote_write errors, and we do not want that to block the
+# Kustomization (same rationale as capo-identity / openstack-ccm-identity).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: monitoring
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  path: ./infrastructure/monitoring
+  prune: true
+  wait: false
+  timeout: 10m
+  patches:
+    # Inject openstack-specific remote_write + externalLabels.
+    - patch: |
+        apiVersion: helm.toolkit.fluxcd.io/v2
+        kind: HelmRelease
+        metadata:
+          name: kube-prometheus-stack
+        spec:
+          values:
+            prometheus:
+              prometheusSpec:
+                externalLabels:
+                  cluster: openstack
+                remoteWrite:
+                  # queueConfig MUST be repeated here: this patch replaces the
+                  # whole remoteWrite list (a strategic-merge patch treats an
+                  # unkeyed list as atomic), so omitting it would silently drop
+                  # the base's queue bounds and let the shards grow unbounded.
+                  - url: https://mimir.mgmt.rpcu.lan/api/v1/push
+                    tlsConfig:
+                      ca:
+                        secret:
+                          name: mimir-ca
+                          key: ca.crt
+                    queueConfig:
+                      capacity: 2500
+                      maxShards: 5
+                      minShards: 1
+                      maxSamplesPerSend: 1000
+      target:
+        kind: HelmRelease
+        name: kube-prometheus-stack
+        namespace: monitoring

@@ -194,7 +194,7 @@ spec:
       resources:
         rabbitmq:
           requests:
-            cpu: 1000m
+            cpu: 250m
             memory: 1G
           limits:
             memory: 2G
@@ -235,7 +235,7 @@ spec:
     resources:
       placement:
         requests:
-          cpu: 400m
+          cpu: 100m
           memory: 1Gi
         limits:
           memory: 2Gi

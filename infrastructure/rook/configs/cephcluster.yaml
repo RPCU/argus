@@ -28,13 +28,13 @@ spec:
   resources:
     mon:
       requests:
-        cpu: 500m
+        cpu: 300m
         memory: 1Gi
       limits:
         memory: 2Gi
     mgr:
       requests:
-        cpu: 250m
+        cpu: 100m
         memory: 512Mi
       limits:
         memory: 1Gi

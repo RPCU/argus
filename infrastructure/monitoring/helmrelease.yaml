@@ -188,11 +188,15 @@ spec:
     # --- Exporters ---
     nodeExporter:
       enabled: true
-      # prometheus-adapter needs a `node` label on node-exporter metrics to map
-      # Prometheus time-series to Kubernetes node names. node-exporter only emits
-      # `instance` (IP:port) and `nodename` (kernel hostname), not `node`. The
-      # kubelet SD meta label `__meta_kubernetes_pod_node_name` carries the
-      # Kubernetes node name and is available as a relabel source.
+    # prometheus-adapter needs a `node` label on node-exporter metrics to map
+    # Prometheus time-series to Kubernetes node names. node-exporter only emits
+    # `instance` (IP:port) and `nodename` (kernel hostname), not `node`. The
+    # kubelet SD meta label `__meta_kubernetes_pod_node_name` carries the
+    # Kubernetes node name and is available as a relabel source.
+    #
+    # NOTE: the node-exporter subchart lives under the `prometheus-node-exporter`
+    # key (not `nodeExporter`, which only controls enabled/forceDeployDashboards).
+    prometheus-node-exporter:
       prometheus:
         monitor:
           relabelings:

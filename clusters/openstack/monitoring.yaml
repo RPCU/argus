@@ -56,6 +56,78 @@ spec:
           values:
             prometheus:
               prometheusSpec:
+                # --- Scrape the yaook OpenStack ServiceMonitors ---------------
+                # The yaook operators generate 92 ServiceMonitors + 1 PodMonitor
+                # in the `yaook` namespace, but NONE of them carry the
+                # `release: kube-prometheus-stack` label that the chart's default
+                # selector requires — so by default NOT ONE of them was scraped
+                # and the cluster produced zero OpenStack metrics.
+                #
+                # A LabelSelector ANDs its terms, so there is no way to say
+                # "release=kube-prometheus-stack OR yaook component X". The
+                # workaround is an EXCLUSION expression: `NotIn` matches an
+                # object whose label value is not listed AND ALSO any object
+                # that does not carry the label at all. The kube-prometheus-stack
+                # monitors have no `state.yaook.cloud/component` label, so they
+                # keep matching, while yaook monitors are filtered by component.
+                #
+                # CONSEQUENCE, deliberately accepted: this is ALLOW-BY-DEFAULT.
+                # Any new ServiceMonitor — from yaook or anything else installed
+                # on this cluster — is scraped unless it is added to the list
+                # below. Re-check the cardinality budget when adding operators.
+                #
+                # What this KEEPS (verified against the live cluster, 32 yaook
+                # monitors, ~30k series):
+                #   11  mysql_service_monitor     Galera DBs behind every service
+                #    5  amqp_service_monitor      RabbitMQ, the OpenStack message bus
+                #    2  ovsdb_service_monitor     OVN Northbound/Southbound DBs
+                #    1  ovn_relay_service_monitor OVN SB relay
+                #    1  ovn_monitoring_pod_monitor  ovn-controller + ovs-vswitchd
+                #   13  (yaook operators, no component label)
+                #
+                # What this DROPS and why — these are the 60 monitors that would
+                # roughly TRIPLE the scrape volume for little diagnostic value:
+                #   *_ssl_service_monitor       certificate-expiry blackbox probes;
+                #                               cert expiry is already enforced by
+                #                               cert-manager renewal
+                #   haproxy_service_monitor     per-DB connection proxies; the DB
+                #                               itself is monitored above
+                #   mysql_backup_service_monitor    hourly backup CronJob status
+                #   replication_ports_service_monitor  blackbox port checks that
+                #                               duplicate the mysql exporter
+                #   memcache_service_monitor    keystone token cache; failures
+                #                               surface as keystone latency
+                #
+                # The exporters are HTTPS with per-service CA secrets living in
+                # the `yaook` namespace. That works: prometheus-operator resolves
+                # a ServiceMonitor's tlsConfig secrets from the ServiceMonitor's
+                # OWN namespace (mounted as
+                # /etc/prometheus/certs/0_yaook_<secret>_tls.crt), so no secret
+                # copying into `monitoring` is required. Verified live: target
+                # health=up against the cinder Galera exporter.
+                serviceMonitorSelector:
+                  matchExpressions: &yaookComponentFilter
+                    - key: state.yaook.cloud/component
+                      operator: NotIn
+                      values:
+                        - api_ssl_service_monitor
+                        - compute_external_ssl_service_monitor
+                        - compute_internal_ssl_service_monitor
+                        - external_ssl_service_monitor
+                        - haproxy_service_monitor
+                        - internal_ssl_service_monitor
+                        - memcache_service_monitor
+                        - metadata_ssl_service_monitor
+                        - mysql_backup_service_monitor
+                        - placement_external_ssl_service_monitor
+                        - placement_internal_ssl_service_monitor
+                        - replication_ports_service_monitor
+                        - vnc_external_ssl_service_monitor
+                # Same filter for PodMonitors: this is what lets the
+                # `ovn_monitoring_pod_monitor` through (ovn-controller and
+                # ovs-vswitchd, the per-node OVN data plane).
+                podMonitorSelector:
+                  matchExpressions: *yaookComponentFilter
                 externalLabels:
                   cluster: openstack
                 remoteWrite:

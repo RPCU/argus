@@ -36,6 +36,20 @@ spec:
             reserved_host_memory_mb: 8192
             reserved_host_cpus: 2
             live_migration_permit_auto_converge: true
+            # Bring guests back up automatically after a hypervisor reboot.
+            # On nova-compute init, any instance whose Nova DB vm_state is
+            # ACTIVE but whose libvirt domain is not running is started again.
+            # Without this, a node reboot (kernel update, power event, the
+            # 2026-07 node incidents) leaves every VM that was running on it
+            # SHUTOFF until someone manually `openstack server start`s it —
+            # which for the CAPO-provisioned mgmt/workload clusters means the
+            # Kubernetes nodes silently never come back.
+            # Scope: only instances Nova believes should be ACTIVE are
+            # resumed. A VM stopped through the Nova API has vm_state=stopped
+            # and stays down, so this does not fight deliberate shutdowns.
+            # Note: this triggers on nova-compute *service* start, not only on
+            # host boot, so it also applies when the nova-compute pod restarts.
+            resume_guests_state_on_host_boot: true
           cinder:
             timeout: 600
           keystone_authtoken:

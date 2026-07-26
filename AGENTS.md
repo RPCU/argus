@@ -1294,6 +1294,16 @@ reconciled by the operators above. Deployed by the `yaook` Flux Kustomization
   libvirt automatically throttles vCPU to force convergence. Without this, busy
   VMs with high memory write rates (e.g. production workers) can oscillate
   forever in the pre-copy convergence loop and never complete migration.
+  `resume_guests_state_on_host_boot: true` makes nova-compute restart, on
+  service init, every instance whose Nova DB `vm_state` is ACTIVE but whose
+  libvirt domain is not running — i.e. VMs come back automatically after a
+  hypervisor reboot. Without it a node reboot leaves its VMs SHUTOFF until
+  someone manually `openstack server start`s them, which for the
+  CAPO-provisioned mgmt/workload clusters means those Kubernetes nodes never
+  return. Only instances Nova believes should be ACTIVE are resumed — a VM
+  stopped through the Nova API has `vm_state=stopped` and stays down — so it
+  does not fight deliberate shutdowns. It triggers on nova-compute service
+  init, not strictly on host boot, so it also applies when the pod restarts.
 - `cinder.yaml` - CinderDeployment (block storage, rook-ceph RBD backend)
 - `horizon.yaml` - HorizonDeployment (dashboard)
 - `octavia.yaml` - OctaviaDeployment (load balancing)
@@ -1312,6 +1322,18 @@ reconciled by the operators above. Deployed by the `yaook` Flux Kustomization
   policy OR-in: `infrastructure/yaook/designate.yaml` `policy:` block.
 - `barbican.yaml` - BarbicanDeployment (key manager, simple_crypto plugin, KEK auto-generated)
 - `ca-cert.yaml` - CA certificate resources
+- `disruptionbudget.yaml` - `YaookDisruptionBudget` `nova-compute` (match-all
+  `nodeSelectors`, `maxUnavailable: 1`, **`preventDeletion: true`**). Guard rail
+  for the compute rollout: without it, ANY edit to `novaComputeConfig` makes the
+  nova operator delete each `NovaComputeNode` in turn to apply the new config,
+  which drains the node by migrating its VMs off — and cold migration is broken
+  on this cluster (see "ANY `novaComputeConfig` edit triggers a rolling
+  eviction" in Section 8). With `preventDeletion` the operator only **flags**
+  the node `RequiresRecreation` and labels it
+  `maintenance.yaook.cloud/maintenance-required-nova-compute=True`; a human then
+  recreates one node at a time via the runbook. `disruptiveMaintenance` is left
+  false so ACTIVE instances are LIVE migrated when an eviction is run
+  deliberately; `spareNodes` is unset (no spare host aggregate exists).
 - `secretstore*.yaml` / `externalsecret-*.yaml` - SecretStores + ExternalSecrets (crossplane creds, OIDC, rook-ceph client keys)
 - `gateway/` - HTTPRoutes + BackendTLSPolicies per service (includes `httproute-barbican.yaml` → `barbican.rpcu.vpn`, backend `barbican-api:9311`)
 - `kustomization.yaml` - Kustomization manifest (namespace: yaook)
@@ -2245,6 +2267,94 @@ NixOS containerd unit didn't raise it; upstream containerd.service ships
 effect. If mons ever crash-loop with that backtrace again, check
 `cat /proc/1/limits` inside a mon container first.
 
+#### ANY `novaComputeConfig` edit triggers a rolling eviction (openstack cluster)
+
+Verified in the yaook operator source (`yaook/statemachine/resources/instancing.py`,
+v3.0.0): the nova operator renders one `NovaComputeNode` per node from
+`compute.configTemplates[]`. When the rendered spec no longer matches the live
+instance, the instance is marked `ResourceSpecState` != `UP_TO_DATE`, the
+operator sets the `RequiresRecreation` condition and **DELETES the
+`NovaComputeNode` to trigger the update** (`instancing.py:1250-1290`), one node
+at a time (gated by `max_unavailable`). Deleting a `NovaComputeNode` runs the
+`ComputeStateResource` eviction job (`yaook/op/nova_compute/cr.py:510`), which
+drains the node by **cold-migrating every VM off it** — i.e. straight into the
+two ssh bugs documented below.
+
+So **any** change under `spec.compute.configTemplates[].novaComputeConfig` —
+even a one-line, semantically harmless one — starts a rolling drain of
+lucy → makise → quinn. This is the mechanism behind the 2026-07-19 lucy
+incident, and why the node-resilience note says not to "fix" VM packing by
+editing `novaComputeConfig`.
+
+**This is now guarded by `infrastructure/yaook/disruptionbudget.yaml`.** That
+`YaookDisruptionBudget` (`nova-compute`, ns yaook) sets
+`preventDeletion: true`, so the operator **labels** the node +
+`NovaComputeNode` with
+`maintenance.yaook.cloud/maintenance-required-nova-compute=True` and sets
+`RequiresRecreation` **instead of deleting** (`instancing.py:1004-1032`,
+`flag_instead_of_delete`; enabled for nova because
+`NovaComputeNodes.__init__` passes `allow_prevent_deletion=True`,
+`yaook/op/nova/resources.py:819-821`). The node keeps running the OLD config
+until it is recreated by hand.
+
+Consequences to keep in mind:
+
+- **Flagging defers a change, it does not apply it.** A `novaComputeConfig`
+  edit does NOT take effect on a node until that node's `NovaComputeNode` is
+  actually deleted and recreated. Expect nodes to sit `RequiresRecreation`
+  indefinitely — that is the intended steady state, not a fault.
+- **Coverage must be total.** The budget uses `matchLabels: {}` (match-all),
+  mirroring `nova.yaml`'s `configTemplates[].nodeSelectors`. Any compute node
+  NOT matched by some budget falls into the operator's implicit default group
+  (`maxUnavailable: 1`, preventDeletion **disabled**) and is auto-evicted —
+  a narrower selector would silently re-open the hole.
+- **One budget per node, max.** A node matching two `YaookDisruptionBudget`s
+  makes the operator raise `ConfigurationInvalid` (`instancing.py:1408-1415`).
+  Do not add a second match-all budget in the `yaook` namespace.
+
+#### Runbook: applying a `novaComputeConfig` change, one node at a time
+
+With the budget in place the rollout is manual and interruptible. Per node
+(lucy, then makise, then quinn — never in parallel; `maxUnavailable: 1`):
+
+1. **Confirm the node is flagged**, i.e. the operator has rendered the new
+   config and is waiting on you:
+
+   ```sh
+   kubectl get novacomputenodes -n yaook \
+     -o custom-columns=NAME:.metadata.name,RECREATE:'.status.conditions[?(@.type=="RequiresRecreation")].status'
+   ```
+
+2. **Pre-empt the two ssh bugs.** The eviction cold-migrates any **SHUTOFF**
+   instance (`SHUTOFF` → `OFFLINE_MIGRATABLE` even with
+   `disruptiveMaintenance: false`, `nova_compute/eviction.py:233`), so the
+   `IdentityFile` live-patch must be applied to ALL nova-compute pods
+   **before** deleting anything — see the ssh runbook below. Also verify the
+   source node's live `/etc/nova/nova.conf` has
+   `remote_filesystem_transport = rsync` under `[libvirt]`.
+
+3. **Reduce the cold-migration surface**: `openstack server list --all-projects
+--host <node> --status SHUTOFF`. Every SHUTOFF instance is a cold migration
+   and therefore an ssh-bug exposure. Starting them first (so they are ACTIVE
+   and get **live** migrated instead) is usually the cheaper path.
+
+4. **Delete the one `NovaComputeNode`** to trigger its recreate + eviction:
+
+   ```sh
+   kubectl delete novacomputenode -n yaook <node>
+   ```
+
+5. **Watch the eviction** (`kubectl logs -n yaook -l app=compute-evict --tail=-1`,
+   or the node's `nova-compute` container). If instances land in
+   `EXPONENTIALBACKOFF`/`ERROR`, stop and follow the unwedge runbook below —
+   do NOT proceed to the next node.
+
+6. **Verify** the node comes back `Updated/Success/Enabled`, its compute
+   service is `up`, and the flag is gone, before starting the next node.
+
+To roll back mid-rollout, simply stop deleting nodes: the remaining nodes keep
+their old config indefinitely, since nothing deletes them automatically.
+
 #### Nova cold-migration / node eviction fails: two ssh bugs (openstack cluster)
 
 A yaook **NovaComputeNode eviction** (rolling recreate, or `deleteNode: true`
@@ -2568,7 +2678,9 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 26, 2026 (Networking + node resilience: fixed the tenant MTU black hole — `ml2.path_mtu` 1400 → 1342 in `infrastructure/yaook/neutron.yaml` so tenant VMs get 1284 instead of an unusable 1342, measured with DF sweeps (underlay 1400 OK, east-west 1342 OK, north-south capped at 1284 by the OVN gateway); added the repo's first `MachineHealthCheck`s to all four ClusterClasses so unreachable nodes are remediated instead of stranding StatefulSet Pods; added `openstack-default-control-plane-v2` / `openstack-default-worker-v2` templates with kubelet `--kube-reserved`/`--system-reserved`/eviction thresholds.)
+**Last Updated**: July 26, 2026 (Nova: `resume_guests_state_on_host_boot: true` in `infrastructure/yaook/nova.yaml` so instances Nova believes are ACTIVE are restarted automatically after a hypervisor reboot — previously a node reboot left every CAPO-provisioned VM SHUTOFF until manually started. Added `infrastructure/yaook/disruptionbudget.yaml`, the repo's first `YaookDisruptionBudget` (`preventDeletion: true`, match-all), so that edit — and any future `novaComputeConfig` edit — only FLAGS each `NovaComputeNode` `RequiresRecreation` instead of rolling-deleting it into a cold-migration drain that is broken on this cluster. Documented the mechanism from the operator source plus a per-node manual rollout runbook.)
+
+**Previously**: July 26, 2026 (Networking + node resilience: fixed the tenant MTU black hole — `ml2.path_mtu` 1400 → 1342 in `infrastructure/yaook/neutron.yaml` so tenant VMs get 1284 instead of an unusable 1342, measured with DF sweeps (underlay 1400 OK, east-west 1342 OK, north-south capped at 1284 by the OVN gateway); added the repo's first `MachineHealthCheck`s to all four ClusterClasses so unreachable nodes are remediated instead of stranding StatefulSet Pods; added `openstack-default-control-plane-v2` / `openstack-default-worker-v2` templates with kubelet `--kube-reserved`/`--system-reserved`/eviction thresholds.)
 **Repository**: <https://github.com/RPCU/argus.git>
 **Main Branch**: main
 **Clusters**: OpenStack, mgmt (Cluster API management)

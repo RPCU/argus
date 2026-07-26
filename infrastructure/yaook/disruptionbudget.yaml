@@ -1,0 +1,63 @@
+---
+# Guard rail for the nova compute rollout.
+#
+# WHY THIS EXISTS
+# ---------------
+# The nova operator renders one `NovaComputeNode` per node from
+# `NovaDeployment.spec.compute.configTemplates[]`. Whenever the rendered spec
+# stops matching the live instance — i.e. after ANY edit to
+# `novaComputeConfig`, however trivial — the operator marks the instance
+# `RequiresRecreation` and, by default, DELETES it to force the update
+# (yaook `statemachine/resources/instancing.py`, `_compile_full_state`).
+# Deleting a `NovaComputeNode` runs the eviction job, which drains the node by
+# migrating every VM off it.
+#
+# On this cluster that drain is not safe to run unattended: instances have
+# LOCAL qcow2 root disks, so any VM that is SHUTOFF is `OFFLINE_MIGRATABLE`
+# (cold migration) and its disk is copied node-to-node over the locked-down
+# `nova` ssh account — which is broken by the yaook image's missing
+# `IdentityFile` (see "Nova cold-migration / node eviction fails" in AGENTS.md
+# section 8). A wedged eviction cascades across lucy -> makise -> quinn.
+#
+# WHAT THIS CHANGES
+# -----------------
+# With `preventDeletion: true` the operator LABELS the node and the
+# `NovaComputeNode` with
+# `maintenance.yaook.cloud/maintenance-required-nova-compute=True` and sets the
+# `RequiresRecreation` condition INSTEAD of deleting the instance
+# (`instancing.py`, `flag_instead_of_delete`). The node keeps running its old
+# config until an operator deletes the `NovaComputeNode` by hand.
+#
+# That turns an uncontrolled, self-triggering cascade into a scheduled,
+# one-node-at-a-time maintenance. It does NOT make config changes take effect
+# on its own — see the runbook in AGENTS.md section 8.
+#
+# NOTES
+# -----
+# * `matchLabels: {}` matches every node, deliberately mirroring the
+#   match-all selector in `nova.yaml`'s `configTemplates[].nodeSelectors`.
+#   Coverage must be total: any compute node NOT matched by a
+#   YaookDisruptionBudget falls into the operator's implicit default group,
+#   which has `maxUnavailable: 1` and preventDeletion DISABLED — so a gap in
+#   this selector silently re-enables the auto-eviction it is meant to stop.
+# * A node may match at most ONE YaookDisruptionBudget; a second overlapping
+#   budget makes the operator raise `ConfigurationInvalid`. Do not add another
+#   match-all budget in this namespace.
+# * `disruptiveMaintenance` is left at its default (false) so that when an
+#   eviction IS run deliberately, ACTIVE instances are LIVE migrated. Setting
+#   it true forces cold migration for ACTIVE instances too, which is exactly
+#   the broken path. (SHUTOFF instances are cold-migrated either way.)
+# * `spareNodes` is intentionally unset: this cluster has no spare-capacity
+#   host aggregate to drain into.
+apiVersion: yaook.cloud/v1
+kind: YaookDisruptionBudget
+metadata:
+  name: nova-compute
+spec:
+  nodeSelectors:
+    - matchLabels: {}
+  # Only ever recreate one compute node at a time. With preventDeletion this
+  # bounds how many flagged nodes may be in flight once they are deleted by
+  # hand.
+  maxUnavailable: 1
+  preventDeletion: true

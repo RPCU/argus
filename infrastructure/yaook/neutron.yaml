@@ -23,6 +23,23 @@ spec:
       schedule: "0 * * * *"
     replicas: 1
     timeoutClient: 300
+    # -------------------------------------------------------------------------
+    # DB connection ceiling. MUST stay comfortably above the worst-case client
+    # demand computed in the `neutronConfig.database` block below, otherwise
+    # Neutron wedges HARD — see that comment for the 2026-07-26 outage.
+    #
+    # MariaDB's default here was 500, which the API fleet exhausted
+    # (`Threads_connected 501 / max_connections 500`). Once saturated, even
+    # `root` could not connect, the OVN mech driver's
+    # `touch_hash_ring_node` periodic could not register its node, the hash ring
+    # went empty, and EVERY network/port write returned HTTP 500 — which in turn
+    # fails CAPI/CAPO machine provisioning.
+    #
+    # nova already pins 1337 for the same reason (infrastructure/yaook/nova.yaml).
+    # -------------------------------------------------------------------------
+    mysqlConfig:
+      mysqld:
+        max_connections: 2000
   issuerRef:
     name: yaook-internal
   keystoneRef:
@@ -42,8 +59,49 @@ spec:
     replicas: 3
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   neutronConfig:
+    # -------------------------------------------------------------------------
+    # DB CONNECTION BUDGET — read before changing `api.replicas` or the pool.
+    #
+    # 2026-07-26 outage: the Neutron DB hit `(1040, 'Too many connections')`,
+    # the OVN mech driver could not touch its hash-ring node, the ring went
+    # empty and every network/port write 500'd (breaking CAPI provisioning).
+    #
+    # The cause was unbounded client demand, from THREE compounding defaults:
+    #   * `api_workers` was unset, so Neutron defaults it to the CPU count seen
+    #     in the container. These pods have NO cpu limit, so that is the HOST's
+    #     core count (12 here) — not the 200m request. 12 API workers per pod.
+    #   * yaook's default pool was `max_pool_size 5` + `max_overflow 50`, i.e.
+    #     up to 55 connections per worker PROCESS (each worker has its own
+    #     engine/pool).
+    #   * `api.replicas: 6`.
+    # Worst case: 6 x 12 x 55 = ~3960 connections against a 500 limit.
+    #
+    # Budget now (keep this arithmetic true when editing):
+    #     procs/pod  = api_workers 4 + rpc_workers 2 + ~1 periodic  = 7
+    #     conns/proc = max_pool_size 5 + max_overflow 10            = 15
+    #     worst case = 6 replicas x 7 x 15                          = 630
+    #     server cap = database.mysqlConfig.mysqld.max_connections  = 2000
+    # ~3x headroom. If you raise `api.replicas`, re-check this against the cap.
+    #
+    # Pinning the worker counts explicitly is the important part: it decouples
+    # Neutron from the hypervisor's core count, so moving to a bigger host can
+    # no longer silently multiply DB load. This mirrors what nova already does
+    # (`osapi_compute_workers`, `conductor.workers`, ... in nova.yaml).
+    # -------------------------------------------------------------------------
+    database:
+      max_pool_size: 5
+      # Was effectively 50 (yaook default) — the main amplifier.
+      max_overflow: 10
+      # Fail a starved request fast instead of queueing forever and turning
+      # pool exhaustion into an API-wide hang.
+      pool_timeout: 30
+      # Recycle below MariaDB's wait_timeout so dead sockets are not reused.
+      connection_recycle_time: 280
     DEFAULT:
       debug: false
+      # Do NOT remove: unset means "one worker per host CPU" (see budget above).
+      api_workers: 4
+      rpc_workers: 2
       global_physnet_mtu: 1400
       advertise_mtu: True
       enable_tcp_mss_clamping: True

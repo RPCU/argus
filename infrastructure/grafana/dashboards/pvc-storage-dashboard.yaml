@@ -57,7 +57,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "count(kubelet_volume_stats_capacity_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"})",
+              "expr": "count(kube_persistentvolumeclaim_info{cluster=~\"$cluster\", namespace=~\"$namespace\"})",
               "legendFormat": "Total PVCs",
               "refId": "A"
             }
@@ -268,6 +268,14 @@ spec:
               "instant": true,
               "legendFormat": "",
               "refId": "Usage Gauge"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "kube_persistentvolumeclaim_resource_requests_storage_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"}",
+              "format": "table",
+              "instant": true,
+              "legendFormat": "",
+              "refId": "Requested"
             }
           ],
           "title": "Complete PVC Inventory Listing (All Clusters & Namespaces)",

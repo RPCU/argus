@@ -10,6 +10,7 @@ resources:
   - external-secrets.yaml
   - flux-operator.yaml
   - rook.yaml
+  - monitoring.yaml
   - golinky.yaml
   - yaook-operator.yaml
   - fluxcd/

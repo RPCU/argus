@@ -164,10 +164,19 @@ spec:
           # remote_write into 81% failure (2.19M of 2.70M samples rejected) while
           # the head was still at 323k.
           #
-          # 400k leaves room for the transition, for the other clusters that
-          # remote_write into this same tenant, and for normal growth, while
-          # still failing loudly long before the ingester eats all its memory.
-          max_global_series_per_user: 400000
+          # CRITICAL: this is enforced against the ingester's MEMORY series
+          # (cortex_ingester_memory_series), NOT its ACTIVE series
+          # (cortex_ingester_active_series). Those diverge hugely during a
+          # transition: measured 144,039 active but 412,417 in memory, because
+          # Prometheus replays its remote-write WAL backlog (re-pushing the very
+          # series we just dropped) and idle series are not purged until head
+          # compaction ~2h later. Sizing against the active count is what made
+          # both 200k and 400k reject writes.
+          #
+          # 600k is headroom for that transient peak plus the other clusters
+          # writing into this same tenant. Steady state is ~144k, so this still
+          # fails loudly long before the ingester exhausts its 2Gi limit.
+          max_global_series_per_user: 600000
           compactor_blocks_retention_period: 72h
         memberlist:
           join_members:

@@ -164,6 +164,14 @@ spec:
           join_members:
             - mimir-gossip-ring.monitoring.svc.mgmt.local.
         ingester:
+          # REQUIRED when ingest_storage is disabled above. Chart 6.x hardcodes
+          # `ingester.push_grpc_method_enabled: false` because the ingest-storage
+          # architecture expects every write to arrive via Kafka rather than the
+          # Push gRPC API. Turning ingest_storage off without re-enabling this
+          # leaves Mimir with no write path at all, and it refuses to start:
+          #   "cannot disable Push gRPC method in ingester, while ingest storage
+          #    (-ingest-storage.enabled) is not enabled"
+          push_grpc_method_enabled: true
           ring:
             unregister_on_shutdown: true
             replication_factor: 1

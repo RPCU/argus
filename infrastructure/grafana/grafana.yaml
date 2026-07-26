@@ -37,6 +37,22 @@ spec:
             fsGroup: 472
             runAsNonRoot: true
             runAsUser: 472
+          # Mount the PVC declared under spec.persistentVolumeClaim below.
+          # grafana-operator v5 CREATES that PVC but does NOT wire it into the
+          # Deployment — the generated pod defaults `grafana-data` to an
+          # emptyDir, so without this override Grafana ran entirely ephemerally
+          # while a 5Gi Cinder volume sat bound and unused (and invisible to the
+          # PVC dashboard, since kubelet_volume_stats_* only reports MOUNTED
+          # volumes). Overriding the volume by name replaces that emptyDir.
+          #
+          # Dashboards/datasources are declarative (GrafanaDashboard /
+          # GrafanaDatasource CRs) so they always survive a restart; what this
+          # actually preserves is the sqlite DB — users/orgs, preferences,
+          # annotations and alert state.
+          volumes:
+            - name: grafana-data
+              persistentVolumeClaim:
+                claimName: grafana-pvc
           containers:
             - name: grafana
               env:

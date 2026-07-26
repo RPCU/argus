@@ -21,6 +21,41 @@ spec:
           values:
             k8sServiceHost: "10.0.0.5"
             k8sServicePort: 6443
+            # PIN the MTU. Cilium otherwise AUTO-DETECTS it as the MINIMUM MTU
+            # across its attached `--devices`, and this cluster attaches `br-int`
+            # — the OVN integration bridge, which OVN sizes to the TENANT network
+            # MTU (path_mtu 1342 - 58 geneve = 1284, see infrastructure/yaook/
+            # neutron.yaml). Cilium therefore adopted the tenant MTU (1284) as its
+            # HOST MTU, and with `packetizationLayerPMTUDMode: always` (base
+            # values.yaml) its BPF datapath actively emits ICMP "fragmentation
+            # needed (mtu 1284)" for ORDINARY HOST traffic on eno1.4000 — captured
+            # in the wild between hypervisors for kube-apiserver/6443 and
+            # kubelet/10250. That poisons each hypervisor's PMTU cache for its
+            # peers down to 1284, leaving geneve only 1284 - 58 = 1226 for tenant
+            # payload while Neutron still advertises 1284 over DHCP: a 58-byte
+            # silent black hole in BOTH directions (east-west AND north-south).
+            #
+            # This is a FEEDBACK LOOP, which is why lowering path_mtu can never
+            # fix it — the advertised tenant MTU is itself what sets the poison:
+            #     path_mtu -> br-int -> Cilium auto-MTU -> ICMP -> underlay PMTU
+            # so usable is ALWAYS advertised - 58 (1342/1284 before, 1284/1226
+            # after). Raising it (jumbo) only walks the loop upward, and the
+            # Hetzner vSwitch caps eno1.4000 at 1400 regardless.
+            #
+            # 1400 == the real eno1.4000 capability, VERIFIED with `ping -M probe`
+            # (bypasses the PMTU cache) and with a plain DF ping after flushing
+            # the cache: both pass at totalIP 1400 hypervisor-to-hypervisor. With
+            # this pin Cilium reports the truth, the underlay stays 1400, geneve
+            # yields 1342 for tenants vs 1284 advertised => 58 bytes of HEADROOM.
+            # Exact fit for Cilium's own vxlan too (1350 pod route + 50 = 1400).
+            #
+            # Do NOT drop br-int from --devices instead: it is REQUIRED for
+            # OpenStack VM connectivity (see "Cilium --devices must include the
+            # OVN bridges" in AGENTS.md Section 8). Pinning the MTU keeps br-int
+            # attached and only stops Cilium inheriting its MTU.
+            #
+            # mgmt does NOT need this pin — it has no br-int.
+            MTU: 1400
             extraArgs:
               - --devices=eno1.4000,br-ex,br-int
               - --direct-routing-device=eno1.4000

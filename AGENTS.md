@@ -266,7 +266,15 @@ _trust-manager/configs/_ - Trust bundle configuration
 
 - `namespace.yaml` - Namespace `monitoring`
 - `helmrepo.yaml` - HelmRepository `prometheus-community`
-- `helmrelease.yaml` - Shared `kube-prometheus-stack` HelmRelease (Grafana disabled, 72h retention, 5GB retention limit, 5Gi PVC, node-exporter, kube-state-metrics). Per-cluster `remoteWrite` and `externalLabels` are injected via Flux Kustomization patches.
+- `helmrelease.yaml` - Shared `kube-prometheus-stack` HelmRelease (Grafana disabled, 6h local retention, 3GB retention limit, 5Gi PVC, node-exporter, kube-state-metrics). Per-cluster `remoteWrite` and `externalLabels` are injected via Flux Kustomization patches.
+  **Cardinality control lives here** and is split per kubelet ENDPOINT — the
+  kubelet ServiceMonitor scrapes three (`/metrics`, `/metrics/cadvisor`,
+  `/metrics/probes`) and the chart exposes a SEPARATE relabeling list for each
+  (`metricRelabelings`, `cAdvisorMetricRelabelings`, `probesMetricRelabelings`).
+  A rule placed in the wrong list silently never fires — see "kubelet
+  metricRelabelings are per-endpoint" in Section 8. Also drops the high-cardinality
+  apiserver/etcd histogram families and disables the rule groups that depend on
+  them (`kubeApiserver{Burnrate,Histogram,Slos}`, `k8sContainerMemory{Cache,Swap}`).
 - `kustomization.yaml` - Kustomization manifest
 
 **mimir/** - Grafana Mimir TSDB (v5.6.0)
@@ -288,6 +296,24 @@ _trust-manager/configs/_ - Trust bundle configuration
 - `mimir-datasource.yaml` - `GrafanaDatasource` CR for central Mimir (`http://mimir-gateway.monitoring.svc:80/prometheus`).
 - `dashboards/cluster-overview-dashboard.yaml` - `GrafanaDashboard` CR for CPU/RAM cluster & node metrics with a dropdown cluster selector.
 - `dashboards/pvc-storage-dashboard.yaml` - `GrafanaDashboard` CR for PVC storage & volume usage with dropdown cluster and namespace filters.
+- `dashboards/node-filesystem-dashboard.yaml` - `GrafanaDashboard` CR for node filesystem usage.
+- `dashboards/ceph-storage-dashboard.yaml` - `GrafanaDashboard` CR for Ceph/Rook storage.
+- `dashboards/openstack-control-plane-dashboard.yaml` - `GrafanaDashboard` CR
+  for the **openstack cluster ONLY**. Deliberately SINGLE-CLUSTER: every query
+  is pinned to `cluster="openstack"` and there is no `$cluster` variable (the
+  only template variable is `$node`, over the three hypervisors). Sections:
+  Health Summary → Message Bus (RabbitMQ) → Service Databases (Galera) →
+  Network Data Plane (OVS) → Baremetal Kubernetes.
+  **Every metric it queries was verified to exist by scraping the exporter
+  before the panel was written** — the previous version of this dashboard was a
+  generic multi-cluster Kubernetes dashboard whose latency panels were
+  permanently blank because they queried `apiserver_request_duration_seconds_bucket`,
+  which the monitoring base drops. Deliberately has NO `openstack_*` panels
+  (nova hypervisors, VM counts, quotas): those need
+  prometheus-openstack-exporter, which is not deployed, and inventing panels for
+  absent metrics is exactly the failure being fixed. OVS coverage is limited to
+  `socket_up` + `flow_limit` because that is genuinely all the yaook
+  ovn-monitoring DaemonSet exports.
 - `httproute.yaml` - HTTPRoute `grafana.mgmt.rpcu.lan` pointing to `grafana-service:3000` on mgmt internal Gateway.
 - `kustomization.yaml` - Kustomization manifest
 
@@ -1334,6 +1360,17 @@ reconciled by the operators above. Deployed by the `yaook` Flux Kustomization
   pre-created by admin). The `dns_manager` role + admin-project assignment live
   in `clusters/mgmt/crossplane/openstack/cloud-controller-dns.yaml`; Designate
   policy OR-in: `infrastructure/yaook/designate.yaml` `policy:` block.
+  The `powerdns.database` block sets **`resources`** on the Galera pod
+  (`mariadb-galera` + backup/exporter sidecars) and on
+  `powerdns.database.proxy` (`haproxy`, `service-reload`, `create-ca-bundle`).
+  They were all `resources: {}` → QoS **BestEffort**, so on a 91%-CPU node the
+  DB was starved until its `ssl-terminator` failed readiness, restarting the pod
+  18 times in 47h; PowerDNS then answered **SERVFAIL** for every query and
+  `rpcu.lan` resolution died cluster-wide. Same class of bug as the OVN one —
+  see "PowerDNS/Galera must not be BestEffort" in Section 8. NOTE the CRD
+  exposes no `resources` for the PowerDNS **server** pod itself, nor for the
+  Galera pod's `ssl-terminator` sidecar (the container that actually failed), so
+  those stay BestEffort pending an upstream yaook change.
 - `barbican.yaml` - BarbicanDeployment (key manager, simple_crypto plugin, KEK auto-generated)
 - `ca-cert.yaml` - CA certificate resources
 - `disruptionbudget.yaml` - `YaookDisruptionBudget` `nova-compute` (match-all
@@ -2581,6 +2618,145 @@ needs **both** flags: `kafka.enabled: false` stops the StatefulSet, and
 `mimir.structuredConfig.ingest_storage.enabled: false` stops Mimir trying to
 produce to a broker that no longer exists. Check `helm show values` on major
 chart bumps for defaults that change topology.
+
+#### PowerDNS/Galera must not be BestEffort → `rpcu.lan` SERVFAILs cluster-wide (openstack cluster)
+
+**2026-07-26.** The openstack cluster was completely absent from the central
+Grafana. Root cause chain, from symptom to origin:
+
+1. Its Prometheus could not remote_write:
+   `"dial tcp: lookup mimir.mgmt.rpcu.lan on 10.96.0.10:53: no such host"`.
+2. Nothing on the cluster could resolve `*.rpcu.lan` — CoreDNS forwards `.` to
+   `/etc/resolv.conf`, which on these hosts is Hetzner's public resolvers
+   (185.12.64.1/2). Fixed in **hephaestus**, see below.
+3. But even the correct resolver was broken: PowerDNS (authoritative for the
+   Designate `rpcu.lan` zone, LB `10.0.0.241`) answered **SERVFAIL** —
+   intermittently, which is why `rpcu.lan` "worked, then didn't, then worked".
+
+The SERVFAIL was **not** an ACL or a Cilium LB problem (both were ruled out by
+querying the PowerDNS pod IP directly). The log is explicit:
+
+```
+Backend error: Unable to launch gmysql connection: Unable to connect to database:
+ERROR 2013 (HY000): Lost connection to MySQL server at 'handshake...'
+```
+
+`designate-powerdns-powerdns-db-0` was `5/6 Terminating` with **18 restarts** in
+47h, its `ssl-terminator` failing readiness (`connect: connection refused` on
+:9101). Every container in that stack ran `resources: {}` → QoS **BestEffort** →
+cgroup v2 `cpu.weight` of 1, on a node (`lucy`) sitting at **91% CPU**. Measured
+usage was tiny (galera 51m CPU / 301Mi, haproxy 160Mi) — the problem was never
+capacity, it was **priority**.
+
+This is the SAME failure mode as "OVN control plane must not be BestEffort"
+above, and it will keep recurring in other yaook components until they all carry
+requests. When a yaook service misbehaves, **check `.status.qosClass` before
+anything else**.
+
+Fix: `resources` on `powerdns.database` and `powerdns.database.proxy` in
+`infrastructure/yaook/designate.yaml`. No CPU limits (throttling a DB re-creates
+the probe-timeout death spiral); memory limits are a ~5-7x runaway backstop.
+
+**Blast radius when applying:** editing the DesignateDeployment restarts the
+single-replica (`replicas: 1`) Galera pod, so `rpcu.lan` resolution drops for
+the duration. Do it deliberately, not alongside other changes.
+
+**Still unfixable declaratively:** the CRD exposes no `resources` for the
+PowerDNS _server_ pod, nor for the Galera pod's `ssl-terminator` — the very
+container whose probe failed. Fixing the DB removes the trigger; closing the gap
+needs an upstream yaook change.
+
+#### kubelet metricRelabelings are PER-ENDPOINT — a rule in the wrong list silently never fires
+
+**2026-07-26.** The monitoring base carried a rule dropping
+`prober_probe_duration_seconds_*`, and AGENTS.md recorded it as dropped. It was
+**still being ingested** — 12,960 series on the openstack cluster, 6.5% of the
+entire head.
+
+The kubelet ServiceMonitor scrapes THREE endpoints, and kube-prometheus-stack
+exposes a SEPARATE relabeling list for each:
+
+| endpoint            | chart value                 | series (openstack) |
+| ------------------- | --------------------------- | ------------------ |
+| `/metrics`          | `metricRelabelings`         | 16,238             |
+| `/metrics/cadvisor` | `cAdvisorMetricRelabelings` | 82,526             |
+| `/metrics/probes`   | `probesMetricRelabelings`   | 16,550             |
+
+The rule sat in `metricRelabelings` (i.e. `/metrics`) while the metric is served
+by `/metrics/probes`. Prometheus does not warn about a relabel rule that matches
+nothing, so this fails **completely silently**. Verify with:
+
+```promql
+count by (metrics_path) ({job="kubelet"})
+count by (endpoint,metrics_path) (<the metric you think you dropped>)
+```
+
+**Setting any of these lists REPLACES the chart's defaults wholesale.** The
+chart ships seven non-trivial cAdvisor rules (including `container_spec.*` and
+the per-interface `container_network_.*` drops); omitting them while "adding" a
+drop rule INCREASES cardinality. The base now reproduces all seven verbatim
+above an `--- additions ---` marker.
+
+cAdvisor cost scales with container count, not with anything anyone queries: it
+emitted ~45 families per container to support the **two** the dashboards and
+chart alerts actually use (`container_cpu_usage_seconds_total`,
+`container_memory_working_set_bytes`). The additions drop per-device blkio/fs,
+the six PSI families, cgroup memory internals, process/task accounting and
+non-byte network counters — together with the probes fix, ~76,000 series (**-38%**).
+When dropping a metric, also disable any default rule group built on it
+(`k8sContainerMemory{Cache,Swap}` here) or you leave a permanently empty
+recording rule.
+
+#### yaook ServiceMonitors are invisible to kube-prometheus-stack by default (openstack cluster)
+
+**2026-07-26.** The yaook operators generate **92 ServiceMonitors + 1
+PodMonitor** in the `yaook` namespace. **Zero** of them were being scraped, so
+the cluster produced no OpenStack metrics at all — because the chart's default
+`serviceMonitorSelector` is `matchLabels: {release: kube-prometheus-stack}` and
+no yaook-generated monitor carries that label.
+
+A LabelSelector ANDs its terms, so "release=X OR yaook-component=Y" is not
+expressible. The workaround in `clusters/openstack/monitoring.yaml` is an
+**exclusion** expression: `NotIn` matches objects whose value is not listed AND
+objects that lack the label entirely, so kube-prometheus-stack's own monitors
+(no `state.yaook.cloud/component` label) keep matching while yaook's are
+filtered by component. **This is allow-by-default** — anything new is scraped
+unless added to the list, so re-check the cardinality budget when adding
+operators.
+
+Kept (~32 monitors, ~30k series): `mysql_service_monitor` (Galera),
+`amqp_service_monitor` (RabbitMQ — the OpenStack RPC bus), `ovsdb`/`ovn_relay`,
+the OVN PodMonitor, and the yaook operators. Excluded (60): the 14 `*_ssl_*`
+cert-expiry probes, `haproxy`, `mysql_backup`, `replication_ports`, `memcache`.
+
+Two things that are NOT obstacles, despite appearances:
+
+- **Cross-namespace TLS secrets work.** The yaook monitors scrape HTTPS with
+  per-service CA secrets in the `yaook` namespace. prometheus-operator resolves
+  a ServiceMonitor's `tlsConfig` secrets from the **ServiceMonitor's own**
+  namespace and mounts them as
+  `/etc/prometheus/certs/0_yaook_<secret>_tls.crt`. No secret copying needed —
+  verified live (`health=up`).
+- **Prometheus had headroom** only after the cAdvisor trim above: it was at
+  1352 MiB RSS against a **1536Mi limit** (86%), so adding ~30k series without
+  first removing ~76k would have OOM-looped it. Note `kubectl top` reported
+  2632Mi for this pod — it is **wrong**; trust
+  `container_memory_working_set_bytes` / `process_resident_memory_bytes`.
+
+**Two upstream yaook bugs found while doing this**, both meaning the metrics do
+not exist no matter how you configure Prometheus:
+
+1. The OVN `PodMonitor` references container ports named `prometheus` and
+   `ovs-vswitchd-metrics`, but the pods actually expose `metrics` (8008) and
+   `ovs-metrics` (8007) → it selects **no targets**.
+2. The `ovsdb`/`ovn_relay` ServiceMonitors point at the **traefik
+   ssl-terminator** sidecar, so they yield `traefik_*`/`go_*`/`process_*`, not
+   OVN state. The only genuine OVS metrics on the whole cluster are `socket_up`
+   and `flow_limit` (port 9999/8008).
+
+There is also **no `openstack_*` semantic data** (nova hypervisors, VM counts,
+quotas) anywhere — that needs prometheus-openstack-exporter, which is not
+deployed. Do not write dashboard panels against those names.
 
 #### Node resilience: MachineHealthCheck + kubelet reservations
 

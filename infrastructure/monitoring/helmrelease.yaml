@@ -51,6 +51,17 @@ spec:
         kubeApiserverBurnrate: false
         kubeApiserverHistogram: false
         kubeApiserverSlos: false
+        # These two recording-rule groups are built directly on cAdvisor
+        # metrics we drop below (container_memory_cache, container_memory_swap),
+        # so they would evaluate to nothing forever. Same rationale as the
+        # kubeApiserver* groups above: an empty recording rule is pure cost.
+        #
+        # NOTE container_memory_swap was ALREADY unusable before this change —
+        # the chart's own default cAdvisor relabelings drop
+        # `container_memory_(mapped_file|swap)`, so k8s.rules.container_memory_swap
+        # has been evaluating against a non-existent metric all along.
+        k8sContainerMemoryCache: false
+        k8sContainerMemorySwap: false
 
     # --- kube-apiserver scrape: drop the high-cardinality histograms ---
     # MEASURED on mgmt (6 nodes): the Prometheus head held 313,505 active series,
@@ -93,8 +104,21 @@ spec:
     # histogram (2,736 series) reporting how long liveness/readiness probes take.
     # Probe FAILURES surface as pod restarts and events, which are already
     # covered; probe latency is not something anyone alerts on here.
+    # --- kubelet ---
+    # MEASURED on the openstack cluster (3 nodes, ~1,866 containers): the
+    # kubelet ServiceMonitor was 115,314 of 198,679 total series — 58% of the
+    # entire head — split across its three endpoints:
+    #
+    #   /metrics/cadvisor   82,526
+    #   /metrics/probes     16,550
+    #   /metrics            16,238
+    #
+    # The kubelet ServiceMonitor scrapes THREE separate endpoints and the chart
+    # exposes a SEPARATE relabeling list for each. Putting a rule in the wrong
+    # one silently does nothing — see the probes note below.
     kubelet:
       serviceMonitor:
+        # ---- endpoint 1: /metrics ----
         metricRelabelings:
           # KEEP the chart's own default first — setting metricRelabelings
           # REPLACES it wholesale, and dropping this by accident would quietly
@@ -102,9 +126,100 @@ spec:
           - action: drop
             sourceLabels: [__name__, le]
             regex: (csi_operations|storage_operation_duration)_seconds_bucket;(0.25|2.5|15|25|120|600)(\.0)?
+        # ---- endpoint 2: /metrics/probes ----
+        # BUGFIX: the prober_probe_duration_seconds drop used to live in
+        # `metricRelabelings` above, which only applies to the /metrics
+        # endpoint. That metric is served by /metrics/probes, so the rule NEVER
+        # FIRED and the metric kept being ingested — 12,960 series measured on
+        # the openstack cluster, 6.5% of the whole head, while AGENTS.md
+        # recorded it as dropped. Probe FAILURES surface as pod restarts and
+        # events, which are already covered; probe LATENCY is not something
+        # anyone alerts on here.
+        probesMetricRelabelings:
           - action: drop
             sourceLabels: [__name__]
             regex: prober_probe_duration_seconds_(bucket|sum|count)
+        # ---- endpoint 3: /metrics/cadvisor ----
+        # cAdvisor emits ~45 metric families for EVERY container, so its cost
+        # scales with container count, not with anything anyone looks at. On
+        # the openstack cluster that is 82,526 series to support exactly two
+        # metrics that our dashboards and the chart's alerts actually use
+        # (container_cpu_usage_seconds_total, container_memory_working_set_bytes).
+        #
+        # The first SEVEN rules are the chart's OWN defaults, reproduced
+        # verbatim: setting cAdvisorMetricRelabelings REPLACES the default list
+        # wholesale, so omitting them would UNDO existing drops and INCREASE
+        # cardinality — the opposite of the intent. Everything after the
+        # `--- additions ---` marker is new.
+        #
+        # KEPT deliberately: container_cpu_usage_seconds_total,
+        # container_memory_working_set_bytes, container_memory_rss,
+        # container_memory_usage_bytes, container_oom_events_total,
+        # container_network_{receive,transmit}_bytes_total,
+        # container_cpu_cfs_{periods,throttled_periods}_total (throttling),
+        # container_start_time_seconds, and the machine_* facts.
+        cAdvisorMetricRelabelings:
+          # --- chart defaults (do not remove) ---
+          - action: drop
+            sourceLabels: [__name__]
+            regex: container_cpu_(cfs_throttled_seconds_total|load_average_10s|system_seconds_total|user_seconds_total)
+          - action: drop
+            sourceLabels: [__name__]
+            regex: container_fs_(io_current|io_time_seconds_total|io_time_weighted_seconds_total|reads_merged_total|sector_reads_total|sector_writes_total|writes_merged_total)
+          - action: drop
+            sourceLabels: [__name__]
+            regex: container_memory_(mapped_file|swap)
+          - action: drop
+            sourceLabels: [__name__]
+            regex: container_(file_descriptors|tasks_state|threads_max)
+          - action: drop
+            sourceLabels: [__name__, scope]
+            regex: container_memory_failures_total;hierarchy
+          - action: drop
+            sourceLabels: [__name__, interface]
+            regex: container_network_.*;(cali|cilium|cni|lxc|nodelocaldns|tunl).*
+          - action: drop
+            sourceLabels: [__name__]
+            regex: container_spec.*
+          # --- additions ---
+          # Per-DEVICE block IO, one series per (container x device x operation).
+          # Largest single offender at 5,268 series. Real disk behaviour is
+          # answered by node-exporter at the node/device level, which is where
+          # anyone actually looks when Ceph or a VM is slow.
+          - action: drop
+            sourceLabels: [__name__]
+            regex: container_blkio_device_usage_total|container_fs_(reads|writes)_(bytes_)?total
+          # PSI pressure: SIX families x 1,866 containers = 11,196 series.
+          # Node-level PSI from node-exporter is the useful signal; per-container
+          # PSI is not queried anywhere in this repo.
+          - action: drop
+            sourceLabels: [__name__]
+            regex: container_pressure_(cpu|io|memory)_(waiting|stalled)_seconds_total
+          # cgroup memory internals. working_set/rss/usage are kept above and are
+          # what every dashboard and alert uses; these are the accounting
+          # breakdowns behind them. ~11k series.
+          # (This also catches the scope=container half of
+          # container_memory_failures_total that the chart default leaves behind.)
+          - action: drop
+            sourceLabels: [__name__]
+            regex: container_memory_(cache|failcnt|kernel_usage|max_usage_bytes|total_active_file_bytes|total_inactive_file_bytes|failures_total)
+          # Process/task accounting — never referenced by any dashboard or alert.
+          - action: drop
+            sourceLabels: [__name__]
+            regex: container_(threads|processes|sockets|ulimits_soft)
+          # container_last_seen and container_health_state are cAdvisor
+          # bookkeeping; pod health comes from kube-state-metrics.
+          # cpu_load_d_average_10s is a 10s sample that is useless at a 60s
+          # scrape interval.
+          - action: drop
+            sourceLabels: [__name__]
+            regex: container_(last_seen|health_state|cpu_load_d_average_10s)
+          # Keep BYTES for network; drop packet counters and per-interface
+          # error/drop counters (6 families, ~9k series). NIC errors that matter
+          # are visible on the host via node-exporter.
+          - action: drop
+            sourceLabels: [__name__]
+            regex: container_network_(receive|transmit)_(errors_total|packets_total|packets_dropped_total)
 
     # --- Prometheus ---
     prometheus:

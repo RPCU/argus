@@ -117,6 +117,48 @@ spec:
       or (rule:admin_or_owner and 'PRIMARY':%(zone_type)s)
       or (is_admin:True and 'SECONDARY':%(zone_type)s)
       or (role:member and project_id:%(recordset_project_id)s and 'PRIMARY':%(zone_type)s)
+  # PowerDNS is the AUTHORITATIVE nameserver for the Designate zones, including
+  # `rpcu.lan`. Every consumer of a `*.rpcu.lan` name depends on it: the mgmt
+  # cluster, workload clusters, the host dnsmasq forwarder in hephaestus
+  # (`/rpcu.lan/10.0.0.241`), and Prometheus remote_write to
+  # `mimir.mgmt.rpcu.lan`. If PowerDNS cannot answer, `rpcu.lan` resolution
+  # fails CLUSTER-WIDE.
+  #
+  # 2026-07-26: every container in this stack shipped with `resources: {}`,
+  # i.e. QoS BestEffort, i.e. cgroup v2 `cpu.weight` of 1 (the minimum). On
+  # these hyperconverged hosts that means they lose every scheduling contest
+  # against the Ceph OSDs (2 CPU / 5Gi requests) and the tenant qemu processes.
+  # With `lucy` at 91% CPU (10953m of 12 cores) the effect was:
+  #
+  #   1. The galera pod's `ssl-terminator` was starved and stopped answering,
+  #      so its readiness probe failed (`connect: connection refused` :9101).
+  #   2. kubelet recreated the pod -> 18 restarts over 47h.
+  #   3. While the DB was gone PowerDNS could not reach its backend and
+  #      answered SERVFAIL for every query:
+  #        "Backend error: Unable to launch gmysql connection: ... ERROR 2013
+  #         (HY000): Lost connection to MySQL server at 'handshake...'"
+  #   4. `rpcu.lan` therefore resolved INTERMITTENTLY - the classic "works, then
+  #      doesn't, then works again" signature.
+  #
+  # This is the SAME failure mode as the OVN control plane (see "OVN control
+  # plane must not be BestEffort" in AGENTS.md Section 8) and takes the same
+  # shape of fix. Measured usage is tiny (galera 51m CPU / 301Mi, haproxy
+  # 160Mi) - the problem was never capacity, it was PRIORITY. A CPU request
+  # costs nothing on an idle node and only binds under contention, which is
+  # exactly when DNS must keep working.
+  #
+  # NO CPU LIMITS anywhere: CFS-throttling a database or a proxy destroys tail
+  # latency and would re-create the probe-timeout death spiral this fixes (same
+  # rationale as the Ceph and OVN daemons). Memory limits are a generous
+  # runaway backstop (~5-7x observed RSS), not a target.
+  #
+  # NOT FIXABLE HERE: the CRD exposes no `resources` for the PowerDNS SERVER
+  # pod itself (`spec.powerdns` has only database/loadBalancerIP/replicas/
+  # scheduleRuleWhenUnsatisfiable/subnetCidr), nor for the galera pod's
+  # `ssl-terminator` sidecar - the very container whose probe failed. Those
+  # stay BestEffort until yaook exposes them upstream. Fixing the DB removes
+  # the trigger, but the sidecar gap is why this needs an upstream change to be
+  # fully closed.
   powerdns:
     database:
       backup:
@@ -125,8 +167,65 @@ spec:
         warmKeepMax: "3"
       proxy:
         replicas: 1
+        resources:
+          # haproxy fronts the galera DB for PowerDNS. Starved, it drops the
+          # backend connection and PowerDNS SERVFAILs just as if the DB were
+          # down.
+          haproxy:
+            requests:
+              cpu: 50m
+              memory: 192Mi
+            limits:
+              memory: 512Mi
+          service-reload:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          create-ca-bundle:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
         scheduleRuleWhenUnsatisfiable: ScheduleAnyway
       replicas: 1
+      resources:
+        # The single-replica Galera node backing PowerDNS. `replicas: 1` means
+        # there is NO redundancy: if this pod is evicted or OOM-killed, rpcu.lan
+        # resolution stops until it comes back. Sized ~2x observed RSS with a
+        # 2Gi backstop.
+        mariadb-galera:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            memory: 2Gi
+        backup-creator:
+          requests:
+            cpu: 10m
+            memory: 64Mi
+          limits:
+            memory: 256Mi
+        backup-shifter:
+          requests:
+            cpu: 10m
+            memory: 96Mi
+          limits:
+            memory: 256Mi
+        mysqld-exporter:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 128Mi
+        replication-ports-blackbox-exporter:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 128Mi
       scheduleRuleWhenUnsatisfiable: ScheduleAnyway
       storageSize: 8Gi
       timeoutClient: 300

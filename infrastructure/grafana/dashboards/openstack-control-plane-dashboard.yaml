@@ -1,5 +1,42 @@
-# GrafanaDashboard — OpenStack Control Plane Health.
-# API server performance, etcd health, pod phase, top consumers.
+# GrafanaDashboard — OpenStack Control Plane (openstack cluster ONLY).
+#
+# SCOPE: this dashboard is deliberately SINGLE-CLUSTER. Every query is pinned to
+# `cluster="openstack"` and there is NO $cluster template variable — it exists to
+# answer "how is OpenStack behaving, and what is the baremetal Kubernetes
+# underneath it doing?", not to compare clusters. Cross-cluster views belong in
+# the cluster-overview dashboard.
+#
+# WHAT IT REPLACED: the previous version of this file was a generic multi-cluster
+# Kubernetes dashboard with a `$cluster` selector and a single empty "OpenStack
+# Control Plane" row. It contained no OpenStack metrics at all, and several of
+# its panels were permanently blank because they queried
+# `apiserver_request_duration_seconds_bucket`, which infrastructure/monitoring
+# drops for cardinality reasons.
+#
+# METRIC PROVENANCE — every metric used below was verified to EXIST on the live
+# openstack cluster by scraping the exporter before the panel was written. This
+# matters: the failure mode being fixed here is dashboards built on plausible-
+# looking metric names that never resolve.
+#
+#   rabbitmq_*  yaook amqp_service_monitor    (RabbitMQ prometheus plugin)
+#   mysql_*     yaook mysql_service_monitor   (mysqld_exporter, incl. Galera wsrep)
+#   socket_up   yaook ovn_monitoring pods, port 9999/8008
+#   flow_limit  yaook ovn_monitoring pods, port 9999/8008
+#   node_*      node-exporter
+#   kube_*      kube-state-metrics
+#   container_* cAdvisor (only the two families kept after the cardinality trim)
+#
+# DELIBERATE OMISSIONS:
+#   - No `openstack_*` panels (nova hypervisors, VM counts, quotas). Those come
+#     from prometheus-openstack-exporter, which is NOT deployed. Adding panels
+#     for them would just create more empty graphs.
+#   - OVS coverage is thin (socket_up, flow_limit) because that is genuinely all
+#     the yaook ovn-monitoring DaemonSet exports. Its PodMonitor is ALSO broken
+#     upstream: it references container ports named `prometheus` /
+#     `ovs-vswitchd-metrics`, but the pods actually expose `metrics` (8008) and
+#     `ovs-metrics` (8007), so it selects no targets at all. Until that is fixed
+#     the two gauges below are best-effort.
+#   - No apiserver latency histograms — dropped upstream for cardinality.
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
@@ -15,417 +52,809 @@ spec:
     {
       "annotations": { "list": [] },
       "editable": true,
-      "fiscalYearStartMonth": 0,
       "graphTooltip": 1,
       "id": null,
       "links": [],
-      "liveNow": false,
+      "refresh": "1m",
+      "tags": ["openstack", "yaook", "baremetal"],
+      "time": { "from": "now-6h", "to": "now" },
+      "timezone": "browser",
+      "title": "OpenStack Control Plane",
+      "uid": "openstack-control-plane",
+      "templating": {
+        "list": [
+          {
+            "name": "node",
+            "label": "Baremetal node",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "Mimir" },
+            "query": "label_values(kube_node_info{cluster=\"openstack\"}, node)",
+            "includeAll": true,
+            "multi": true,
+            "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+            "refresh": 2,
+            "sort": 1
+          }
+        ]
+      },
       "panels": [
         {
           "collapsed": false,
           "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
           "id": 1,
-          "title": "Cluster Overview",
+          "title": "Health Summary",
           "type": "row"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Galera/MariaDB instances backing the OpenStack services that are reachable by their exporter. Any value below the total means a service database is down - OpenStack API calls against that service will fail.",
           "fieldConfig": {
             "defaults": {
               "color": { "mode": "thresholds" },
-              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-              "unit": "short"
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              }
             }
           },
-          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+          "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
           "id": 2,
           "options": {
             "colorMode": "value",
-            "graphMode": "area",
-            "justifyMode": "auto",
+            "graphMode": "none",
             "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
             "textMode": "auto"
           },
           "targets": [
             {
-              "expr": "count(kube_node_info{cluster=~\"$cluster\"})",
-              "legendFormat": "Nodes",
+              "expr": "sum(mysql_up{cluster=\"openstack\"})",
+              "legendFormat": "up",
               "refId": "A"
             }
           ],
-          "title": "Total Nodes",
+          "title": "Databases Up",
           "type": "stat"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Galera nodes reporting wsrep_ready=1, i.e. able to accept writes. A node that is connected but NOT ready is still syncing (SST/IST) and will reject queries.",
           "fieldConfig": {
             "defaults": {
               "color": { "mode": "thresholds" },
-              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-              "unit": "short"
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              }
             }
           },
-          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+          "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
           "id": 3,
           "options": {
             "colorMode": "value",
-            "graphMode": "area",
-            "justifyMode": "auto",
+            "graphMode": "none",
             "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
             "textMode": "auto"
           },
           "targets": [
             {
-              "expr": "count(kube_pod_info{cluster=~\"$cluster\"})",
-              "legendFormat": "Pods",
+              "expr": "sum(mysql_global_status_wsrep_ready{cluster=\"openstack\"})",
+              "legendFormat": "ready",
               "refId": "A"
             }
           ],
-          "title": "Total Pods",
+          "title": "Galera Write-Ready",
           "type": "stat"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Total messages sitting READY (undelivered) across every RabbitMQ queue. This is THE leading indicator of an OpenStack stall: agents publish RPC into the bus and a growing backlog means consumers (nova-compute, neutron agents, cinder-volume) are not keeping up or are dead.",
           "fieldConfig": {
             "defaults": {
               "color": { "mode": "thresholds" },
-              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-              "unit": "short"
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 100 },
+                  { "color": "red", "value": 1000 }
+                ]
+              }
             }
           },
-          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+          "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
           "id": 4,
           "options": {
             "colorMode": "value",
             "graphMode": "area",
-            "justifyMode": "auto",
             "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
             "textMode": "auto"
           },
           "targets": [
             {
-              "expr": "count(count by (namespace) (kube_pod_info{cluster=~\"$cluster\"}))",
-              "legendFormat": "Namespaces",
+              "expr": "sum(rabbitmq_queue_messages_ready{cluster=\"openstack\"})",
+              "legendFormat": "ready",
               "refId": "A"
             }
           ],
-          "title": "Active Namespaces",
+          "title": "Message Backlog",
           "type": "stat"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Active RabbitMQ resource alarms (memory watermark, disk watermark, file-descriptor limit). ANY non-zero value means RabbitMQ has BLOCKED publishers - OpenStack will appear to hang rather than error.",
           "fieldConfig": {
             "defaults": {
               "color": { "mode": "thresholds" },
-              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-              "unit": "short"
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 1 }
+                ]
+              }
             }
           },
-          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+          "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
           "id": 5,
           "options": {
-            "colorMode": "value",
-            "graphMode": "area",
-            "justifyMode": "auto",
+            "colorMode": "background",
+            "graphMode": "none",
             "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
             "textMode": "auto"
           },
           "targets": [
             {
-              "expr": "count(kube_pod_status_phase{cluster=~\"$cluster\", phase=\"Running\"})",
-              "legendFormat": "Running",
+              "expr": "sum(rabbitmq_alarms_memory_used_watermark{cluster=\"openstack\"}) + sum(rabbitmq_alarms_free_disk_space_watermark{cluster=\"openstack\"}) + sum(rabbitmq_alarms_file_descriptor_limit{cluster=\"openstack\"})",
+              "legendFormat": "alarms",
               "refId": "A"
-            },
-            {
-              "expr": "count(kube_pod_status_phase{cluster=~\"$cluster\", phase=\"Pending\"}) or vector(0)",
-              "legendFormat": "Pending",
-              "refId": "B"
-            },
-            {
-              "expr": "count(kube_pod_status_phase{cluster=~\"$cluster\", phase=\"Failed\"}) or vector(0)",
-              "legendFormat": "Failed",
-              "refId": "C"
             }
           ],
-          "title": "Pod Phases",
+          "title": "RabbitMQ Alarms",
           "type": "stat"
         },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "ovs-vswitchd sockets reachable, one per hypervisor. If this drops below the node count, that node's data plane is degraded and VMs on it lose connectivity.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              }
+            }
+          },
+          "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+          "id": 6,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "expr": "sum(socket_up{cluster=\"openstack\"})",
+              "legendFormat": "vswitchd",
+              "refId": "A"
+            }
+          ],
+          "title": "OVS vswitchd Up",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Highest CPU utilisation across the three hypervisors. These hosts are HYPERCONVERGED - they run the OpenStack control plane, Ceph OSDs and tenant VMs together. Sustained high values are the documented root cause of both the OVN control-plane collapse and the PowerDNS/Galera restart loop, because BestEffort pods get cpu.weight=1 and are starved.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "unit": "percent",
+              "max": 100,
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 75 },
+                  { "color": "red", "value": 90 }
+                ]
+              }
+            }
+          },
+          "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+          "id": 7,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "area",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "expr": "max(100 * (1 - avg by (node) (rate(node_cpu_seconds_total{cluster=\"openstack\",mode=\"idle\"}[5m]))))",
+              "legendFormat": "peak",
+              "refId": "A"
+            }
+          ],
+          "title": "Peak Node CPU",
+          "type": "stat"
+        },
+
         {
           "collapsed": false,
           "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
-          "id": 6,
-          "title": "API Server Performance",
+          "id": 10,
+          "title": "Message Bus (RabbitMQ) — OpenStack RPC",
           "type": "row"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Ready (undelivered) messages per OpenStack service bus. A queue that climbs and does not drain identifies WHICH component is stuck - e.g. a rising nova queue with healthy neutron points at nova-compute, not at RabbitMQ.",
           "fieldConfig": {
             "defaults": {
-              "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 20 },
-              "unit": "reqps"
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
+              "unit": "short"
             }
           },
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
-          "id": 7,
-          "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+          "id": 11,
+          "options": {
+            "legend": { "calcs": ["max", "lastNotNull"], "displayMode": "table", "placement": "right" },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
           "targets": [
             {
-              "expr": "sum(rate(apiserver_request_total{cluster=~\"$cluster\"}[5m])) by (verb)",
-              "legendFormat": "{{verb}}",
+              "expr": "sum by (job) (rabbitmq_queue_messages_ready{cluster=\"openstack\"})",
+              "legendFormat": "{{job}}",
               "refId": "A"
             }
           ],
-          "title": "API Server Request Rate (by verb)",
+          "title": "Queue Backlog — Ready Messages by Service",
           "type": "timeseries"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Unacknowledged messages: delivered to a consumer but not yet acked. Persistently high means a consumer took work and never finished it (hung agent), which is different from a backlog of undelivered work.",
           "fieldConfig": {
             "defaults": {
-              "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 20 },
-              "unit": "s"
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
+              "unit": "short"
             }
           },
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
-          "id": 8,
-          "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-          "targets": [
-            {
-              "expr": "histogram_quantile(0.99, sum(rate(apiserver_request_duration_seconds_bucket{cluster=~\"$cluster\"}[5m])) by (le, verb))",
-              "legendFormat": "p99 {{verb}}",
-              "refId": "A"
-            },
-            {
-              "expr": "histogram_quantile(0.50, sum(rate(apiserver_request_duration_seconds_bucket{cluster=~\"$cluster\"}[5m])) by (le, verb))",
-              "legendFormat": "p50 {{verb}}",
-              "refId": "B"
-            }
-          ],
-          "title": "API Server Latency (p50 / p99)",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "thresholds" },
-              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 10 }, { "color": "red", "value": 50 }] },
-              "unit": "percent"
-            }
-          },
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
-          "id": 9,
-          "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-          "targets": [
-            {
-              "expr": "100 * sum(rate(apiserver_request_total{cluster=~\"$cluster\", code=~\"[45]..\"}[5m])) by (code) / sum(rate(apiserver_request_total{cluster=~\"$cluster\"}[5m]))",
-              "legendFormat": "{{code}} errors %",
-              "refId": "A"
-            }
-          ],
-          "title": "API Server Error Rate (4xx/5xx %)",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 20 },
-              "unit": "short"
-            }
-          },
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
-          "id": 10,
-          "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-          "targets": [
-            {
-              "expr": "sum(rate(apiserver_current_inflight_requests{cluster=~\"$cluster\"}[5m])) by (requestKind)",
-              "legendFormat": "{{requestKind}}",
-              "refId": "A"
-            }
-          ],
-          "title": "Inflight API Requests",
-          "type": "timeseries"
-        },
-        {
-          "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
-          "id": 11,
-          "title": "etcd Health",
-          "type": "row"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 20 },
-              "unit": "s"
-            }
-          },
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
           "id": 12,
-          "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+          "options": {
+            "legend": { "calcs": ["max", "lastNotNull"], "displayMode": "table", "placement": "right" },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
           "targets": [
             {
-              "expr": "histogram_quantile(0.99, sum(rate(etcd_disk_wal_fsync_duration_seconds_bucket{cluster=~\"$cluster\"}[5m])) by (le, instance))",
-              "legendFormat": "p99 wal-fsync {{instance}}",
+              "expr": "sum by (job) (rabbitmq_queue_messages_unacked{cluster=\"openstack\"})",
+              "legendFormat": "{{job}}",
               "refId": "A"
-            },
-            {
-              "expr": "histogram_quantile(0.99, sum(rate(etcd_disk_backend_commit_duration_seconds_bucket{cluster=~\"$cluster\"}[5m])) by (le, instance))",
-              "legendFormat": "p99 backend-commit {{instance}}",
-              "refId": "B"
             }
           ],
-          "title": "etcd Disk Latency (p99)",
+          "title": "Unacknowledged Messages by Service",
           "type": "timeseries"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Publish vs deliver rate across the bus. Healthy OpenStack keeps these two curves close together; a sustained gap is the bus falling behind.",
           "fieldConfig": {
             "defaults": {
-              "color": { "mode": "thresholds" },
-              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] },
-              "unit": "short"
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 0, "showPoints": "never", "spanNulls": true },
+              "unit": "reqps"
             }
           },
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 14 },
           "id": 13,
-          "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+          "options": {
+            "legend": { "calcs": ["mean"], "displayMode": "list", "placement": "bottom" },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
           "targets": [
             {
-              "expr": "increase(etcd_server_leader_changes_seen_total{cluster=~\"$cluster\"}[1h])",
-              "legendFormat": "{{instance}}",
+              "expr": "sum(rate(rabbitmq_queue_messages_published_total{cluster=\"openstack\"}[5m]))",
+              "legendFormat": "published",
               "refId": "A"
+            },
+            {
+              "expr": "sum(rate(rabbitmq_queue_messages_delivered_total{cluster=\"openstack\"}[5m]))",
+              "legendFormat": "delivered",
+              "refId": "B"
+            },
+            {
+              "expr": "sum(rate(rabbitmq_queue_messages_redelivered_total{cluster=\"openstack\"}[5m]))",
+              "legendFormat": "redelivered",
+              "refId": "C"
             }
           ],
-          "title": "etcd Leader Changes (1h)",
+          "title": "Bus Throughput",
           "type": "timeseries"
         },
         {
-          "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 31 },
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "RabbitMQ memory against its own high-watermark limit. Crossing the watermark blocks publishers, which manifests as OpenStack API calls hanging.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
+              "unit": "percent",
+              "max": 100,
+              "min": 0
+            }
+          },
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 14 },
           "id": 14,
-          "title": "Resource Consumption",
+          "options": {
+            "legend": { "calcs": ["max", "lastNotNull"], "displayMode": "table", "placement": "right" },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "expr": "100 * rabbitmq_process_resident_memory_bytes{cluster=\"openstack\"} / clamp_min(rabbitmq_resident_memory_limit_bytes{cluster=\"openstack\"}, 1)",
+              "legendFormat": "{{job}}",
+              "refId": "A"
+            }
+          ],
+          "title": "RabbitMQ Memory vs Watermark",
+          "type": "timeseries"
+        },
+
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 21 },
+          "id": 20,
+          "title": "Service Databases (Galera / MariaDB)",
           "type": "row"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Per-database health. `up` = exporter reachable; `wsrep_ready` = accepting writes; `wsrep_connected` = joined to the cluster. A row where up=1 but ready=0 is a database that is running but refusing queries.",
           "fieldConfig": {
             "defaults": {
-              "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 20 },
-              "unit": "percent"
+              "color": { "mode": "thresholds" },
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              },
+              "custom": { "align": "auto", "cellOptions": { "type": "color-background" } }
             }
           },
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
-          "id": 15,
-          "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+          "id": 21,
+          "options": { "showHeader": true },
           "targets": [
             {
-              "expr": "(100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\", cluster=~\"$cluster\"}[5m])) by (instance) * 100))",
-              "legendFormat": "{{instance}}",
+              "expr": "mysql_up{cluster=\"openstack\"}",
+              "format": "table",
+              "instant": true,
+              "legendFormat": "up",
+              "refId": "A"
+            },
+            {
+              "expr": "mysql_global_status_wsrep_ready{cluster=\"openstack\"}",
+              "format": "table",
+              "instant": true,
+              "legendFormat": "ready",
+              "refId": "B"
+            },
+            {
+              "expr": "mysql_global_status_wsrep_connected{cluster=\"openstack\"}",
+              "format": "table",
+              "instant": true,
+              "legendFormat": "connected",
+              "refId": "C"
+            }
+          ],
+          "transformations": [
+            { "id": "merge", "options": {} },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": { "Time": true, "__name__": true, "cluster": true, "endpoint": true, "namespace": true, "service": true, "container": true, "pod": true },
+                "renameByName": { "Value #A": "up", "Value #B": "wsrep_ready", "Value #C": "wsrep_connected", "job": "database" }
+              }
+            }
+          ],
+          "title": "Database Status",
+          "type": "table"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Connection pool utilisation per database. OpenStack services open long-lived pools; hitting max_connections makes API calls fail with 500s that look like application bugs.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
+              "unit": "percent",
+              "max": 100,
+              "min": 0
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+          "id": 22,
+          "options": {
+            "legend": { "calcs": ["max", "lastNotNull"], "displayMode": "table", "placement": "right" },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "expr": "100 * mysql_global_status_threads_connected{cluster=\"openstack\"} / clamp_min(mysql_global_variables_max_connections{cluster=\"openstack\"}, 1)",
+              "legendFormat": "{{job}}",
               "refId": "A"
             }
           ],
-          "title": "CPU Usage per Node (%)",
+          "title": "Connection Pool Usage",
           "type": "timeseries"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Query throughput per database. Useful for spotting a service hot-looping against its DB (a common yaook operator misconfiguration signature).",
           "fieldConfig": {
             "defaults": {
-              "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 20 },
-              "unit": "percent"
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 0, "showPoints": "never", "spanNulls": true },
+              "unit": "reqps"
             }
           },
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
-          "id": 16,
-          "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+          "gridPos": { "h": 7, "w": 8, "x": 0, "y": 30 },
+          "id": 23,
+          "options": {
+            "legend": { "calcs": ["mean"], "displayMode": "list", "placement": "bottom" },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
           "targets": [
             {
-              "expr": "(1 - (node_memory_MemAvailable_bytes{cluster=~\"$cluster\"} / node_memory_MemTotal_bytes{cluster=~\"$cluster\"})) * 100",
-              "legendFormat": "{{instance}}",
+              "expr": "sum by (job) (rate(mysql_global_status_queries{cluster=\"openstack\"}[5m]))",
+              "legendFormat": "{{job}}",
               "refId": "A"
             }
           ],
-          "title": "Memory Usage per Node (%)",
+          "title": "Query Rate",
           "type": "timeseries"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Slow queries. On this hyperconverged cluster a rise here usually tracks Ceph latency or CPU starvation rather than bad SQL.",
           "fieldConfig": {
-            "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" }
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 0, "showPoints": "never", "spanNulls": true },
+              "unit": "reqps"
+            }
           },
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
-          "id": 17,
+          "gridPos": { "h": 7, "w": 8, "x": 8, "y": 30 },
+          "id": 24,
           "options": {
-            "displayMode": "gradient",
-            "orientation": "horizontal",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "showUnfilled": true
+            "legend": { "calcs": ["max"], "displayMode": "list", "placement": "bottom" },
+            "tooltip": { "mode": "multi", "sort": "desc" }
           },
           "targets": [
             {
-              "expr": "topk(10, sum(rate(container_cpu_usage_seconds_total{container!=\"\", cluster=~\"$cluster\"}[5m])) by (namespace, pod))",
-              "legendFormat": "{{namespace}}/{{pod}}",
+              "expr": "sum by (job) (rate(mysql_global_status_slow_queries{cluster=\"openstack\"}[5m]))",
+              "legendFormat": "{{job}}",
               "refId": "A"
             }
           ],
-          "title": "Top 10 Pods by CPU Usage (Cores)",
-          "type": "bargauge"
+          "title": "Slow Query Rate",
+          "type": "timeseries"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Aborted connection attempts. Spikes here coincide with the ssl-terminator sidecar restarting - the exact failure that took PowerDNS down and broke rpcu.lan resolution cluster-wide.",
           "fieldConfig": {
-            "defaults": { "color": { "mode": "palette-classic" }, "unit": "bytes" }
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 0, "showPoints": "never", "spanNulls": true },
+              "unit": "reqps"
+            }
           },
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
-          "id": 18,
+          "gridPos": { "h": 7, "w": 8, "x": 16, "y": 30 },
+          "id": 25,
           "options": {
-            "displayMode": "gradient",
-            "orientation": "horizontal",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "showUnfilled": true
+            "legend": { "calcs": ["max"], "displayMode": "list", "placement": "bottom" },
+            "tooltip": { "mode": "multi", "sort": "desc" }
           },
           "targets": [
             {
-              "expr": "topk(10, sum(container_memory_working_set_bytes{container!=\"\", cluster=~\"$cluster\"}) by (namespace, pod))",
-              "legendFormat": "{{namespace}}/{{pod}}",
+              "expr": "sum by (job) (rate(mysql_global_status_aborted_connects{cluster=\"openstack\"}[5m]))",
+              "legendFormat": "{{job}}",
               "refId": "A"
             }
           ],
-          "title": "Top 10 Pods by Memory Working Set",
-          "type": "bargauge"
+          "title": "Aborted Connections",
+          "type": "timeseries"
+        },
+
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 37 },
+          "id": 30,
+          "title": "Network Data Plane (OVS / OVN)",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Per-hypervisor ovs-vswitchd socket reachability. A zero here means that node cannot program flows: existing VMs may keep running on cached flows while all NEW port binds fail, which surfaces as VMs that boot but never get network.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "custom": { "fillOpacity": 30, "showPoints": "never", "spanNulls": true },
+              "unit": "short",
+              "max": 1,
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              }
+            }
+          },
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 38 },
+          "id": 31,
+          "options": {
+            "legend": { "calcs": ["min", "lastNotNull"], "displayMode": "table", "placement": "right" },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "expr": "socket_up{cluster=\"openstack\"}",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "title": "ovs-vswitchd Socket Up",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "vswitchd flow limit per node. ovs-vswitchd lowers this automatically when it is under pressure and cannot keep up with flow setups - a falling value is an early warning of data-plane CPU starvation.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 0, "showPoints": "never", "spanNulls": true },
+              "unit": "short"
+            }
+          },
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 38 },
+          "id": 32,
+          "options": {
+            "legend": { "calcs": ["min", "lastNotNull"], "displayMode": "table", "placement": "right" },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "expr": "flow_limit{cluster=\"openstack\"}",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "title": "OVS Flow Limit",
+          "type": "timeseries"
+        },
+
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 45 },
+          "id": 40,
+          "title": "Baremetal Kubernetes (lucy / makise / quinn)",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "CPU utilisation per hypervisor. THE most important panel here: these nodes run the OpenStack control plane, Ceph OSDs and tenant VMs on the same cores. Every documented outage on this cluster (OVN raft loss, PowerDNS SERVFAIL) began with a node pinned near 100% starving BestEffort pods.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
+              "unit": "percent",
+              "max": 100,
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 75 },
+                  { "color": "red", "value": 90 }
+                ]
+              }
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 46 },
+          "id": 41,
+          "options": {
+            "legend": { "calcs": ["mean", "max", "lastNotNull"], "displayMode": "table", "placement": "right" },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "expr": "100 * (1 - avg by (node) (rate(node_cpu_seconds_total{cluster=\"openstack\",mode=\"idle\",node=~\"$node\"}[5m])))",
+              "legendFormat": "{{node}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Node CPU Utilisation",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Run-queue pressure relative to core count. A value above 1.0 means more runnable work than cores - processes are waiting. This is the metric that read 5.75 (load 69 on 12 cores) during the OVN collapse, while plain CPU% looked merely 'busy'.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 1 },
+                  { "color": "red", "value": 2 }
+                ]
+              }
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 46 },
+          "id": 42,
+          "options": {
+            "legend": { "calcs": ["mean", "max", "lastNotNull"], "displayMode": "table", "placement": "right" },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "expr": "sum by (node) (node_load1{cluster=\"openstack\",node=~\"$node\"}) / clamp_min(count by (node) (node_cpu_seconds_total{cluster=\"openstack\",mode=\"idle\",node=~\"$node\"}), 1)",
+              "legendFormat": "{{node}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Load per Core",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Memory utilisation per hypervisor (excludes reclaimable cache).",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
+              "unit": "percent",
+              "max": 100,
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 80 },
+                  { "color": "red", "value": 90 }
+                ]
+              }
+            }
+          },
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 54 },
+          "id": 43,
+          "options": {
+            "legend": { "calcs": ["mean", "max", "lastNotNull"], "displayMode": "table", "placement": "right" },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "expr": "100 * (1 - sum by (node) (node_memory_MemAvailable_bytes{cluster=\"openstack\",node=~\"$node\"}) / clamp_min(sum by (node) (node_memory_MemTotal_bytes{cluster=\"openstack\",node=~\"$node\"}), 1))",
+              "legendFormat": "{{node}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Node Memory Utilisation",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Pods in the yaook namespace that are NOT Running, plus container restarts. Restarts on this cluster are usually starvation-induced probe failures rather than application crashes - correlate with the CPU panel above.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
+              "unit": "short"
+            }
+          },
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 54 },
+          "id": 44,
+          "options": {
+            "legend": { "calcs": ["max", "lastNotNull"], "displayMode": "table", "placement": "right" },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "expr": "sum by (phase) (kube_pod_status_phase{cluster=\"openstack\",namespace=\"yaook\",phase!=\"Running\"} > 0)",
+              "legendFormat": "pods {{phase}}",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(increase(kube_pod_container_status_restarts_total{cluster=\"openstack\",namespace=\"yaook\"}[1h]))",
+              "legendFormat": "container restarts (1h)",
+              "refId": "B"
+            }
+          ],
+          "title": "OpenStack Pod Health",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Top OpenStack control-plane pods by CPU. Identifies which yaook component is consuming the hypervisor cores that the data plane and Ceph also need.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
+              "unit": "short"
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 61 },
+          "id": 45,
+          "options": {
+            "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "right" },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "expr": "topk(10, sum by (pod) (rate(container_cpu_usage_seconds_total{cluster=\"openstack\",namespace=\"yaook\",container!=\"\"}[5m])))",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Top 10 OpenStack Pods by CPU (cores)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Top OpenStack control-plane pods by memory working set.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
+              "unit": "bytes"
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 61 },
+          "id": 46,
+          "options": {
+            "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "right" },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "expr": "topk(10, sum by (pod) (container_memory_working_set_bytes{cluster=\"openstack\",namespace=\"yaook\",container!=\"\"}))",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Top 10 OpenStack Pods by Memory",
+          "type": "timeseries"
         }
       ],
-      "refresh": "30s",
-      "schemaVersion": 38,
-      "style": "dark",
-      "tags": ["openstack", "control-plane", "api", "etcd"],
-      "templating": {
-        "list": [
-          {
-            "allValue": ".*",
-            "current": { "selected": true, "text": "All", "value": "$__all" },
-            "datasource": { "type": "prometheus", "uid": "Mimir" },
-            "definition": "label_values(kube_node_info, cluster)",
-            "includeAll": true,
-            "label": "Cluster",
-            "multi": true,
-            "name": "cluster",
-            "options": [],
-            "query": { "query": "label_values(kube_node_info, cluster)", "refId": "StandardVariableQuery" },
-            "refresh": 1,
-            "regex": "",
-            "skipUrlSync": false,
-            "sort": 1,
-            "type": "query"
-          }
-        ]
-      },
-      "time": { "from": "now-1h", "to": "now" },
-      "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"] },
-      "timezone": "browser",
-      "title": "OpenStack Control Plane",
-      "uid": "openstack-control-plane"
+      "schemaVersion": 39,
+      "version": 1,
+      "weekStart": ""
     }

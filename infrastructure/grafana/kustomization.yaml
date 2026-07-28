@@ -7,4 +7,5 @@ resources:
   - dashboards/node-filesystem-dashboard.yaml
   - dashboards/ceph-storage-dashboard.yaml
   - dashboards/openstack-control-plane-dashboard.yaml
+  - dashboards/palworld-dashboard.yaml
   - httproute.yaml

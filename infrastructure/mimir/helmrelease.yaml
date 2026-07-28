@@ -59,23 +59,22 @@ spec:
         enabled: false
       persistentVolume:
         enabled: true
-        # KEEP AT 5Gi. A StatefulSet's volumeClaimTemplates are IMMUTABLE, so
-        # raising this number does NOT resize an existing PVC — it makes the
-        # Helm upgrade fail outright with "updates to statefulset spec for
-        # fields other than 'replicas' ... are forbidden", wedging the release.
+        # The PVC was originally 2Gi, expanded to 5Gi in-place, and is now
+        # expanded to 20Gi. The WAL + head blocks + flushed blocks all live on
+        # this single volume. At ~150k series / 60s scrape, each 2h head-block
+        # rotation consumes ~7-8 GiB (WAL + head + pre-compaction blocks), so
+        # 5Gi filled up repeatedly and 10Gi would still be tight.
         #
-        # The live STS template already carries 5Gi; the PVC was created earlier
-        # at 2Gi and filled up, which is what put the ingester into
-        # CrashLoopBackOff ("open /data/tsdb/anonymous/wal/00000256: no space
-        # left on device"). The fix is to expand the PVC IN PLACE to match this
-        # value (csi-cinder-sc-delete has allowVolumeExpansion: true):
-        #
-        #   kubectl patch pvc storage-mimir-ingester-0 -n monitoring \
-        #     -p '{"spec":{"resources":{"requests":{"storage":"5Gi"}}}}'
-        #
-        # 5Gi is ample now: the kube-apiserver histogram drop plus the 60s
-        # scrape interval cut ingestion roughly 4x.
-        size: 5Gi
+        # A StatefulSet's volumeClaimTemplates are IMMUTABLE, but Kubernetes
+        # allows increasing the size IF the StorageClass has
+        # allowVolumeExpansion: true (csi-cinder-sc-delete does). The two-step
+        # process is:
+        #   1. Expand the PVC in place (immediate, no pod restart needed):
+        #      kubectl patch pvc storage-mimir-ingester-0 -n monitoring \
+        #        -p '{"spec":{"resources":{"requests":{"storage":"20Gi"}}}}'
+        #   2. Update this value to match (so future installs get the right
+        #      size and the HelmRelease stays truthful).
+        size: 20Gi
       resources:
         requests:
           cpu: 50m
@@ -175,7 +174,7 @@ spec:
           #
           # 600k is headroom for that transient peak plus the other clusters
           # writing into this same tenant. Steady state is ~144k, so this still
-          # fails loudly long before the ingester exhausts its 2Gi limit.
+          # fails loudly long before the ingester exhausts its PVC.
           max_global_series_per_user: 600000
           compactor_blocks_retention_period: 72h
         memberlist:
@@ -193,6 +192,13 @@ spec:
           ring:
             unregister_on_shutdown: true
             replication_factor: 1
+          wal:
+            # Truncate WAL segments every 1h (default 2h). The WAL accumulates
+            # all unflushed samples; truncating more often keeps the on-disk
+            # footprint smaller and prevents the "no space left" spiral.
+            truncate_frequency: 1h
+            # Flush WAL on graceful shutdown so no data is lost during rollout.
+            flush_on_shutdown: true
         common:
           storage:
             backend: filesystem

@@ -192,13 +192,6 @@ spec:
           ring:
             unregister_on_shutdown: true
             replication_factor: 1
-          wal:
-            # Truncate WAL segments every 1h (default 2h). The WAL accumulates
-            # all unflushed samples; truncating more often keeps the on-disk
-            # footprint smaller and prevents the "no space left" spiral.
-            truncate_frequency: 1h
-            # Flush WAL on graceful shutdown so no data is lost during rollout.
-            flush_on_shutdown: true
         common:
           storage:
             backend: filesystem

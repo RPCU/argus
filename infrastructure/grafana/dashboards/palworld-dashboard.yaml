@@ -1,8 +1,24 @@
-# GrafanaDashboard — Palworld dedicated server metrics (palworld-exporter).
-# Source: https://grafana.com/grafana/dashboards/20421-palworld/
-# Metrics scraped on the production cluster (ServiceMonitor lives in the atlas
-# repo, clusters/production/palworld/servicemonitor.yaml) and remote_written to
-# central Mimir. Datasource UID rewritten from ${DS_PROMETHEUS} to "Mimir".
+# GrafanaDashboard — Palworld dedicated server.
+#
+# Metric source: the `exporter` sidecar in the atlas repo
+# (clusters/production/palworld/deploy.yaml) running
+# docker.io/banhcanh/palworld-exporter — https://github.com/Banh-Canh/palworld-exporter-go
+# It scrapes the server REST API (/v1/api) plus the save directory on disk.
+# Scraped by the production cluster's kube-prometheus-stack (ServiceMonitor in
+# atlas, clusters/production/palworld/servicemonitor.yaml) and remote_written to
+# central Mimir on mgmt, tagged cluster="production".
+#
+# Panel groups:
+#   Server Health          palworld_up / fps / frame_time / players / uptime / info
+#   Performance            FPS + frame time + concurrency + per-player session lanes
+#   Container & Storage    cAdvisor + kubelet volume stats for the gaming/palworld pod
+#   Players                /players endpoint: level, ping, buildings, coordinates
+#   Pals & World           /game-data endpoint — needs ENABLE_GAMEDATA_API=true on
+#                          the server (set in atlas clusters/production/palworld/cm.yaml);
+#                          these panels stay empty without it
+#   Saves & Settings       save-file sizes/mtimes + /settings game rates
+#
+# Datasource UID is "Mimir" (see ../mimir-datasource.yaml).
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
@@ -32,22 +48,24 @@ spec:
           }
         ]
       },
+      "description": "Palworld dedicated server — health, performance and world stats from Banh-Canh/palworld-exporter-go (REST API + save files), plus pod/PVC health from kube-prometheus-stack.",
       "editable": true,
       "fiscalYearStartMonth": 0,
-      "graphTooltip": 0,
+      "graphTooltip": 1,
       "id": null,
       "links": [],
-      "liveNow": false,
       "panels": [
         {
+          "collapsed": false,
           "gridPos": {
             "h": 1,
             "w": 24,
             "x": 0,
             "y": 0
           },
-          "id": 12,
-          "title": "Instant Reference",
+          "id": 1,
+          "panels": [],
+          "title": "Server Health",
           "type": "row"
         },
         {
@@ -55,6 +73,90 @@ spec:
             "type": "prometheus",
             "uid": "Mimir"
           },
+          "description": "palworld_up — 1 when the exporter's last scrape of the server REST API succeeded.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [
+                {
+                  "options": {
+                    "0": {
+                      "color": "red",
+                      "index": 1,
+                      "text": "DOWN"
+                    },
+                    "1": {
+                      "color": "green",
+                      "index": 0,
+                      "text": "UP"
+                    }
+                  },
+                  "type": "value"
+                }
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              },
+              "unit": "none"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 3,
+            "x": 0,
+            "y": 1
+          },
+          "id": 2,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value",
+            "wideLayout": true
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_up{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "title": "Server Status",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "Players currently connected.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -67,24 +169,93 @@ spec:
                   {
                     "color": "green",
                     "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
                   }
                 ]
               },
-              "unitScale": true
+              "unit": "short"
             },
             "overrides": []
           },
           "gridPos": {
-            "h": 6,
+            "h": 4,
             "w": 3,
-            "x": 0,
+            "x": 3,
             "y": 1
           },
-          "id": 5,
+          "id": 3,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_current_player_num{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "title": "Players Online",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "Connected players as a share of max_player_num.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "max": 100,
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 75
+                  },
+                  {
+                    "color": "red",
+                    "value": 90
+                  }
+                ]
+              },
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 3,
+            "x": 6,
+            "y": 1
+          },
+          "id": 4,
           "options": {
             "minVizHeight": 75,
             "minVizWidth": 75,
@@ -100,27 +271,20 @@ spec:
             "showThresholdMarkers": true,
             "sizing": "auto"
           },
-          "pluginVersion": "10.3.1",
           "targets": [
             {
               "datasource": {
                 "type": "prometheus",
                 "uid": "Mimir"
               },
-              "disableTextWrap": false,
-              "editorMode": "builder",
-              "exemplar": false,
-              "expr": "palworld_player_count",
-              "fullMetaSearch": false,
-              "includeNullMetadata": true,
-              "instant": true,
-              "legendFormat": "{{instance}}",
-              "range": false,
-              "refId": "A",
-              "useBackend": false
+              "editorMode": "code",
+              "expr": "100 * palworld_current_player_num{cluster=~\"$cluster\"} / palworld_max_player_num{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
             }
           ],
-          "title": "Active Players",
+          "title": "Slot Usage",
           "type": "gauge"
         },
         {
@@ -128,42 +292,41 @@ spec:
             "type": "prometheus",
             "uid": "Mimir"
           },
+          "description": "Simulation tick rate. Below ~20 the world starts visibly lagging.",
           "fieldConfig": {
             "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
               "mappings": [],
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
+                    "color": "red",
                     "value": null
                   },
                   {
-                    "color": "#6ED0E0",
+                    "color": "orange",
                     "value": 20
                   },
                   {
-                    "color": "#EAB839",
+                    "color": "green",
                     "value": 30
-                  },
-                  {
-                    "color": "red",
-                    "value": 40
                   }
                 ]
               },
-              "unit": "decmbytes",
-              "unitScale": true
+              "unit": "short"
             },
             "overrides": []
           },
           "gridPos": {
-            "h": 6,
+            "h": 4,
             "w": 3,
-            "x": 3,
+            "x": 9,
             "y": 1
           },
-          "id": 10,
+          "id": 5,
           "options": {
             "colorMode": "value",
             "graphMode": "area",
@@ -176,31 +339,23 @@ spec:
               "fields": "",
               "values": false
             },
-            "showPercentChange": false,
             "textMode": "auto",
             "wideLayout": true
           },
-          "pluginVersion": "10.3.1",
           "targets": [
             {
               "datasource": {
                 "type": "prometheus",
                 "uid": "Mimir"
               },
-              "disableTextWrap": false,
               "editorMode": "code",
-              "exemplar": false,
-              "expr": "palworld_level_save_size_bytes / 1000000",
-              "fullMetaSearch": false,
-              "includeNullMetadata": true,
-              "instant": true,
-              "legendFormat": "__auto",
-              "range": false,
-              "refId": "A",
-              "useBackend": false
+              "expr": "palworld_server_fps{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
             }
           ],
-          "title": "Level.sav File Size",
+          "title": "Server FPS",
           "type": "stat"
         },
         {
@@ -208,6 +363,7 @@ spec:
             "type": "prometheus",
             "uid": "Mimir"
           },
+          "description": "Milliseconds per server frame — the inverse of FPS.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -222,20 +378,226 @@ spec:
                     "value": null
                   },
                   {
+                    "color": "yellow",
+                    "value": 33
+                  },
+                  {
                     "color": "red",
-                    "value": 80
+                    "value": 50
                   }
                 ]
               },
-              "unit": "short",
-              "unitScale": true
+              "unit": "ms",
+              "decimals": 1
             },
             "overrides": []
           },
           "gridPos": {
-            "h": 6,
+            "h": 4,
             "w": 3,
-            "x": 6,
+            "x": 12,
+            "y": 1
+          },
+          "id": 6,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_server_frame_time{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "title": "Frame Time",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "Time since the Palworld process started (resets on pod restart / auto-reboot).",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "s"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 3,
+            "x": 15,
+            "y": 1
+          },
+          "id": 7,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_uptime{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "title": "Uptime",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "From palworld_server_info — label 'version'.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 3,
+            "x": 18,
+            "y": 1
+          },
+          "id": 8,
+          "options": {
+            "colorMode": "none",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "name",
+            "wideLayout": true,
+            "text": {
+              "titleSize": 14,
+              "valueSize": 22
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_server_info{cluster=~\"$cluster\"}",
+              "range": false,
+              "instant": true,
+              "refId": "A",
+              "legendFormat": "{{version}}"
+            }
+          ],
+          "title": "Server Version",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "Size of Level.sav on disk. Grows with every base, pal and building in the world; large saves slow down world load and autosave stalls.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 50000000
+                  },
+                  {
+                    "color": "red",
+                    "value": 100000000
+                  }
+                ]
+              },
+              "unit": "decbytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 3,
+            "x": 21,
             "y": 1
           },
           "id": 9,
@@ -251,51 +613,23 @@ spec:
               "fields": "",
               "values": false
             },
-            "showPercentChange": false,
             "textMode": "auto",
             "wideLayout": true
           },
-          "pluginVersion": "10.3.1",
           "targets": [
             {
               "datasource": {
                 "type": "prometheus",
                 "uid": "Mimir"
               },
-              "disableTextWrap": false,
               "editorMode": "code",
-              "exemplar": false,
-              "expr": "palworld_player_save_count",
-              "format": "time_series",
-              "fullMetaSearch": false,
-              "includeNullMetadata": true,
-              "instant": true,
-              "legendFormat": "{{instance}}",
-              "range": false,
-              "refId": "A",
-              "useBackend": false
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "Mimir"
-              },
-              "disableTextWrap": false,
-              "editorMode": "builder",
-              "exemplar": false,
-              "expr": "palworld_save_count",
-              "format": "time_series",
-              "fullMetaSearch": false,
-              "hide": false,
-              "includeNullMetadata": true,
-              "instant": true,
-              "legendFormat": "{{instance}}",
-              "range": false,
-              "refId": "B",
-              "useBackend": false
+              "expr": "palworld_level_save_size_bytes{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
             }
           ],
-          "title": "Player Save Count",
+          "title": "World Size (Level.sav)",
           "type": "stat"
         },
         {
@@ -304,11 +638,11 @@ spec:
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 7
+            "y": 5
           },
-          "id": 11,
+          "id": 10,
           "panels": [],
-          "title": "Data over time",
+          "title": "Performance",
           "type": "row"
         },
         {
@@ -316,37 +650,64 @@ spec:
             "type": "prometheus",
             "uid": "Mimir"
           },
+          "description": "Dashed lines mark the 20 / 30 FPS thresholds.",
           "fieldConfig": {
             "defaults": {
               "color": {
-                "mode": "continuous-GrYlRd"
+                "mode": "palette-classic"
               },
               "custom": {
-                "fillOpacity": 70,
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "opacity",
                 "hideFrom": {
                   "legend": false,
                   "tooltip": false,
                   "viz": false
                 },
                 "insertNulls": false,
-                "lineWidth": 0,
-                "spanNulls": false
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "dashed"
+                }
               },
               "mappings": [],
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
+                    "color": "red",
                     "value": null
                   },
                   {
-                    "color": "red",
-                    "value": 80
+                    "color": "orange",
+                    "value": 20
+                  },
+                  {
+                    "color": "green",
+                    "value": 30
                   }
                 ]
               },
-              "unitScale": true
+              "unit": "short",
+              "min": 0
             },
             "overrides": []
           },
@@ -354,48 +715,42 @@ spec:
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 8
+            "y": 6
           },
-          "id": 2,
+          "id": 11,
           "options": {
-            "alignValue": "left",
             "legend": {
-              "displayMode": "list",
+              "calcs": [
+                "min",
+                "mean",
+                "max",
+                "lastNotNull"
+              ],
+              "displayMode": "table",
               "placement": "bottom",
               "showLegend": true
             },
-            "mergeValues": true,
-            "rowHeight": 0.9,
-            "showValue": "auto",
             "tooltip": {
-              "mode": "single",
-              "sort": "none"
+              "mode": "multi",
+              "sort": "desc"
             }
           },
-          "pluginVersion": "10.3.1",
           "targets": [
             {
               "datasource": {
                 "type": "prometheus",
                 "uid": "Mimir"
               },
-              "disableTextWrap": false,
-              "editorMode": "builder",
-              "exemplar": false,
-              "expr": "palworld_server_info",
-              "format": "time_series",
-              "fullMetaSearch": false,
-              "includeNullMetadata": true,
-              "instant": false,
-              "interval": "",
-              "legendFormat": "{{name}} ({{instance}}) ({{version}})",
+              "editorMode": "code",
+              "expr": "palworld_server_fps{cluster=~\"$cluster\"}",
               "range": true,
+              "instant": false,
               "refId": "A",
-              "useBackend": false
+              "legendFormat": "fps"
             }
           ],
-          "title": "Server Status",
-          "type": "state-timeline"
+          "title": "Server FPS",
+          "type": "timeseries"
         },
         {
           "datasource": {
@@ -406,14 +761,39 @@ spec:
           "fieldConfig": {
             "defaults": {
               "color": {
-                "mode": "thresholds"
+                "mode": "palette-classic"
               },
               "custom": {
-                "align": "auto",
-                "cellOptions": {
-                  "type": "auto"
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "opacity",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
                 },
-                "inspect": false
+                "insertNulls": false,
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
               },
               "mappings": [],
               "thresholds": {
@@ -422,14 +802,11 @@ spec:
                   {
                     "color": "green",
                     "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
                   }
                 ]
               },
-              "unitScale": true
+              "unit": "ms",
+              "min": 0
             },
             "overrides": []
           },
@@ -437,28 +814,26 @@ spec:
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 8
+            "y": 6
           },
-          "id": 16,
+          "id": 12,
           "options": {
-            "cellHeight": "sm",
-            "footer": {
-              "countRows": false,
-              "fields": "",
-              "reducer": [
-                "sum"
+            "legend": {
+              "calcs": [
+                "min",
+                "mean",
+                "max",
+                "lastNotNull"
               ],
-              "show": false
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
             },
-            "showHeader": true,
-            "sortBy": [
-              {
-                "desc": false,
-                "displayName": "Time"
-              }
-            ]
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
           },
-          "pluginVersion": "10.3.1",
           "targets": [
             {
               "datasource": {
@@ -466,68 +841,166 @@ spec:
                 "uid": "Mimir"
               },
               "editorMode": "code",
-              "exemplar": false,
-              "expr": "(palworld_player_save_mtime < timestamp(palworld_player_save_mtime) - 432000) * 1000",
-              "format": "table",
-              "instant": true,
-              "legendFormat": "__auto",
-              "range": false,
-              "refId": "A"
+              "expr": "palworld_server_frame_time{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A",
+              "legendFormat": "frame time"
             }
           ],
-          "title": "5+ Day Old Player Saves",
-          "transformations": [
-            {
-              "id": "convertFieldType",
-              "options": {
-                "conversions": [
-                  {
-                    "destinationType": "time",
-                    "targetField": "Value"
-                  }
-                ],
-                "fields": {}
-              }
-            },
-            {
-              "id": "organize",
-              "options": {
-                "excludeByName": {
-                  "Time": true,
-                  "__name__": true,
-                  "job": true
-                },
-                "includeByName": {},
-                "indexByName": {},
-                "renameByName": {
-                  "Value": "Time"
-                }
-              }
-            },
-            {
-              "id": "sortBy",
-              "options": {
-                "fields": {},
-                "sort": [
-                  {
-                    "desc": false,
-                    "field": "Time"
-                  }
-                ]
-              }
-            }
-          ],
-          "type": "table"
+          "title": "Frame Time",
+          "type": "timeseries"
         },
         {
           "datasource": {
             "type": "prometheus",
             "uid": "Mimir"
           },
+          "description": "Concurrent players against the configured slot count.",
           "fieldConfig": {
             "defaults": {
               "color": {
-                "mode": "thresholds"
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "opacity",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short",
+              "min": 0
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "slots"
+                },
+                "properties": [
+                  {
+                    "id": "custom.fillOpacity",
+                    "value": 0
+                  },
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "dash": [
+                        10,
+                        10
+                      ],
+                      "fill": "dash"
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "text",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 14
+          },
+          "id": 13,
+          "options": {
+            "legend": {
+              "calcs": [
+                "mean",
+                "max",
+                "lastNotNull"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_current_player_num{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A",
+              "legendFormat": "online"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_max_player_num{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "B",
+              "legendFormat": "slots"
+            }
+          ],
+          "title": "Players Online",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "Who was connected, when. One lane per player (palworld_player).",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "continuous-GrYlRd"
               },
               "custom": {
                 "fillOpacity": 70,
@@ -543,15 +1016,10 @@ spec:
               "mappings": [
                 {
                   "options": {
-                    "0": {
-                      "color": "red",
-                      "index": 0,
-                      "text": "Down"
-                    },
                     "1": {
                       "color": "green",
-                      "index": 1,
-                      "text": "Up"
+                      "index": 0,
+                      "text": "online"
                     }
                   },
                   "type": "value"
@@ -565,90 +1033,7 @@ spec:
                     "value": null
                   }
                 ]
-              },
-              "unitScale": true
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 16
-          },
-          "id": 1,
-          "options": {
-            "alignValue": "left",
-            "legend": {
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "mergeValues": true,
-            "rowHeight": 0.9,
-            "showValue": "auto",
-            "tooltip": {
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "pluginVersion": "10.3.1",
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "Mimir"
-              },
-              "disableTextWrap": false,
-              "editorMode": "builder",
-              "exemplar": false,
-              "expr": "palworld_up",
-              "format": "time_series",
-              "fullMetaSearch": false,
-              "includeNullMetadata": true,
-              "instant": false,
-              "legendFormat": "{{instance}}",
-              "range": true,
-              "refId": "A",
-              "useBackend": false
-            }
-          ],
-          "title": "Exporter Status",
-          "type": "state-timeline"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "Mimir"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "continuous-GrYlRd"
-              },
-              "custom": {
-                "fillOpacity": 80,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "lineWidth": 0
-              },
-              "fieldMinMax": false,
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  }
-                ]
-              },
-              "unit": "dateTimeAsIso",
-              "unitScale": true
+              }
             },
             "overrides": []
           },
@@ -656,468 +1041,11 @@ spec:
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 16
-          },
-          "id": 17,
-          "options": {
-            "bucketOffset": 0,
-            "bucketSize": 86400000,
-            "combine": false,
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            }
-          },
-          "pluginVersion": "10.3.1",
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "Mimir"
-              },
-              "editorMode": "code",
-              "exemplar": false,
-              "expr": "palworld_player_save_mtime * 1000",
-              "format": "table",
-              "instant": true,
-              "legendFormat": "__auto",
-              "range": false,
-              "refId": "A"
-            }
-          ],
-          "title": "Player Save Last Modifications",
-          "type": "histogram"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "Mimir"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "continuous-GrYlRd"
-              },
-              "decimals": 2,
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              },
-              "unit": "decmbytes",
-              "unitScale": true
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 24
-          },
-          "id": 8,
-          "options": {
-            "displayMode": "basic",
-            "maxVizHeight": 300,
-            "minVizHeight": 16,
-            "minVizWidth": 8,
-            "namePlacement": "auto",
-            "orientation": "horizontal",
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": "",
-              "values": false
-            },
-            "showUnfilled": true,
-            "sizing": "auto",
-            "valueMode": "color"
-          },
-          "pluginVersion": "10.3.1",
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "Mimir"
-              },
-              "editorMode": "code",
-              "exemplar": false,
-              "expr": "sort_desc(palworld_player_save_size_bytes / 1000000)",
-              "instant": true,
-              "legendFormat": "PlayerUID:{{player_uid}}",
-              "range": false,
-              "refId": "A"
-            }
-          ],
-          "title": "Player Save File Sizes",
-          "transformations": [],
-          "type": "bargauge"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "Mimir"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisBorderShow": false,
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": false,
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              },
-              "unit": "decmbytes",
-              "unitScale": true
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 24
+            "y": 14
           },
           "id": 14,
           "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "hidden",
-              "placement": "right",
-              "showLegend": false
-            },
-            "tooltip": {
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "Mimir"
-              },
-              "disableTextWrap": false,
-              "editorMode": "code",
-              "exemplar": false,
-              "expr": "palworld_player_save_size_bytes / 1000000",
-              "fullMetaSearch": false,
-              "includeNullMetadata": true,
-              "instant": false,
-              "legendFormat": "{{player_uid}}",
-              "range": true,
-              "refId": "A",
-              "useBackend": false
-            }
-          ],
-          "title": "Player Save Size",
-          "transformations": [],
-          "type": "timeseries"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "Mimir"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisBorderShow": false,
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": false,
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "decimals": 0,
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              },
-              "unit": "none",
-              "unitScale": true
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 32
-          },
-          "id": 3,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "Mimir"
-              },
-              "disableTextWrap": false,
-              "editorMode": "builder",
-              "expr": "palworld_player_count",
-              "fullMetaSearch": false,
-              "includeNullMetadata": true,
-              "instant": false,
-              "interval": "",
-              "legendFormat": "{{instance}}",
-              "range": true,
-              "refId": "A",
-              "useBackend": false
-            }
-          ],
-          "title": "Active Players",
-          "type": "timeseries"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "Mimir"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "continuous-RdYlGr",
-                "seriesBy": "last"
-              },
-              "custom": {
-                "axisBorderShow": false,
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "File Size (MB)",
-                "axisPlacement": "right",
-                "axisSoftMax": 50,
-                "axisSoftMin": 0,
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": false,
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "dashed"
-                }
-              },
-              "decimals": 1,
-              "fieldMinMax": false,
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 40
-                  }
-                ]
-              },
-              "unit": "decmbytes",
-              "unitScale": true
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 32
-          },
-          "id": 7,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "Mimir"
-              },
-              "editorMode": "code",
-              "expr": "palworld_level_save_size_bytes / 1000000",
-              "instant": false,
-              "interval": "",
-              "legendFormat": "{{instance}}",
-              "range": true,
-              "refId": "A"
-            }
-          ],
-          "title": "Level.sav File Size",
-          "type": "timeseries"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "Mimir"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "continuous-GrYlRd"
-              },
-              "custom": {
-                "fillOpacity": 70,
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": 300000,
-                "lineWidth": 0,
-                "spanNulls": false
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  }
-                ]
-              },
-              "unitScale": false
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 40
-          },
-          "id": 4,
-          "options": {
-            "alignValue": "left",
+            "alignValue": "center",
             "legend": {
               "displayMode": "list",
               "placement": "bottom",
@@ -1131,46 +1059,2300 @@ spec:
               "sort": "none"
             }
           },
-          "pluginVersion": "10.3.1",
           "targets": [
             {
               "datasource": {
                 "type": "prometheus",
                 "uid": "Mimir"
               },
-              "disableTextWrap": false,
-              "editorMode": "builder",
-              "expr": "palworld_player",
-              "fullMetaSearch": false,
-              "includeNullMetadata": true,
-              "instant": false,
-              "legendFormat": "{{name}}",
+              "editorMode": "code",
+              "expr": "palworld_player{cluster=~\"$cluster\"}",
               "range": true,
+              "instant": false,
               "refId": "A",
-              "useBackend": false
+              "legendFormat": "{{name}}"
             }
           ],
-          "title": "Players",
-          "transformations": [],
+          "title": "Player Sessions",
           "type": "state-timeline"
+        },
+        {
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 22
+          },
+          "id": 15,
+          "panels": [],
+          "title": "Container & Storage",
+          "type": "row"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "Cores. The game server is requested 2 / limited 4.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "opacity",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short",
+              "decimals": 2
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 0,
+            "y": 23
+          },
+          "id": 16,
+          "options": {
+            "legend": {
+              "calcs": [
+                "mean",
+                "max"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "sum by (container) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=\"gaming\", pod=~\"palworld-.*\", container!=\"\"}[$__rate_interval]))",
+              "range": true,
+              "instant": false,
+              "refId": "A",
+              "legendFormat": "{{container}}"
+            }
+          ],
+          "title": "CPU Usage by Container",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "The palworld container is limited to 12Gi — sustained approach to that line means an OOMKill and a rollback to the last autosave.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "opacity",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 8,
+            "y": 23
+          },
+          "id": 17,
+          "options": {
+            "legend": {
+              "calcs": [
+                "mean",
+                "max",
+                "lastNotNull"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "sum by (container) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=\"gaming\", pod=~\"palworld-.*\", container!=\"\"})",
+              "range": true,
+              "instant": false,
+              "refId": "A",
+              "legendFormat": "{{container}}"
+            }
+          ],
+          "title": "Memory Working Set by Container",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "25Gi Cinder volume holding the server install, world saves and backups.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "max": 100,
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 75
+                  },
+                  {
+                    "color": "red",
+                    "value": 90
+                  }
+                ]
+              },
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 4,
+            "x": 16,
+            "y": 23
+          },
+          "id": 18,
+          "options": {
+            "minVizHeight": 75,
+            "minVizWidth": 75,
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true,
+            "sizing": "auto"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "100 * kubelet_volume_stats_used_bytes{cluster=~\"$cluster\", namespace=\"gaming\", persistentvolumeclaim=\"palworld-data\"} / kubelet_volume_stats_capacity_bytes{cluster=~\"$cluster\", namespace=\"gaming\", persistentvolumeclaim=\"palworld-data\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "title": "palworld-data PVC",
+          "type": "gauge"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "Container restarts across the pod in the last 24h (crashes, OOMKills, auto-reboot).",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 3
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 4,
+            "x": 20,
+            "y": 23
+          },
+          "id": 19,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "sum(increase(kube_pod_container_status_restarts_total{cluster=~\"$cluster\", namespace=\"gaming\", pod=~\"palworld-.*\"}[24h]))",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "title": "Restarts (24h)",
+          "type": "stat"
+        },
+        {
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 30
+          },
+          "id": 20,
+          "panels": [],
+          "title": "Players",
+          "type": "row"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "Joined on the player name across the /players REST endpoint and the game-data collector. Pal columns need ENABLE_GAMEDATA_API=true on the server. Only populated while players are online.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "filterable": true,
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Ping"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "s"
+                  },
+                  {
+                    "id": "decimals",
+                    "value": 3
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Avg Pal Lvl"
+                },
+                "properties": [
+                  {
+                    "id": "decimals",
+                    "value": 1
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "X"
+                },
+                "properties": [
+                  {
+                    "id": "decimals",
+                    "value": 0
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Y"
+                },
+                "properties": [
+                  {
+                    "id": "decimals",
+                    "value": 0
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Level"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "continuous-GrYlRd"
+                    }
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "mode": "gradient",
+                      "type": "gauge"
+                    }
+                  },
+                  {
+                    "id": "max",
+                    "value": 60
+                  },
+                  {
+                    "id": "min",
+                    "value": 0
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 14,
+            "x": 0,
+            "y": 31
+          },
+          "id": 21,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true,
+            "sortBy": [
+              {
+                "desc": true,
+                "displayName": "Level"
+              }
+            ]
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_player_level{cluster=~\"$cluster\"}",
+              "range": false,
+              "instant": true,
+              "refId": "A",
+              "format": "table"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_player_ping_seconds{cluster=~\"$cluster\"}",
+              "range": false,
+              "instant": true,
+              "refId": "B",
+              "format": "table"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_player_building_count{cluster=~\"$cluster\"}",
+              "range": false,
+              "instant": true,
+              "refId": "C",
+              "format": "table"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_player_total_pals{cluster=~\"$cluster\"}",
+              "range": false,
+              "instant": true,
+              "refId": "D",
+              "format": "table"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_player_pal_avg_level{cluster=~\"$cluster\"}",
+              "range": false,
+              "instant": true,
+              "refId": "E",
+              "format": "table"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_player_location_x{cluster=~\"$cluster\"}",
+              "range": false,
+              "instant": true,
+              "refId": "F",
+              "format": "table"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_player_location_y{cluster=~\"$cluster\"}",
+              "range": false,
+              "instant": true,
+              "refId": "G",
+              "format": "table"
+            }
+          ],
+          "title": "Online Players",
+          "transformations": [
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "pattern": "^(name|Value.*)$"
+                }
+              }
+            },
+            {
+              "id": "joinByField",
+              "options": {
+                "byField": "name",
+                "mode": "outer"
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {},
+                "indexByName": {
+                  "name": 0,
+                  "Value #A": 1,
+                  "Value #B": 2,
+                  "Value #C": 3,
+                  "Value #D": 4,
+                  "Value #E": 5,
+                  "Value #F": 6,
+                  "Value #G": 7
+                },
+                "renameByName": {
+                  "name": "Player",
+                  "Value #A": "Level",
+                  "Value #B": "Ping",
+                  "Value #C": "Buildings",
+                  "Value #D": "Pals",
+                  "Value #E": "Avg Pal Lvl",
+                  "Value #F": "X",
+                  "Value #G": "Y"
+                }
+              }
+            }
+          ],
+          "type": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "Level cap is 60.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "continuous-GrYlRd"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short",
+              "max": 60
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 10,
+            "x": 14,
+            "y": 31
+          },
+          "id": 22,
+          "options": {
+            "displayMode": "gradient",
+            "maxVizHeight": 300,
+            "minVizHeight": 16,
+            "minVizWidth": 8,
+            "namePlacement": "left",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showUnfilled": true,
+            "sizing": "auto",
+            "valueMode": "color"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_player_level{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A",
+              "legendFormat": "{{name}}"
+            }
+          ],
+          "title": "Player Levels",
+          "type": "bargauge"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short",
+              "decimals": 1
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 4,
+            "x": 0,
+            "y": 39
+          },
+          "id": 23,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_server_avg_player_level{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "title": "Avg Player Level",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 4,
+            "x": 4,
+            "y": 39
+          },
+          "id": 24,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_server_max_player_level{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "title": "Top Player Level",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "Round-trip time reported by the server per connected player.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "opacity",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "s"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 16,
+            "x": 8,
+            "y": 39
+          },
+          "id": 25,
+          "options": {
+            "legend": {
+              "calcs": [
+                "mean",
+                "max"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_player_ping_seconds{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A",
+              "legendFormat": "{{name}}"
+            }
+          ],
+          "title": "Player Ping",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "Structure count per player — the main driver of Level.sav growth and frame time.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "continuous-GrYlRd"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 8,
+            "x": 0,
+            "y": 43
+          },
+          "id": 26,
+          "options": {
+            "displayMode": "gradient",
+            "maxVizHeight": 300,
+            "minVizHeight": 16,
+            "minVizWidth": 8,
+            "namePlacement": "left",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showUnfilled": true,
+            "sizing": "auto",
+            "valueMode": "color"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_player_building_count{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A",
+              "legendFormat": "{{name}}"
+            }
+          ],
+          "title": "Buildings by Player",
+          "type": "bargauge"
+        },
+        {
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 47
+          },
+          "id": 27,
+          "panels": [],
+          "title": "Pals & World (requires ENABLE_GAMEDATA_API)",
+          "type": "row"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "Every pal held by a player, in party or at a base camp.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 4,
+            "x": 0,
+            "y": 48
+          },
+          "id": 28,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_server_total_pals{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "title": "Owned Pals",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "Pals alive in the world and not owned. A runaway count here is a spawn-leak and hurts frame time.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 4,
+            "x": 4,
+            "y": 48
+          },
+          "id": 29,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_server_wild_pals{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "title": "Wild Pals",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 4,
+            "x": 8,
+            "y": 48
+          },
+          "id": 30,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_guild_count{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "title": "Guilds",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "Player / OtomoPal (active) / BaseCampPal / WildPal / NPC split of every named character in the save.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                }
+              },
+              "mappings": [],
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 48
+          },
+          "id": 31,
+          "options": {
+            "displayLabels": [
+              "percent"
+            ],
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "values": [
+                "value"
+              ]
+            },
+            "pieType": "donut",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "count by (unit_type) (palworld_character_level{cluster=~\"$cluster\"})",
+              "range": false,
+              "instant": true,
+              "refId": "A",
+              "legendFormat": "{{unit_type}}"
+            }
+          ],
+          "title": "Characters by Unit Type",
+          "type": "piechart"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 20,
+                "gradientMode": "opacity",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 12,
+            "x": 0,
+            "y": 52
+          },
+          "id": 32,
+          "options": {
+            "legend": {
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_server_total_pals{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A",
+              "legendFormat": "owned"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_server_wild_pals{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "B",
+              "legendFormat": "wild"
+            }
+          ],
+          "title": "World Pal Population",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "Otomo (party) pals versus base-camp workers, per player.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "continuous-GrYlRd"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 56
+          },
+          "id": 33,
+          "options": {
+            "displayMode": "gradient",
+            "maxVizHeight": 300,
+            "minVizHeight": 16,
+            "minVizWidth": 8,
+            "namePlacement": "left",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showUnfilled": true,
+            "sizing": "auto",
+            "valueMode": "color"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_player_active_pals{cluster=~\"$cluster\"}",
+              "range": false,
+              "instant": true,
+              "refId": "A",
+              "legendFormat": "{{name}} — party"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_player_base_pals{cluster=~\"$cluster\"}",
+              "range": false,
+              "instant": true,
+              "refId": "B",
+              "legendFormat": "{{name}} — base"
+            }
+          ],
+          "title": "Pals per Player (active vs base camp)",
+          "type": "bargauge"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "Top 15 characters by level across players, pals and NPCs.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "filterable": true,
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Level"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "continuous-GrYlRd"
+                    }
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "mode": "gradient",
+                      "type": "gauge"
+                    }
+                  },
+                  {
+                    "id": "max",
+                    "value": 60
+                  },
+                  {
+                    "id": "min",
+                    "value": 0
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 56
+          },
+          "id": 34,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true,
+            "sortBy": [
+              {
+                "desc": true,
+                "displayName": "Level"
+              }
+            ]
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "topk(15, palworld_character_level{cluster=~\"$cluster\"})",
+              "range": false,
+              "instant": true,
+              "refId": "A",
+              "format": "table"
+            }
+          ],
+          "title": "Strongest Characters",
+          "transformations": [
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "pattern": "^(name|unit_type|Value)$"
+                }
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {},
+                "indexByName": {
+                  "name": 0,
+                  "unit_type": 1,
+                  "Value": 2
+                },
+                "renameByName": {
+                  "name": "Character",
+                  "unit_type": "Type",
+                  "Value": "Level"
+                }
+              }
+            }
+          ],
+          "type": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "continuous-GrYlRd"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short",
+              "max": 60
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 64
+          },
+          "id": 35,
+          "options": {
+            "displayMode": "gradient",
+            "maxVizHeight": 300,
+            "minVizHeight": 16,
+            "minVizWidth": 8,
+            "namePlacement": "left",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showUnfilled": true,
+            "sizing": "auto",
+            "valueMode": "color"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_player_pal_avg_level{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A",
+              "legendFormat": "{{name}}"
+            }
+          ],
+          "title": "Average Pal Level per Player",
+          "type": "bargauge"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "continuous-GrYlRd"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 64
+          },
+          "id": 36,
+          "options": {
+            "displayMode": "gradient",
+            "maxVizHeight": 300,
+            "minVizHeight": 16,
+            "minVizWidth": 8,
+            "namePlacement": "left",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showUnfilled": true,
+            "sizing": "auto",
+            "valueMode": "color"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_player_pal_avg_hp{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A",
+              "legendFormat": "{{name}}"
+            }
+          ],
+          "title": "Average Pal Max HP per Player",
+          "type": "bargauge"
+        },
+        {
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 71
+          },
+          "id": 37,
+          "panels": [],
+          "title": "Saves & Settings",
+          "type": "row"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "World save growth. Steady climb is normal; a step change means a large base was built. Requires SAVE_DIRECTORY to point at the directory that actually contains Level.sav.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "opacity",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "decbytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 0,
+            "y": 72
+          },
+          "id": 38,
+          "options": {
+            "legend": {
+              "calcs": [
+                "min",
+                "max",
+                "lastNotNull"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_level_save_size_bytes{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A",
+              "legendFormat": "Level.sav"
+            }
+          ],
+          "title": "Level.sav Size",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "Bytes per hour added to Level.sav, smoothed over 1h.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 20,
+                "gradientMode": "opacity",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "smooth",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "decbytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 8,
+            "y": 72
+          },
+          "id": 39,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "deriv(palworld_level_save_size_bytes{cluster=~\"$cluster\"}[1h]) * 3600",
+              "range": true,
+              "instant": false,
+              "refId": "A",
+              "legendFormat": "Level.sav / hour"
+            }
+          ],
+          "title": "Save Growth Rate",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "Number of <uid>.sav player files — i.e. how many characters have ever played here.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 4,
+            "x": 16,
+            "y": 72
+          },
+          "id": 40,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_player_save_count{cluster=~\"$cluster\"}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "title": "Player Saves on Disk",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "Age of the most recently written player save. If this keeps climbing while players are online, autosave is stuck.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 900
+                  },
+                  {
+                    "color": "red",
+                    "value": 3600
+                  }
+                ]
+              },
+              "unit": "s"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 4,
+            "x": 20,
+            "y": 72
+          },
+          "id": 41,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "time() - max(palworld_player_save_mtime{cluster=~\"$cluster\"})",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "title": "Last Save Write",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "Per-character save file sizes.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "continuous-GrYlRd"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "decbytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 79
+          },
+          "id": 42,
+          "options": {
+            "displayMode": "gradient",
+            "maxVizHeight": 300,
+            "minVizHeight": 16,
+            "minVizWidth": 8,
+            "namePlacement": "left",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showUnfilled": true,
+            "sizing": "auto",
+            "valueMode": "color"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "topk(10, palworld_player_save_size_bytes{cluster=~\"$cluster\"})",
+              "range": true,
+              "instant": false,
+              "refId": "A",
+              "legendFormat": "{{player_uid}}"
+            }
+          ],
+          "title": "Largest Player Saves",
+          "type": "bargauge"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Mimir"
+          },
+          "description": "Live rates read from the server's /settings endpoint (exp, capture, spawn, drop, slots). Boolean flags and the death penalty are exported as palworld_setting labels.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "filterable": true,
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 79
+          },
+          "id": 43,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true,
+            "sortBy": [
+              {
+                "desc": false,
+                "displayName": "Setting"
+              }
+            ]
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "Mimir"
+              },
+              "editorMode": "code",
+              "expr": "palworld_setting{cluster=~\"$cluster\", type=\"numeric\"}",
+              "range": false,
+              "instant": true,
+              "refId": "A",
+              "format": "table"
+            }
+          ],
+          "title": "Game Settings",
+          "transformations": [
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "pattern": "^(setting|Value)$"
+                }
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {},
+                "indexByName": {
+                  "setting": 0,
+                  "Value": 1
+                },
+                "renameByName": {
+                  "setting": "Setting",
+                  "Value": "Value"
+                }
+              }
+            }
+          ],
+          "type": "table"
         }
       ],
-      "refresh": "5s",
+      "preload": false,
+      "refresh": "30s",
       "schemaVersion": 39,
-      "tags": [],
+      "tags": [
+        "palworld",
+        "gaming",
+        "production"
+      ],
       "templating": {
-        "list": []
+        "list": [
+          {
+            "current": {
+              "selected": false,
+              "text": "production",
+              "value": "production"
+            },
+            "datasource": {
+              "type": "prometheus",
+              "uid": "Mimir"
+            },
+            "definition": "label_values(palworld_up, cluster)",
+            "hide": 0,
+            "includeAll": false,
+            "label": "Cluster",
+            "multi": false,
+            "name": "cluster",
+            "options": [],
+            "query": {
+              "qryType": 1,
+              "query": "label_values(palworld_up, cluster)",
+              "refId": "PrometheusVariableQueryEditor-VariableQuery"
+            },
+            "refresh": 1,
+            "regex": "",
+            "skipUrlSync": false,
+            "sort": 1,
+            "type": "query"
+          }
+        ]
       },
       "time": {
-        "from": "now-3h",
+        "from": "now-6h",
         "to": "now"
       },
-      "timepicker": {},
-      "timezone": "",
+      "timepicker": {
+        "refresh_intervals": [
+          "10s",
+          "30s",
+          "1m",
+          "5m",
+          "15m"
+        ]
+      },
+      "timezone": "browser",
       "title": "Palworld",
       "uid": "palworld-server",
-      "version": 69,
-      "weekStart": "",
-      "gnetId": 20421,
-      "description": "A Palworld dedicated server dashboard for metrics exported by https://github.com/palworldlol/palworld-exporter."
+      "weekStart": ""
     }

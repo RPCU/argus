@@ -115,6 +115,54 @@ Once done, the Crossplane resources in `clusters/mgmt/crossplane/vault/` take ov
 - `default` ProviderConfig (Crossplane Vault provider authenticates)
 - `cert-manager` AppRole (Crossplane creates per-cluster cert auth)
 
+## Grafana alerting bootstrap (one-time manual)
+
+`infrastructure/grafana/alerting/` sends Grafana alert notifications to Discord.
+The webhook URL is pulled from this Vault by the `grafana-discord-webhook`
+ExternalSecret (ns `monitoring`) through the `vault-backend` ClusterSecretStore.
+
+Note the ESO authorisation gap: the Kubernetes-auth role `external-secrets`
+created above is bound **only** to the `crossplane` policy, which grants read on
+`secrets-mgmt/data/crossplane*` and nothing else. The store is scoped to the
+whole `secrets-mgmt` mount, but reading any other path returns 403. So a second
+policy is needed — do not widen `crossplane`, whose name is meant to describe
+its scope:
+
+```bash
+export VAULT_POD="kubectl -n vault exec -it vault-0 --"
+
+# Policy granting ESO read access to the Grafana secrets only
+$VAULT_POD vault policy write grafana - <<'EOF'
+path "secrets-mgmt/data/grafana" {
+  capabilities = ["read"]
+}
+EOF
+
+# Attach it ALONGSIDE the existing crossplane policy (this overwrites the role,
+# so both must be listed — omitting `crossplane` breaks the Crossplane AppRole
+# ExternalSecret).
+$VAULT_POD vault write auth/kubernetes/role/external-secrets \
+  bound_service_account_names=vault-auth \
+  bound_service_account_namespaces=external-secrets \
+  policies=crossplane,grafana \
+  ttl=1h
+
+# Seed the Discord webhook URL (Discord: Server Settings -> Integrations ->
+# Webhooks -> New Webhook -> Copy Webhook URL)
+$VAULT_POD vault kv put secrets-mgmt/grafana \
+  discord-webhook-url="https://discord.com/api/webhooks/<id>/<token>"
+```
+
+Verify ESO picked it up:
+
+```bash
+kubectl -n monitoring get externalsecret grafana-discord-webhook
+# STATUS should be SecretSynced
+```
+
+Until this is done the alert rules still evaluate, but the Discord contact point
+has no URL and notifications are not delivered.
+
 ## Vault PKI intermediate bootstrap (one-time manual)
 
 `clusters/mgmt/crossplane/vault/pki-int.yaml` chains a Vault PKI **intermediate

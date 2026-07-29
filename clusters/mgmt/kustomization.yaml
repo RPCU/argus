@@ -38,4 +38,5 @@ resources:
   - mimir.yaml
   - grafana-operator.yaml
   - grafana.yaml
+  - grafana-alerting.yaml
   - clusters.yaml

@@ -1,0 +1,8 @@
+namespace: monitoring
+resources:
+  - discord-secret.yaml
+  - folder.yaml
+  - contactpoint-discord.yaml
+  - notification-policy.yaml
+  - rules-node.yaml
+  - rules-storage.yaml

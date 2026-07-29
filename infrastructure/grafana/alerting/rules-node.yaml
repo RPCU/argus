@@ -1,0 +1,335 @@
+# Node-level alert rules: CPU, memory, filesystem, readiness.
+#
+# These are Grafana-MANAGED alerts (evaluated by Grafana against the Mimir
+# datasource), not Prometheus `PrometheusRule` CRs. That is deliberate: Mimir's
+# ruler is disabled (`infrastructure/mimir/helmrelease.yaml`) and each cluster's
+# local Alertmanager has no receivers configured, so Grafana unified alerting is
+# the only path that actually delivers a notification. Because the queries run
+# against Mimir, ONE rule covers every cluster that remote_writes into it — the
+# `cluster` external label comes back as an alert label automatically.
+#
+# Each rule follows Grafana's standard three-stage shape:
+#   A -> instant PromQL query against Mimir
+#   B -> reduce (last)   : collapse the series to a single number
+#   C -> threshold       : the alerting condition
+# `condition: C` selects C as the rule's condition.
+#
+# noDataState is OK on purpose: if Mimir or remote_write breaks, every rule
+# would otherwise fire simultaneously and bury the real signal. Loss of
+# monitoring is caught by NodeNotReady / the absence of data in dashboards, not
+# by a storm of DatasourceNoData alerts.
+#
+# Panel linking: rules carry the `__dashboardUid__` / `__panelId__` annotations,
+# which make Grafana draw alert-state change markers on the linked panel and put
+# a deep-link to it in every notification (so a Discord message lands you on the
+# exact graph). BOTH annotations are required — one alone is ignored. Do NOT use
+# the `dashboardUid` / `panelId` CRD fields: they are deprecated and the operator
+# ignores them entirely. `__panelId__` must be a quoted STRING, since the
+# annotations map is typed `map[string]string`.
+#
+# Every expression below was executed against the live Mimir before being
+# committed. Note in particular that NodeNotReady does NOT use `== 0`: that
+# filters the series away entirely when all nodes are healthy, which Grafana
+# reads as NoData rather than "OK". It queries the raw condition metric and lets
+# the threshold stage do the comparison, so the rule always has data.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaAlertRuleGroup
+metadata:
+  name: node-resources
+  namespace: monitoring
+spec:
+  allowCrossNamespaceImport: true
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana-central"
+  folderRef: alerts
+  interval: 1m
+  rules:
+    - uid: argus-node-cpu-high
+      title: NodeCPUHigh
+      condition: C
+      for: "10m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: warning
+        component: node
+      annotations:
+        summary: "High CPU on {{ $labels.instance }} ({{ $labels.cluster }})"
+        description: 'CPU usage is {{ printf "%.1f" $values.B.Value }}% on {{ $labels.instance }} in cluster {{ $labels.cluster }}, sustained above 85% for 10m.'
+        # -> "CPU Usage (%) per Node" on the cluster overview dashboard.
+        __dashboardUid__: cluster-cpu-ram-overview
+        __panelId__: "7"
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: 100 - (avg by (cluster, instance) (rate(node_cpu_seconds_total{job="node-exporter",mode="idle"}[5m])) * 100)
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: gt
+                  params:
+                    - 85
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    - uid: argus-node-memory-high
+      title: NodeMemoryHigh
+      condition: C
+      for: "10m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: warning
+        component: node
+      annotations:
+        summary: "High memory on {{ $labels.instance }} ({{ $labels.cluster }})"
+        description: 'Memory usage is {{ printf "%.1f" $values.B.Value }}% on {{ $labels.instance }} in cluster {{ $labels.cluster }}, sustained above 90% for 10m. Uses MemAvailable, so page cache is not counted as used.'
+        # -> "RAM Usage (%) per Node" on the cluster overview dashboard.
+        __dashboardUid__: cluster-cpu-ram-overview
+        __panelId__: "8"
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: 100 * (1 - (node_memory_MemAvailable_bytes{job="node-exporter"} / node_memory_MemTotal_bytes{job="node-exporter"}))
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: gt
+                  params:
+                    - 90
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    # The `and on (...) node_filesystem_readonly == 0` join is REQUIRED, not
+    # cosmetic: these are NixOS hosts where /nix/store is a read-only bind mount
+    # that is permanently ~100% full. Without the join this rule would fire
+    # forever on every node. Verified live: /nix/store reports readonly=1.
+    - uid: argus-node-disk-high
+      title: NodeDiskSpaceLow
+      condition: C
+      for: "15m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: warning
+        component: node
+      annotations:
+        summary: "Low disk space on {{ $labels.instance }}:{{ $labels.mountpoint }} ({{ $labels.cluster }})"
+        description: 'Filesystem {{ $labels.mountpoint }} on {{ $labels.instance }} in cluster {{ $labels.cluster }} is {{ printf "%.1f" $values.B.Value }}% full, above the 85% threshold for 15m.'
+        # -> "Filesystem Used % per Mountpoint" on the node filesystem dashboard.
+        __dashboardUid__: node-filesystem-overview
+        __panelId__: "5"
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: 100 - (node_filesystem_avail_bytes{job="node-exporter",fstype!~"tmpfs|ramfs|squashfs|overlay|iso9660",mountpoint!=""} / node_filesystem_size_bytes{job="node-exporter",fstype!~"tmpfs|ramfs|squashfs|overlay|iso9660",mountpoint!=""} * 100) and on (cluster, instance, mountpoint) (node_filesystem_readonly{job="node-exporter"} == 0)
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: gt
+                  params:
+                    - 85
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    - uid: argus-node-not-ready
+      title: NodeNotReady
+      condition: C
+      for: "10m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: critical
+        component: node
+      annotations:
+        summary: "Node {{ $labels.node }} not Ready ({{ $labels.cluster }})"
+        description: "Node {{ $labels.node }} in cluster {{ $labels.cluster }} has not reported Ready=True for 10m. StatefulSet pods on an unreachable node stay stuck Terminating until the Machine is remediated."
+        # Deliberately NOT linked to a panel: no dashboard in this repo
+        # visualises node readiness, and pointing __dashboardUid__ at an
+        # unrelated panel would send responders to the wrong place. Add the
+        # annotations here if a node-status panel is ever added.
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: max by (cluster, node) (kube_node_status_condition{condition="Ready",status="true"})
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: lt
+                  params:
+                    - 1
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C

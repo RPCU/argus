@@ -1,0 +1,40 @@
+# Grafana alerting — alert rules, Discord contact point, notification policy.
+#
+# Split out of the `grafana` Kustomization on purpose (same blast-radius
+# rationale as capo-identity / openstack-ccm-identity): the Discord webhook is
+# an ExternalSecret that CANNOT become Ready until the Vault path
+# `secrets-mgmt/grafana` is seeded and the ESO Vault policy is widened, both of
+# which are manual one-time steps (see infrastructure/vault/README.md). Folding
+# this into `grafana` — which runs with `wait: true` — would risk that manual
+# gap stalling the dashboards, which have nothing to do with alerting.
+#
+# Hence `wait: false`: the alerting objects are applied and converge on their
+# own once the Vault secret exists. Until then the contact point simply has no
+# webhook URL and notifications do not deliver; the alert rules themselves still
+# evaluate normally.
+#
+# dependsOn:
+#   grafana            — the Grafana instance and the Mimir datasource (uid
+#                        `Mimir`) that every alert rule queries.
+#   external-secrets   — the ESO controller that reconciles the ExternalSecret.
+#   crossplane-resources — defines the `vault-backend` ClusterSecretStore
+#                        (clusters/mgmt/crossplane/vault/vault-store.yaml).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: grafana-alerting
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  path: ./infrastructure/grafana/alerting
+  prune: true
+  wait: false
+  timeout: 5m
+  dependsOn:
+    - name: grafana
+    - name: external-secrets
+    - name: crossplane-resources

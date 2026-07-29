@@ -1,0 +1,37 @@
+# Discord contact point.
+#
+# The webhook URL is sensitive, so it is NOT inlined here: `valuesFrom` injects
+# it into `settings.url` at reconcile time from the `grafana-discord-webhook`
+# secret rendered by `discord-secret.yaml` from Vault.
+#
+# The multi-receiver `receivers[]` form requires grafana-operator >= v5.21.0
+# (mgmt runs v5.24.0). The older top-level `type`/`settings`/`valuesFrom` form
+# is deprecated.
+#
+# `spec.name` is the receiver name referenced by the notification policy routes
+# in `notification-policy.yaml` — keep the two in sync.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaContactPoint
+metadata:
+  name: discord
+  namespace: monitoring
+spec:
+  name: discord
+  allowCrossNamespaceImport: true
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana-central"
+  receivers:
+    - type: discord
+      settings:
+        # Grafana's built-in templates render a readable summary with the
+        # firing/resolved instances and their labels/annotations.
+        title: '{{ template "default.title" . }}'
+        message: '{{ template "default.message" . }}'
+        use_discord_username: false
+      valuesFrom:
+        - targetPath: url
+          valueFrom:
+            secretKeyRef:
+              name: grafana-discord-webhook
+              key: url

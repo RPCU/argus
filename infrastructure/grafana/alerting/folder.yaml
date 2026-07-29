@@ -1,0 +1,17 @@
+# Grafana folder holding the alert rule groups.
+#
+# GrafanaAlertRuleGroup needs a folder to live in and references it either by
+# `folderUID` or by `folderRef` (the metadata.name of a GrafanaFolder CR).
+# Dashboards use the plain `folder:` string field instead, which auto-creates a
+# folder — alert rule groups do NOT, so this CR is required.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaFolder
+metadata:
+  name: alerts
+  namespace: monitoring
+spec:
+  allowCrossNamespaceImport: true
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana-central"
+  title: "Alerts"

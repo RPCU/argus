@@ -1,0 +1,41 @@
+# Notification policy tree — routes every Grafana-managed alert to Discord.
+#
+# A Grafana instance has exactly ONE notification policy tree (it is a global
+# object), so this CR owns the whole root route. Adding another
+# GrafanaNotificationPolicy targeting the same instance would fight this one.
+#
+# Grouping: alerts are batched by folder + rule + cluster, so a single Discord
+# message covers all affected nodes/volumes of one rule on one cluster instead
+# of one message per instance.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaNotificationPolicy
+metadata:
+  name: default-policy
+  namespace: monitoring
+spec:
+  allowCrossNamespaceImport: true
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana-central"
+  route:
+    receiver: discord
+    group_by:
+      - grafana_folder
+      - alertname
+      - cluster
+    # Wait briefly so a burst of instances of the same rule lands in one message.
+    group_wait: 30s
+    # Then batch further updates to an already-notified group.
+    group_interval: 5m
+    # Re-notify about a still-firing group at most this often.
+    repeat_interval: 4h
+    routes:
+      # Critical alerts re-notify more aggressively than the 4h default.
+      - receiver: discord
+        object_matchers:
+          - - severity
+            - =
+            - critical
+        group_wait: 10s
+        group_interval: 5m
+        repeat_interval: 1h

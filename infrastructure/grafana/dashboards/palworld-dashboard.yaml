@@ -1490,18 +1490,6 @@ spec:
               {
                 "matcher": {
                   "id": "byName",
-                  "options": "Avg Pal Lvl"
-                },
-                "properties": [
-                  {
-                    "id": "decimals",
-                    "value": 1
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
                   "options": "X"
                 },
                 "properties": [
@@ -1634,7 +1622,7 @@ spec:
                 "uid": "Mimir"
               },
               "editorMode": "code",
-              "expr": "palworld_player_pal_avg_level{cluster=~\"$cluster\"}",
+              "expr": "palworld_player_location_x{cluster=~\"$cluster\"}",
               "range": false,
               "instant": true,
               "refId": "E",
@@ -1646,22 +1634,10 @@ spec:
                 "uid": "Mimir"
               },
               "editorMode": "code",
-              "expr": "palworld_player_location_x{cluster=~\"$cluster\"}",
-              "range": false,
-              "instant": true,
-              "refId": "F",
-              "format": "table"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "Mimir"
-              },
-              "editorMode": "code",
               "expr": "palworld_player_location_y{cluster=~\"$cluster\"}",
               "range": false,
               "instant": true,
-              "refId": "G",
+              "refId": "F",
               "format": "table"
             }
           ],
@@ -1693,8 +1669,7 @@ spec:
                   "Value #C": 3,
                   "Value #D": 4,
                   "Value #E": 5,
-                  "Value #F": 6,
-                  "Value #G": 7
+                  "Value #F": 6
                 },
                 "renameByName": {
                   "name": "Player",
@@ -1702,9 +1677,8 @@ spec:
                   "Value #B": "Ping",
                   "Value #C": "Buildings",
                   "Value #D": "Pals",
-                  "Value #E": "Avg Pal Lvl",
-                  "Value #F": "X",
-                  "Value #G": "Y"
+                  "Value #E": "X",
+                  "Value #F": "Y"
                 }
               }
             }
@@ -2456,85 +2430,6 @@ spec:
             "type": "prometheus",
             "uid": "Mimir"
           },
-          "description": "Otomo (party) pals versus base-camp workers, per player.",
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "continuous-GrYlRd"
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  }
-                ]
-              },
-              "unit": "short"
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 56
-          },
-          "id": 33,
-          "options": {
-            "displayMode": "gradient",
-            "maxVizHeight": 300,
-            "minVizHeight": 16,
-            "minVizWidth": 8,
-            "namePlacement": "left",
-            "orientation": "horizontal",
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": "",
-              "values": false
-            },
-            "showUnfilled": true,
-            "sizing": "auto",
-            "valueMode": "color"
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "Mimir"
-              },
-              "editorMode": "code",
-              "expr": "palworld_player_active_pals{cluster=~\"$cluster\"}",
-              "range": false,
-              "instant": true,
-              "refId": "A",
-              "legendFormat": "{{name}} — party"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "Mimir"
-              },
-              "editorMode": "code",
-              "expr": "palworld_player_base_pals{cluster=~\"$cluster\"}",
-              "range": false,
-              "instant": true,
-              "refId": "B",
-              "legendFormat": "{{name}} — base"
-            }
-          ],
-          "title": "Pals per Player (active vs base camp)",
-          "type": "bargauge"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "Mimir"
-          },
           "description": "Top 15 characters by level across players and their pals (excludes wild pals and NPCs).",
           "fieldConfig": {
             "defaults": {
@@ -2659,141 +2554,6 @@ spec:
             }
           ],
           "type": "table"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "Mimir"
-          },
-          "description": "",
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "continuous-GrYlRd"
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  }
-                ]
-              },
-              "unit": "short",
-              "max": 60
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 7,
-            "w": 12,
-            "x": 0,
-            "y": 64
-          },
-          "id": 35,
-          "options": {
-            "displayMode": "gradient",
-            "maxVizHeight": 300,
-            "minVizHeight": 16,
-            "minVizWidth": 8,
-            "namePlacement": "left",
-            "orientation": "horizontal",
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": "",
-              "values": false
-            },
-            "showUnfilled": true,
-            "sizing": "auto",
-            "valueMode": "color"
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "Mimir"
-              },
-              "editorMode": "code",
-              "expr": "palworld_player_pal_avg_level{cluster=~\"$cluster\"}",
-              "range": true,
-              "instant": false,
-              "refId": "A",
-              "legendFormat": "{{name}}"
-            }
-          ],
-          "title": "Average Pal Level per Player",
-          "type": "bargauge"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "Mimir"
-          },
-          "description": "",
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "continuous-GrYlRd"
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  }
-                ]
-              },
-              "unit": "short"
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 7,
-            "w": 12,
-            "x": 12,
-            "y": 64
-          },
-          "id": 36,
-          "options": {
-            "displayMode": "gradient",
-            "maxVizHeight": 300,
-            "minVizHeight": 16,
-            "minVizWidth": 8,
-            "namePlacement": "left",
-            "orientation": "horizontal",
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": "",
-              "values": false
-            },
-            "showUnfilled": true,
-            "sizing": "auto",
-            "valueMode": "color"
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "Mimir"
-              },
-              "editorMode": "code",
-              "expr": "palworld_player_pal_avg_hp{cluster=~\"$cluster\"}",
-              "range": true,
-              "instant": false,
-              "refId": "A",
-              "legendFormat": "{{name}}"
-            }
-          ],
-          "title": "Average Pal Max HP per Player",
-          "type": "bargauge"
         },
         {
           "collapsed": false,

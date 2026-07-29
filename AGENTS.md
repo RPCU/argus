@@ -176,6 +176,7 @@ Key files:
 - `mimir.yaml` - Grafana Mimir TSDB (path `./infrastructure/mimir`, dependsOn monitoring). Single-replica monolithic mode with filesystem storage (50Gi PVC).
 - `grafana-operator.yaml` - Grafana Operator v5 deployment (path `./infrastructure/grafana-operator`, dependsOn monitoring) enabling cross-namespace DaaS.
 - `grafana.yaml` - Grafana CR & DaaS instance (path `./infrastructure/grafana`, dependsOn monitoring + mimir + grafana-operator). Accessible at `https://grafana.mgmt.rpcu.lan`.
+- `grafana-alerting.yaml` - Grafana unified alerting (path `./infrastructure/grafana/alerting`, dependsOn grafana + external-secrets + crossplane-resources, **`wait: false`**). Split from `grafana` for blast-radius isolation (same rationale as capo-identity / openstack-ccm-identity): its Discord-webhook `ExternalSecret` cannot be Ready until the Vault path `secrets-mgmt/grafana` is seeded AND the ESO Vault policy is widened — both manual steps — and `grafana` runs `wait: true`, so folding them together would let that manual gap stall the dashboards.
 - `flux-operator.yaml` - Flux operator deployment
 - `fluxcd/` - Flux CD configuration
   - `flux-instance-patch.yaml` - Flux instance patch (sync path ./clusters/mgmt, domain mgmt.local)
@@ -317,6 +318,87 @@ _trust-manager/configs/_ - Trust bundle configuration
 - `dashboards/palworld-dashboard.yaml` - `GrafanaDashboard` CR (uid `palworld-server`, folder `Gaming`) for the Palworld dedicated server. **Hand-built** (no longer the grafana.com 20421 import) against the metric set of [Banh-Canh/palworld-exporter-go](https://github.com/Banh-Canh/palworld-exporter-go), the `exporter` sidecar in the **atlas** repo (`clusters/production/palworld/deploy.yaml`) — that exporter's `ServiceMonitor` lives in atlas (labeled `release: kube-prometheus-stack`), gets scraped by the Sveltos-pushed Prometheus on the production cluster, and is `remote_write`n to central Mimir here. No app in argus produces these metrics; the dashboard is here only because Grafana is mgmt-only. 37 panels in 6 rows: **Server Health** (`palworld_up`/fps/frame_time/slot usage/uptime/version/Level.sav size), **Performance** (FPS + frame time trends, concurrency vs slots, per-player session lanes), **Container & Storage** (cAdvisor CPU/memory per container + `palworld-data` PVC gauge + 24h restart count — these come from kube-prometheus-stack, NOT the exporter), **Players** (join-by-name table of level/ping/buildings/pals/coords, level bar gauges, ping trend), **Pals & World** (owned/wild pal counts, guilds, unit-type donut, per-player party-vs-base pals, strongest characters), **Saves & Settings** (Level.sav growth + derivative, save-file ages/sizes, `palworld_setting` rates table). Single `$cluster` template variable (`label_values(palworld_up, cluster)`), every query filtered on it. The Pals & World row is empty unless `ENABLE_GAMEDATA_API: "true"` is set on the server (atlas `clusters/production/palworld/cm.yaml`), and the Saves panels need an exporter build newer than `v0.0.1`, whose save collector could not find a nested `Level.sav`. Every PromQL expression was validated against the production Prometheus before being committed.
 - `httproute.yaml` - HTTPRoute `grafana.mgmt.rpcu.lan` pointing to `grafana-service:3000` on mgmt internal Gateway.
 - `kustomization.yaml` - Kustomization manifest
+
+**grafana/alerting/** - Grafana Unified Alerting → Discord (own Flux Kustomization)
+
+Grafana-**managed** alert rules (evaluated by Grafana against the Mimir
+datasource), NOT Prometheus `PrometheusRule` CRs. That choice is forced by the
+architecture: the Mimir `ruler` is disabled (`infrastructure/mimir/helmrelease.yaml`)
+and every cluster's kube-prometheus-stack Alertmanager has **no receivers
+configured** (chart default `null` route), so Grafana unified alerting is the
+only path in this repo that actually delivers a notification. Because the
+queries run against central Mimir, ONE rule set covers **every** cluster that
+`remote_write`s into it (currently `mgmt`, `openstack`, `production`) — the
+`cluster` external label comes back as an alert label automatically, so there is
+nothing per-cluster to deploy.
+
+- `discord-secret.yaml` - ESO `ExternalSecret` `grafana-discord-webhook` (ns
+  monitoring) reading `secrets-mgmt/grafana` property `discord-webhook-url` via
+  the `vault-backend` `ClusterSecretStore`
+  (`clusters/mgmt/crossplane/vault/vault-store.yaml`). `remoteRef.key` is
+  relative to the mount — ESO inserts the KV-v2 `/data/` segment itself.
+- `folder.yaml` - `GrafanaFolder` `Alerts`. Required: unlike `GrafanaDashboard`
+  (whose plain `folder:` string auto-creates), a `GrafanaAlertRuleGroup` needs a
+  real folder referenced by `folderRef`/`folderUID`.
+- `contactpoint-discord.yaml` - `GrafanaContactPoint` `discord`. Uses the
+  multi-receiver `receivers[]` form (needs operator >= v5.21.0; mgmt runs
+  **v5.24.0**). The webhook URL is injected at reconcile time via
+  `valuesFrom` → `targetPath: url` from the secret above, so it is never in Git.
+- `notification-policy.yaml` - `GrafanaNotificationPolicy`, root receiver
+  `discord`, grouped by `grafana_folder`/`alertname`/`cluster` so one message
+  covers all affected nodes of one rule on one cluster. A child route re-notifies
+  `severity: critical` hourly instead of the 4h default. **A Grafana instance has
+  exactly ONE notification policy tree** (global object) — a second CR targeting
+  the same instance would fight this one.
+- `rules-node.yaml` - `GrafanaAlertRuleGroup` `node-resources` (interval 1m):
+  `NodeCPUHigh` (>85%, 10m), `NodeMemoryHigh` (>90% of MemAvailable, 10m),
+  `NodeDiskSpaceLow` (>85%, 15m), `NodeNotReady` (critical, 10m).
+- `rules-storage.yaml` - `GrafanaAlertRuleGroup` `persistent-volumes`
+  (interval 5m): `PersistentVolumeSpaceLow` (>85%, 15m) off
+  `kubelet_volume_stats_*`. Split from the node group because a rule group has a
+  single evaluation `interval` and volume stats move slowly.
+- `kustomization.yaml` - Kustomization manifest (namespace monitoring).
+
+Non-obvious things that were verified live and must not be "simplified":
+
+- **Rule shape is three stages**: `A` instant PromQL → `B` reduce(last) →
+  `C` threshold, with `condition: C`. Every metric used survives the monitoring
+  base's aggressive `metricRelabelings` (`node_*`, `kube_*`,
+  `kubelet_volume_stats_*` are all intact) and every expression was executed
+  against live Mimir before commit.
+- **`NodeDiskSpaceLow` MUST keep the `and on (cluster, instance, mountpoint)
+(node_filesystem_readonly == 0)` join.** These are NixOS hosts where
+  `/nix/store` is a read-only bind mount that is permanently ~100% full;
+  without the join the rule fires forever on every node. Confirmed live:
+  `/nix/store` reports `readonly=1`, real writable mounts peak at ~61%.
+- **`NodeNotReady` must NOT use `== 0`.** That filters the series away entirely
+  when all nodes are healthy, which Grafana reads as **NoData**, not "OK". It
+  queries the raw `kube_node_status_condition{condition="Ready",status="true"}`
+  and lets the threshold stage compare `lt 1`, so the rule always has data.
+- **`noDataState: OK` is deliberate.** If Mimir or `remote_write` breaks, `NoData`
+  would make every rule fire at once and bury the real signal.
+- **Panel linking uses ANNOTATIONS, not the CRD fields.** The
+  `rules[].dashboardUid` / `rules[].panelId` fields are **deprecated and ignored
+  by the operator** — the CRD description says so explicitly. Use
+  `annotations.__dashboardUid__` + `annotations.__panelId__`; **both** are
+  required (one alone is ignored) and `__panelId__` must be a **quoted string**
+  because the annotations map is typed `map[string]string`. Linked rules draw
+  alert-state markers on the panel and put a deep-link to it in every Discord
+  message. Current links: CPU → `cluster-cpu-ram-overview` panel 7, memory →
+  same dashboard panel 8, disk → `node-filesystem-overview` panel 5, PVC →
+  `cluster-pvc-storage-overview` panel 10 (a bargauge, so it gets the deep-link
+  but not the on-panel markers — those only render on time series panels).
+  `NodeNotReady` is intentionally unlinked: no dashboard here visualises node
+  readiness, and pointing at an unrelated panel would misdirect responders.
+
+**Manual prerequisite** (documented in `infrastructure/vault/README.md` →
+"Grafana alerting bootstrap"): the ESO Kubernetes-auth role `external-secrets`
+is bound **only** to the `crossplane` Vault policy, which grants read on
+`secrets-mgmt/data/crossplane*` and nothing else. A separate `grafana` policy
+must be created and attached **alongside** `crossplane` (the role write
+overwrites, so both must be listed), and the webhook seeded at
+`secrets-mgmt/grafana`. Until then the rules still evaluate but notifications
+do not deliver.
 
 **rook/** - Distributed Storage (Ceph v19.2.3)
 

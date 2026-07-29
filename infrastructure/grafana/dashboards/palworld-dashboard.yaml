@@ -2535,7 +2535,7 @@ spec:
             "type": "prometheus",
             "uid": "Mimir"
           },
-          "description": "Top 15 characters by level across players, pals and NPCs.",
+          "description": "Top 15 characters by level across players and their pals (excludes wild pals and NPCs).",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -2624,7 +2624,7 @@ spec:
                 "uid": "Mimir"
               },
               "editorMode": "code",
-              "expr": "topk(15, palworld_character_level{cluster=~\"$cluster\"})",
+              "expr": "topk(15, palworld_character_level{cluster=~\"$cluster\", unit_type=~\"Player|OtomoPal|BaseCampPal\"})",
               "range": false,
               "instant": true,
               "refId": "A",

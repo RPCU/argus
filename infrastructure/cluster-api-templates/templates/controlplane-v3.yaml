@@ -1,0 +1,102 @@
+# -----------------------------------------------------------------------------
+# Control plane template (KubeadmControlPlane) — v3.
+#
+# WHAT CHANGED vs -v2:
+#   1. clusterConfiguration.encryptionAlgorithm: ECDSA-P256 (was the kubeadm
+#      default RSA-2048). This makes kubeadm generate ECDSA P-256 control-plane
+#      keys/certs instead of RSA-2048.
+#
+# WHY: the dominant baseline CPU cost on a kube-apiserver at low request volume
+# is the per-connection TLS handshake (asymmetric crypto), not request serving.
+# An ECDSA-P256 handshake is roughly 5-10x cheaper server-side than RSA-2048.
+# With many controllers each holding/re-opening mTLS connections (13 yaook
+# operators, Cilium per-node agents, Flux, Crossplane, ESO, ...), the handshake
+# CPU adds up. Switching the control-plane keys to ECDSA cuts that per-handshake
+# cost. Everything else (kubelet reservations, controller-manager node-monitor
+# timers) is inherited unchanged from -v2.
+#
+# IMPORTANT — takes effect only on NEW certs. `encryptionAlgorithm` changes the
+# key type kubeadm generates at init / cert renewal. A control-plane machine
+# that is ROLLED (new Machine, fresh kubeadm init/join) comes up with ECDSA
+# certs; existing running control planes keep their RSA certs until their
+# machines are replaced or their certs are rotated. Rolling the control-plane
+# machines (which repointing the ClusterClass templateRef triggers) is what
+# actually applies it.
+#
+# IMMUTABILITY: KubeadmControlPlaneTemplate.spec.template.spec is effectively
+# immutable once referenced by a running ClusterClass. To change anything here,
+# create a NEW template with a bumped version suffix (e.g. -v4), point the
+# ClusterClass controlPlane.templateRef at it, and let the topology controller
+# roll the control-plane machines. Never edit -v3 in place on a live cluster.
+# -----------------------------------------------------------------------------
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+kind: KubeadmControlPlaneTemplate
+metadata:
+  name: openstack-default-control-plane-v3
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      kubeadmConfigSpec:
+        clusterConfiguration:
+          # ECDSA P-256 control-plane keys/certs — cheaper TLS handshakes than
+          # the RSA-2048 kubeadm default. See header for the full rationale.
+          encryptionAlgorithm: ECDSA-P256
+          apiServer:
+            extraArgs:
+              - name: kubelet-preferred-address-types
+                value: "InternalIP,Hostname,ExternalIP"
+          controllerManager:
+            extraArgs:
+              # Mark an unreachable Node NotReady quickly so the CAPI
+              # MachineHealthCheck can start remediating it.
+              - name: node-monitor-grace-period
+                value: 40s
+              - name: node-monitor-period
+                value: 5s
+        initConfiguration:
+          skipPhases:
+            - addon/kube-proxy
+          nodeRegistration:
+            kubeletExtraArgs:
+              - name: provider-id
+                value: openstack:///'{{ instance_id }}'
+              - name: kube-reserved
+                value: cpu=200m,memory=768Mi,ephemeral-storage=2Gi
+              - name: system-reserved
+                value: cpu=200m,memory=768Mi,ephemeral-storage=2Gi
+              - name: eviction-hard
+                value: memory.available<500Mi,nodefs.available<10%,imagefs.available<10%,nodefs.inodesFree<5%
+              - name: eviction-soft
+                value: memory.available<1Gi,nodefs.available<15%,imagefs.available<15%
+              - name: eviction-soft-grace-period
+                value: memory.available=2m,nodefs.available=2m,imagefs.available=2m
+              - name: eviction-max-pod-grace-period
+                value: "60"
+              - name: image-gc-high-threshold
+                value: "80"
+              - name: image-gc-low-threshold
+                value: "65"
+            name: "{{ local_hostname }}"
+        joinConfiguration:
+          nodeRegistration:
+            kubeletExtraArgs:
+              - name: provider-id
+                value: openstack:///'{{ instance_id }}'
+              - name: kube-reserved
+                value: cpu=200m,memory=768Mi,ephemeral-storage=2Gi
+              - name: system-reserved
+                value: cpu=200m,memory=768Mi,ephemeral-storage=2Gi
+              - name: eviction-hard
+                value: memory.available<500Mi,nodefs.available<10%,imagefs.available<10%,nodefs.inodesFree<5%
+              - name: eviction-soft
+                value: memory.available<1Gi,nodefs.available<15%,imagefs.available<15%
+              - name: eviction-soft-grace-period
+                value: memory.available=2m,nodefs.available=2m,imagefs.available=2m
+              - name: eviction-max-pod-grace-period
+                value: "60"
+              - name: image-gc-high-threshold
+                value: "80"
+              - name: image-gc-low-threshold
+                value: "65"
+            name: "{{ local_hostname }}"

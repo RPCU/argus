@@ -38,6 +38,14 @@ spec:
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   messageQueue:
     replicas: 1
+    resources:
+      rabbitmq:
+        requests:
+          cpu: 250m
+          memory: 1G
+        limits:
+          cpu: 1000m
+          memory: 2G
   issuerRef:
     name: yaook-internal
   targetRelease: "2025.1"

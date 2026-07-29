@@ -10,6 +10,14 @@ spec:
   keystoneRef:
     name: keystone
   replicas: 3
+  resources:
+    horizon:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
   ingress:
     createIngress: false
     fqdn: "os.rpcu.vpn"

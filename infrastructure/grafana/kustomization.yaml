@@ -8,4 +8,5 @@ resources:
   - dashboards/ceph-storage-dashboard.yaml
   - dashboards/openstack-control-plane-dashboard.yaml
   - dashboards/palworld-dashboard.yaml
+  - dashboards/node-disk-io-dashboard.yaml
   - httproute.yaml

@@ -1461,12 +1461,18 @@ Actual OpenStack service deployment CRs (`*Deployment` of `yaook.cloud/v1`),
 reconciled by the operators above. Deployed by the `yaook` Flux Kustomization
 (dependsOn yaook-operator + external-secrets).
 
-- `keystone.yaml` - KeystoneDeployment (identity)
+- `keystone.yaml` - KeystoneDeployment (identity).
+  Database (`database`): `resources` on `mariadb-galera` (200m CPU / 512Mi req /
+  2Gi limit) and every proxy sidecar (`haproxy`, `service-reload`,
+  `create-ca-bundle`). Same BestEffort-starvation fix as all other databases —
+  see "All yaook database pods must not be BestEffort" in Section 8.
 - `glance.yaml` - GlanceDeployment (images). `show_image_direct_url: true`
   exposes the RBD location of images so cinder/nova create volumes as instant
   Ceph copy-on-write clones instead of streaming a full copy through the
   glance API (images must be **raw** format for COW cloning; safe because
   glance/cinder share one Ceph cluster).
+  Database (`database`): `resources` on `mariadb-galera` and every proxy
+  sidecar — same fix as all other databases.
 - `neutron.yaml` - NeutronDeployment (networking). The `setup.ovn` block sets
   **`resources` on every OVN component** (`northboundOVSDB.ovsdb`/`ssl-terminator`,
   `southboundOVSDB.ovsdb`/`ssl-terminator`, `southboundOVSDB.ovnRelay.ovn-relay`/
@@ -1514,9 +1520,19 @@ reconciled by the operators above. Deployed by the `yaook` Flux Kustomization
   stopped through the Nova API has `vm_state=stopped` and stays down — so it
   does not fight deliberate shutdowns. It triggers on nova-compute service
   init, not strictly on host boot, so it also applies when the pod restarts.
-- `cinder.yaml` - CinderDeployment (block storage, rook-ceph RBD backend)
+  Database (`database`): `resources` on all four Galera instances (`api`,
+  `cell0`, `cell1`, `placement`) and every proxy sidecar — same
+  BestEffort-starvation fix as all other databases. Nova has four separate
+  databases (one per cell + api + placement); each must carry resources.
+- `cinder.yaml` - CinderDeployment (block storage, rook-ceph RBD backend).
+  Database (`database`): `resources` on `mariadb-galera` (200m CPU / 512Mi req /
+  2Gi limit) and every proxy sidecar (`haproxy`, `service-reload`,
+  `create-ca-bundle`). Same BestEffort-starvation fix as all other databases —
+  see "All yaook database pods must not be BestEffort" in Section 8.
 - `horizon.yaml` - HorizonDeployment (dashboard)
-- `octavia.yaml` - OctaviaDeployment (load balancing)
+- `octavia.yaml` - OctaviaDeployment (load balancing).
+  Database (`database`): `resources` on `mariadb-galera` and every proxy
+  sidecar — same fix as cinder/keystone/etc.
 - `designate.yaml` - DesignateDeployment (DNS). The `policy:` map, besides
   `admin: role:admin`, OR-s a narrow custom `role:dns_manager` into the recordset
   CRUD + zone/recordset READ targets (`get_zones`/`find_zones`/`get_zone`/
@@ -2895,6 +2911,47 @@ PowerDNS _server_ pod, nor for the Galera pod's `ssl-terminator` — the very
 container whose probe failed. Fixing the DB removes the trigger; closing the gap
 needs an upstream yaook change.
 
+#### All yaook database pods must not be BestEffort (openstack cluster)
+
+**2026-07-30.** Every yaook OpenStack service has a `database` sub-section in its
+Deployment CR that defines a Galera cluster + proxy sidecars (haproxy,
+`service-reload`, `create-ca-bundle`). Every one of these pods shipped with
+`resources: {}` → QoS **BestEffort** → cgroup v2 `cpu.weight` of **1** — the
+minimum. On hyperconverged nodes shared with Ceph OSDs and tenant qemu
+processes, the readiness probe (`ssl-terminator` connecting to the Galera port)
+would fail under CPU contention → kubelet restarts the pod → intermittent
+database connectivity for the OpenStack control plane.
+
+This is the same failure mode as "OVN control plane must not be BestEffort"
+(2026-07-26) and "PowerDNS/Galera must not be BestEffort" (same date). The
+PowerDNS note diagnosed the problem in detail; this is the fleet-wide fix.
+
+Fix: `resources` on every Galera + proxy sidecar in **all 9 database
+sub-sections** across 7 CRs:
+
+| CR        | databases                                        | status             |
+| --------- | ------------------------------------------------ | ------------------ |
+| keystone  | `database`                                       | fixed              |
+| glance    | `database`                                       | fixed              |
+| neutron   | `database`                                       | fixed              |
+| nova      | `database.api`, `.cell0`, `.cell1`, `.placement` | fixed              |
+| cinder    | `database`                                       | fixed              |
+| octavia   | `database`                                       | fixed              |
+| designate | `database`                                       | fixed              |
+| designate | `powerdns.database`                              | fixed (2026-07-26) |
+
+Resource values: `mariadb-galera` 200m CPU / 512Mi req / 2Gi limit;
+`haproxy` 50m / 192Mi req / 512Mi limit; `service-reload` and
+`create-ca-bundle` 10m / 32Mi req / 64Mi limit. **No CPU limits** anywhere —
+throttling a DB re-creates the probe-timeout death spiral (same rationale as
+the OVN and Ceph daemons). Memory limits are a ~5-7x runaway backstop.
+
+**Still unfixable declaratively:** the CRD exposes no `resources` for the
+Galera pod's `ssl-terminator` sidecar (the container whose readiness probe
+fails). Fixing the DB and proxy removes the trigger; closing the gap needs an
+upstream yaook change. Also no `priorityClassName` for these pods, so they
+cannot be marked `system-cluster-critical`.
+
 #### kubelet metricRelabelings are PER-ENDPOINT — a rule in the wrong list silently never fires
 
 **2026-07-26.** The monitoring base carried a rule dropping
@@ -3323,7 +3380,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 2026 (Added `infrastructure/openstack-exporter/` — plain manifests deploying `ghcr.io/openstack-exporter/openstack-exporter:1.6.0` (distroless, no shell) on the openstack cluster: ESO `SecretStore` reads `keystone-admin` from ns `yaook` via cross-namespace SA RBAC, renders `clouds.yaml` with `auth_url: https://keystone.yaook.svc:5000/v3` (internal,
+**Last Updated**: July 2026 (BestEffort starvation fix fleet-wide: added `resources` on all 9 database sub-sections across 7 yaook Deployment CRs (keystone, glance, neutron, nova×4, cinder, octavia, designate main — designate powerdns.database was already fixed 2026-07-26). Every yaook database pod shipped with `resources: {}` → QoS BestEffort → cpu.weight=1 → readiness probe fails under CPU contention → kubelet restarts → intermittent OpenStack control-plane connectivity. Same failure mode as OVN (2026-07-26) and PowerDNS (same date). Resource values: mariadb-galera 200m/512Mi req / 2Gi limit; haproxy 50m/192Mi / 512Mi; service-reload + create-ca-bundle 10m/32Mi / 64Mi. No CPU limits (throttling re-creates the death spiral). Added Section 8 note "All yaook database pods must not be BestEffort". — Prior: Added `infrastructure/openstack-exporter/` — plain manifests deploying `ghcr.io/openstack-exporter/openstack-exporter:1.6.0` (distroless, no shell) on the openstack cluster: ESO `SecretStore` reads `keystone-admin` from ns `yaook` via cross-namespace SA RBAC, renders `clouds.yaml` with `auth_url: https://keystone.yaook.svc:5000/v3` (internal,
 `verify: false`), Deployment with `--endpoint-type internal` and a
 ServiceMonitor (interval 60s, no yaook component label → scraped by
 kube-prometheus-stack's allow-by-default `NotIn` selector). The image is

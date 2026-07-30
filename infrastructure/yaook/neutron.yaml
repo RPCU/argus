@@ -364,19 +364,27 @@ spec:
           # (every tenant VM on it). A request without a limit gives it
           # scheduling weight while keeping that failure mode impossible.
           #
-          # 2026-07-30: dropped from 500m to 250m. quinn is an 8-core node (lucy
+          # 2026-07-30: dropped from 500m to 300m. quinn is an 8-core node (lucy
           # and makise are 12-core) and already carries a Ceph OSD (2000m
           # request) plus an OVN control-plane ovsdb+relay replica set (~1400m),
-          # leaving it ~94% CPU-requested — the per-node dataplane's own
+          # leaving it ~94-96% CPU-requested — the per-node dataplane's own
           # `ovs-vswitchd` (at 500m) then would NOT fit on quinn and sat Pending
           # `Insufficient cpu`, taking quinn's OVN dataplane down entirely (and
           # blocking `ovn-controller`, which has a required podAffinity to
-          # co-locate with it). 250m still gives real scheduling weight (well
+          # co-locate with it). 300m still gives real scheduling weight (well
           # above the BestEffort cgroup weight of 1 this block exists to escape)
-          # and matches `ovn-controller` above, while fitting quinn's headroom.
+          # and matches `ovn-controller` above.
+          #
+          # NOTE: the yaook operator clamps this to a FLOOR of 300m — a lower
+          # value (250m was tried) is silently rendered back up to 300m in the
+          # generated StatefulSet, so 300m is the effective minimum. Fitting it
+          # on quinn ALSO required relieving quinn's CPU pressure by rescheduling
+          # movable Deployment-owned OpenStack API pods (glance/cinder/horizon/
+          # neutron/nova-api) onto the 12-core nodes; those float and drift back,
+          # so the durable capacity fix is upstream node sizing, not this value.
           ovs-vswitchd:
             requests:
-              cpu: 250m
+              cpu: 300m
               memory: 512Mi
           ovs-vswitchd-monitoring:
             requests:

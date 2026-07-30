@@ -164,139 +164,6 @@ spec:
           "type": "stat"
         },
         {
-          "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
-          "id": 6,
-          "title": "PVC Inventory (Capacity vs Used)",
-          "type": "row"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "align": "auto",
-                "cellOptions": { "type": "auto" },
-                "inspect": true
-              }
-            },
-            "overrides": [
-              {
-                "matcher": { "id": "byName", "options": "Max Capacity" },
-                "properties": [{ "id": "unit", "value": "bytes" }]
-              },
-              {
-                "matcher": { "id": "byName", "options": "Used" },
-                "properties": [{ "id": "unit", "value": "bytes" }]
-              },
-              {
-                "matcher": { "id": "byName", "options": "Usage %" },
-                "properties": [
-                  { "id": "unit", "value": "percent" },
-                  {
-                    "id": "custom.cellOptions",
-                    "value": { "mode": "gradient", "type": "gauge" }
-                  },
-                  { "id": "max", "value": 100 },
-                  { "id": "min", "value": 0 },
-                  {
-                    "id": "thresholds",
-                    "value": {
-                      "mode": "absolute",
-                      "steps": [
-                        { "color": "green", "value": null },
-                        { "color": "yellow", "value": 70 },
-                        { "color": "red", "value": 85 }
-                      ]
-                    }
-                  }
-                ]
-              }
-            ]
-          },
-          "gridPos": { "h": 15, "w": 24, "x": 0, "y": 6 },
-          "id": 7,
-          "options": {
-            "footer": {
-              "countRows": true,
-              "fields": "",
-              "reducer": ["sum"],
-              "show": true
-            },
-            "showHeader": true,
-            "sortBy": [{ "desc": true, "displayName": "Used" }]
-          },
-          "targets": [
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "max by (namespace, persistentvolumeclaim) (kubelet_volume_stats_capacity_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"})",
-              "format": "table",
-              "instant": true,
-              "legendFormat": "",
-              "refId": "Capacity"
-            },
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "max by (namespace, persistentvolumeclaim) (kubelet_volume_stats_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"})",
-              "format": "table",
-              "instant": true,
-              "legendFormat": "",
-              "refId": "Used"
-            },
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "max by (namespace, persistentvolumeclaim) ((kubelet_volume_stats_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"} / kubelet_volume_stats_capacity_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"}) * 100)",
-              "format": "table",
-              "instant": true,
-              "legendFormat": "",
-              "refId": "Usage"
-            }
-          ],
-          "title": "Complete PVC Inventory Listing (All Clusters & Namespaces)",
-          "type": "table",
-          "transformations": [
-            {
-              "id": "seriesToColumns",
-              "options": { "byField": "persistentvolumeclaim" }
-            },
-            {
-              "id": "organize",
-              "options": {
-                "excludeByName": {
-                  "Time": true,
-                  "Time 1": true,
-                  "Time 2": true,
-                  "Time 3": true,
-                  "__name__": true,
-                  "__name__ 1": true,
-                  "__name__ 2": true,
-                  "__name__ 3": true,
-                  "job": true,
-                  "job 1": true,
-                  "job 2": true,
-                  "job 3": true,
-                  "endpoint": true,
-                  "endpoint 1": true,
-                  "endpoint 2": true,
-                  "endpoint 3": true,
-                  "instance": true,
-                  "instance 1": true,
-                  "instance 2": true,
-                  "instance 3": true
-                },
-                "indexByName": {},
-                "renameByName": {
-                  "namespace": "Namespace",
-                  "persistentvolumeclaim": "PVC Name",
-                  "Value #Capacity": "Max Capacity",
-                  "Value #Used": "Used",
-                  "Value #Usage": "Usage %"
-                }
-              }
-            }
-          ]
-        },
-        {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
           "description": "Per-PVC fill level: used / capacity as reported by the kubelet. Red at 90%, amber at 75%. NOTE for RWX volumes backed by the shared CephFS NFS export, BOTH used and capacity are statfs() on the whole export, so the figure is the export's fill level rather than that single claim's.",
           "fieldConfig": {
@@ -316,7 +183,7 @@ spec:
             },
             "overrides": []
           },
-          "gridPos": { "h": 9, "w": 24, "x": 0, "y": 21 },
+          "gridPos": { "h": 9, "w": 24, "x": 0, "y": 6 },
           "id": 10,
           "options": {
             "displayMode": "gradient",

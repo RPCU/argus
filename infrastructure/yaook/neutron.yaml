@@ -363,9 +363,20 @@ spec:
           # count, and an OOM-kill here severs the whole node's dataplane
           # (every tenant VM on it). A request without a limit gives it
           # scheduling weight while keeping that failure mode impossible.
+          #
+          # 2026-07-30: dropped from 500m to 250m. quinn is an 8-core node (lucy
+          # and makise are 12-core) and already carries a Ceph OSD (2000m
+          # request) plus an OVN control-plane ovsdb+relay replica set (~1400m),
+          # leaving it ~94% CPU-requested — the per-node dataplane's own
+          # `ovs-vswitchd` (at 500m) then would NOT fit on quinn and sat Pending
+          # `Insufficient cpu`, taking quinn's OVN dataplane down entirely (and
+          # blocking `ovn-controller`, which has a required podAffinity to
+          # co-locate with it). 250m still gives real scheduling weight (well
+          # above the BestEffort cgroup weight of 1 this block exists to escape)
+          # and matches `ovn-controller` above, while fitting quinn's headroom.
           ovs-vswitchd:
             requests:
-              cpu: 500m
+              cpu: 250m
               memory: 512Mi
           ovs-vswitchd-monitoring:
             requests:

@@ -18,7 +18,7 @@
 #                 nova/neutron/cinder agent states, octavia LB status, glance/
 #                 designate/cinder resource counts.
 #   rabbitmq_*    yaook amqp_service_monitor   (RabbitMQ prometheus plugin)
-#   mysql_*       yaook mysql_service_monitor  (mysqld_exporter, incl. Galera wsrep)
+#   mysql_*       yaook mysql_service_monitor  (mysqld_exporter)
 #
 # WHAT WAS REMOVED AND WHY:
 #   - The OVS/OVN data-plane row (socket_up / flow_limit). Confirmed ZERO series
@@ -359,12 +359,12 @@ spec:
           "collapsed": false,
           "gridPos": { "h": 1, "w": 24, "x": 0, "y": 55 },
           "id": 30,
-          "title": "Service Databases (Galera / MariaDB)",
+          "title": "Service Databases (MariaDB)",
           "type": "row"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "Per-database health. up = exporter reachable; wsrep_ready = accepting writes; wsrep_connected = joined to the cluster. A row where up=1 but ready=0 is a DB that is running but refusing queries (SST/IST in progress).",
+          "description": "Per-database health. up = exporter reachable.",
           "fieldConfig": {
             "defaults": {
               "color": { "mode": "fixed", "fixedColor": "text" },
@@ -378,22 +378,6 @@ spec:
                   { "id": "color", "value": { "mode": "thresholds" } },
                   { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } }
                 ]
-              },
-              {
-                "matcher": { "id": "byName", "options": "wsrep_ready" },
-                "properties": [
-                  { "id": "custom.cellOptions", "value": { "type": "color-background" } },
-                  { "id": "color", "value": { "mode": "thresholds" } },
-                  { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } }
-                ]
-              },
-              {
-                "matcher": { "id": "byName", "options": "wsrep_connected" },
-                "properties": [
-                  { "id": "custom.cellOptions", "value": { "type": "color-background" } },
-                  { "id": "color", "value": { "mode": "thresholds" } },
-                  { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } }
-                ]
               }
             ]
           },
@@ -401,9 +385,7 @@ spec:
           "id": 31,
           "options": { "showHeader": true },
           "targets": [
-            { "expr": "mysql_up{cluster=\"openstack\"}", "format": "table", "instant": true, "refId": "A" },
-            { "expr": "mysql_global_status_wsrep_ready{cluster=\"openstack\"}", "format": "table", "instant": true, "refId": "B" },
-            { "expr": "mysql_global_status_wsrep_connected{cluster=\"openstack\"}", "format": "table", "instant": true, "refId": "C" }
+            { "expr": "mysql_up{cluster=\"openstack\"}", "format": "table", "instant": true, "refId": "A" }
           ],
           "transformations": [
             { "id": "merge", "options": {} },
@@ -411,7 +393,7 @@ spec:
               "id": "organize",
               "options": {
                 "excludeByName": { "Time": true, "__name__": true, "cluster": true, "endpoint": true, "namespace": true, "service": true, "container": true, "pod": true, "instance": true, "prometheus": true, "prometheus_replica": true },
-                "renameByName": { "Value #A": "up", "Value #B": "wsrep_ready", "Value #C": "wsrep_connected", "job": "database" }
+                "renameByName": { "Value #A": "up", "job": "database" }
               }
             }
           ],

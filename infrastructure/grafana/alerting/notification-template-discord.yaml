@@ -1,0 +1,41 @@
+# Custom Discord notification template for Grafana unified alerting.
+#
+# Replaces the verbose default Grafana template with a concise format:
+#   Title:  🔥 AlertName (count) — cluster
+#   Message: blockquoted summary + description + dashboard link
+#
+# The template data model (per Grafana docs):
+#   .Alerts[]  — each alert has .Status, .Labels, .Annotations, .DashboardURL, .PanelURL
+#   .GroupLabels — labels used for grouping (alertname, cluster, grafana_folder)
+#
+# Referenced from contactpoint-discord.yaml via:
+#   title:   '{{ template "discord.title" . }}'
+#   message: '{{ template "discord.message" . }}'
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaNotificationTemplate
+metadata:
+  name: discord-custom
+  namespace: monitoring
+spec:
+  allowCrossNamespaceImport: true
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana-central
+  templates:
+    - name: discord.title
+      text: |
+        {{- $firing := false -}}
+        {{- range .Alerts -}}{{- if eq .Status "firing" -}}{{- $firing = true -}}{{- end -}}{{- end -}}
+        {{- if $firing -}}🔥{{ else -}}✅{{ end -}} {{ (index .Alerts 0).Labels.alertname }} ({{ len .Alerts }}) — {{ (index .Alerts 0).Labels.cluster | default "n/a" }}
+    - name: discord.message
+      text: |
+        {{- range .Alerts -}}
+        > {{ .Annotations.summary }}
+        {{ .Annotations.description }}
+        {{ end -}}
+        {{- $first := index .Alerts 0 -}}
+        {{- if $first.PanelURL }}
+        [📊 View panel]({{ $first.PanelURL }})
+        {{- else if $first.DashboardURL }}
+        [📊 View dashboard]({{ $first.DashboardURL }})
+        {{- end -}}

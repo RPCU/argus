@@ -9,7 +9,7 @@ spec:
   instanceSelector:
     matchLabels:
       dashboards: "grafana-central"
-  folder: "Infrastructure & Clusters"
+  folder: "Monitoring"
   json: |
     {
       "annotations": {

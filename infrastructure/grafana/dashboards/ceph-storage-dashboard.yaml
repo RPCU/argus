@@ -45,7 +45,7 @@ spec:
   instanceSelector:
     matchLabels:
       dashboards: grafana-central
-  folder: Storage & Persistent Volumes
+  folder: "Monitoring"
   json: |
     {
       "annotations": { "list": [] },

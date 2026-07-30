@@ -19,6 +19,7 @@ spec:
   instanceSelector:
     matchLabels:
       dashboards: grafana-central
+  folder: "Monitoring"
   json:
     "{\n  \"annotations\": {\n    \"list\": []\n  },\n  \"editable\": true,\n  \"graphTooltip\": 1,\n\
     \  \"schemaVersion\": 39,\n  \"title\": \"Node Filesystem / Hypervisor Storage\",\n  \"uid\": \"node-filesystem-overview\"\

@@ -205,6 +205,13 @@ spec:
     # - Containers waiting to start during rolling updates: transitional state
     # - CrashLoopBackOff: already covered by the dedicated PodCrashLoopBackOff
     #   alert, so excluding it here avoids duplicate notifications
+    #
+    # Terminated containers (exit 0) are excluded via `unless
+    # (kube_pod_container_status_terminated == 1)` because Jobs/CronJobs
+    # and one-shot yaook tasks leave `ready=0` after normal completion.
+    # The `phase=Succeeded` unless alone misses a race window where
+    # kube-state-metrics still reports `phase=Running` after the container
+    # has already terminated.
     # ---------------------------------------------------------------------
     - uid: argus-pod-not-ready
       title: PodContainerNotReady
@@ -238,6 +245,8 @@ spec:
               )
               unless on (cluster, namespace, pod, container)
               kube_pod_container_status_waiting_reason
+              unless on (cluster, namespace, pod, container)
+              (kube_pod_container_status_terminated == 1)
               unless on (cluster, namespace, pod)
               kube_pod_status_phase{phase="Succeeded"}
             instant: true

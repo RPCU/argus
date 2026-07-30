@@ -10,10 +10,7 @@
 # scraper and a second replica would just double the OpenStack API load.
 #
 # `--endpoint-type internal` matches the clouds.yaml identity_interface so every
-# service is reached via in-cluster catalog endpoints. `--cache` + a 5m TTL keeps
-# the exporter from hammering the OpenStack APIs on every Prometheus scrape (the
-# nova server/quota listing is expensive across all tenants); the ServiceMonitor
-# below scrapes every 60s but reads cached data. `--disable-slow-metrics` is NOT
+# service is reached via in-cluster catalog endpoints. `--disable-slow-metrics` is NOT
 # set — the per-tenant limits metrics are wanted for quota panels, and this cloud
 # is small (single region, a handful of projects).
 apiVersion: apps/v1
@@ -45,8 +42,6 @@ spec:
           args:
             - "--os-client-config=/etc/openstack/clouds.yaml"
             - "--endpoint-type=internal"
-            - "--cache"
-            - "--cache-ttl=300s"
             - "--web.listen-address=:9180"
             - "openstack"
           ports:

@@ -23,8 +23,8 @@
 #         directly rather than on `waiting == 1` (that name has no reason label).
 #   kube_pod_container_status_restarts_total{...}  — cumulative restart counter.
 #   kube_pod_container_status_ready / running      — 1/0 per container.
-#   kube_pod_owner{owner_kind}                      — used to EXCLUDE Jobs, whose
-#         pods legitimately go NotReady on completion.
+#   kube_pod_status_phase{phase}                   — Running/Pending/Succeeded/Failed.
+#         Pods in Succeeded or Failed phase are excluded (completed workloads).
 #
 # Namespace scope: these are cluster-wide on purpose (a CrashLoopBackOff in ANY
 # namespace is worth a page), but kube-system/CNI churn is not special-cased —
@@ -194,9 +194,10 @@ spec:
     # ---------------------------------------------------------------------
     # Container not ready — a container that is NOT ready for 15m without
     # necessarily crash-looping (stuck init, failing readiness, wedged
-    # dependency). Job-owned pods are excluded: they go NotReady on normal
-    # completion, which is not a fault. Uses the raw ready metric with a lt
-    # threshold (NOT `== 0`) so the series always has data and NoData==OK holds.
+    # dependency). Completed/failed pods are excluded: they go NotReady on
+    # normal completion or after final termination, which is not a fault.
+    # Uses the raw ready metric with a lt threshold (NOT `== 0`) so the
+    # series always has data and NoData==OK holds.
     # ---------------------------------------------------------------------
     - uid: argus-pod-not-ready
       title: PodContainerNotReady
@@ -224,7 +225,8 @@ spec:
             expr: |
               min by (cluster, namespace, pod, container) (kube_pod_container_status_ready)
               * on (cluster, namespace, pod) group_left
-              max by (cluster, namespace, pod) (kube_pod_owner{owner_kind!="Job"})
+              (kube_pod_status_phase{phase="Running"} == 1
+              or on (cluster, namespace, pod) kube_pod_status_phase{phase="Pending"} == 1)
             instant: true
             range: false
             intervalMs: 1000

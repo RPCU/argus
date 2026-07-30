@@ -24,10 +24,8 @@ spec:
   receivers:
     - type: discord
       settings:
-        # Grafana's built-in templates render a readable summary with the
-        # firing/resolved instances and their labels/annotations.
-        title: '{{ template "default.title" . }}'
-        message: '{{ template "default.message" . }}'
+        title: '{{ template "discord.title" . }}'
+        message: '{{ template "discord.message" . }}'
         use_discord_username: false
       valuesFrom:
         - targetPath: url

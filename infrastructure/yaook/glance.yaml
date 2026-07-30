@@ -7,9 +7,35 @@ spec:
     name: keystone
   database:
     replicas: 1
+    resources:
+      mariadb-galera:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          memory: 2Gi
     timeoutClient: 300
     proxy:
       replicas: 1
+      resources:
+        haproxy:
+          requests:
+            cpu: 50m
+            memory: 192Mi
+          limits:
+            memory: 512Mi
+        service-reload:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 64Mi
+        create-ca-bundle:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 64Mi
     backup:
       schedule: "0 * * * *"
   memcached:

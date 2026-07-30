@@ -157,7 +157,7 @@ spec:
           "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
           "id": 6,
           "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-          "targets": [ { "expr": "sum(openstack_nova_agent_state{cluster=\"openstack\",service=\"nova-compute\"})", "legendFormat": "compute up", "refId": "A" } ],
+          "targets": [ { "expr": "sum(openstack_nova_agent_state{cluster=\"openstack\",exported_service=\"nova-compute\"})", "legendFormat": "compute up", "refId": "A" } ],
           "title": "nova-compute Up",
           "type": "stat"
         },
@@ -298,7 +298,7 @@ spec:
           "id": 14,
           "options": { "legend": { "calcs": ["min", "lastNotNull"], "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi", "sort": "desc" } },
           "targets": [
-            { "expr": "openstack_nova_agent_state{cluster=\"openstack\"}", "legendFormat": "{{service}} @ {{hostname}}", "refId": "A" }
+            { "expr": "openstack_nova_agent_state{cluster=\"openstack\"}", "legendFormat": "{{exported_service}} @ {{hostname}}", "refId": "A" }
           ],
           "title": "Nova Agent State",
           "type": "timeseries"
@@ -367,11 +367,35 @@ spec:
           "description": "Per-database health. up = exporter reachable; wsrep_ready = accepting writes; wsrep_connected = joined to the cluster. A row where up=1 but ready=0 is a DB that is running but refusing queries (SST/IST in progress).",
           "fieldConfig": {
             "defaults": {
-              "color": { "mode": "thresholds" },
-              "unit": "short",
-              "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] },
-              "custom": { "align": "auto", "cellOptions": { "type": "color-background" } }
-            }
+              "color": { "mode": "fixed", "fixedColor": "text" },
+              "custom": { "align": "auto", "cellOptions": { "type": "color-text" } }
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "up" },
+                "properties": [
+                  { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+                  { "id": "color", "value": { "mode": "thresholds" } },
+                  { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } }
+                ]
+              },
+              {
+                "matcher": { "id": "byName", "options": "wsrep_ready" },
+                "properties": [
+                  { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+                  { "id": "color", "value": { "mode": "thresholds" } },
+                  { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } }
+                ]
+              },
+              {
+                "matcher": { "id": "byName", "options": "wsrep_connected" },
+                "properties": [
+                  { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+                  { "id": "color", "value": { "mode": "thresholds" } },
+                  { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } }
+                ]
+              }
+            ]
           },
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 56 },
           "id": 31,
@@ -386,7 +410,7 @@ spec:
             {
               "id": "organize",
               "options": {
-                "excludeByName": { "Time": true, "__name__": true, "cluster": true, "endpoint": true, "namespace": true, "service": true, "container": true, "pod": true, "instance": true },
+                "excludeByName": { "Time": true, "__name__": true, "cluster": true, "endpoint": true, "namespace": true, "service": true, "container": true, "pod": true, "instance": true, "prometheus": true, "prometheus_replica": true },
                 "renameByName": { "Value #A": "up", "Value #B": "wsrep_ready", "Value #C": "wsrep_connected", "job": "database" }
               }
             }

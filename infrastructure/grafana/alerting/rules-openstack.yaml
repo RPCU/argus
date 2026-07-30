@@ -173,7 +173,7 @@ spec:
           model:
             datasource: { type: prometheus, uid: Mimir }
             editorMode: code
-            expr: max by (hostname) (openstack_nova_agent_state{cluster="openstack",service="nova-compute"})
+            expr: max by (hostname) (openstack_nova_agent_state{cluster="openstack",exported_service="nova-compute"})
             instant: true
             range: false
             intervalMs: 1000

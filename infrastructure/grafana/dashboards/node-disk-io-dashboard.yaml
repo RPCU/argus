@@ -1,0 +1,482 @@
+# Node disk I/O monitoring (throughput, IOPS, latency, utilization).
+#
+# Sourced from node-exporter (node_disk_*), covering the REAL block devices
+# of every monitored machine — especially the baremetal openstack hypervisors
+# (lucy/makise/quinn) which carry Nova VMs and Ceph OSDs.
+#
+# NOTE: container-level disk I/O metrics (container_fs_reads_bytes_total,
+# container_fs_writes_bytes_total, container_blkio_device_usage_total) are
+# intentionally dropped by the monitoring base's cAdvisor relabelings to cut
+# ~5k+ series. This dashboard therefore shows NODE-level I/O only, which is
+# where the real signal lives for capacity planning, Ceph OSD diagnostics,
+# and Nova cold-migration throughput.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: node-disk-io-overview
+  namespace: monitoring
+spec:
+  resyncPeriod: 5m
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana-central
+  folder: "Monitoring"
+  json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "graphTooltip": 1,
+      "schemaVersion": 39,
+      "title": "Node Disk I/O",
+      "uid": "node-disk-io-overview",
+      "tags": ["disk", "io", "nodes", "hypervisor"],
+      "time": { "from": "now-6h", "to": "now" },
+      "refresh": "1m",
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "id": 1,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "sum(rate(node_disk_read_bytes_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m]))",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Total Read Throughput",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "id": 2,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "sum(rate(node_disk_written_bytes_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m]))",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Total Write Throughput",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "id": 3,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "sum(rate(node_disk_reads_completed_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m]))",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Total Read IOPS",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+          "id": 4,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "sum(rate(node_disk_writes_completed_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m]))",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Total Write IOPS",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "color": { "mode": "thresholds" },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 70 },
+                  { "color": "red", "value": 90 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 8, "x": 0, "y": 4 },
+          "id": 5,
+          "options": {
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "100 * sum(rate(node_disk_io_time_seconds_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m])) / count without (device) (rate(node_disk_io_time_seconds_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m]))",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Disk I/O Utilization (avg)",
+          "type": "gauge"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "min": 0,
+              "color": { "mode": "thresholds" },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 0.01 },
+                  { "color": "red", "value": 0.05 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 8, "x": 8, "y": 4 },
+          "id": 6,
+          "options": {
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "sum(rate(node_disk_read_time_seconds_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m])) / sum(rate(node_disk_reads_completed_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m])) > 0",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Avg Read Latency",
+          "type": "gauge"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "min": 0,
+              "color": { "mode": "thresholds" },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 0.01 },
+                  { "color": "red", "value": 0.05 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 8, "x": 16, "y": 4 },
+          "id": 7,
+          "options": {
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "sum(rate(node_disk_write_time_seconds_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m])) / sum(rate(node_disk_writes_completed_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m])) > 0",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Avg Write Latency",
+          "type": "gauge"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "custom": { "fillOpacity": 10, "lineWidth": 2 }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 9, "w": 12, "x": 0, "y": 8 },
+          "id": 8,
+          "options": {
+            "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "rate(node_disk_read_bytes_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m])",
+              "legendFormat": "{{cluster}} / {{instance}} {{device}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Read Throughput per Device",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "custom": { "fillOpacity": 10, "lineWidth": 2 }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 9, "w": 12, "x": 12, "y": 8 },
+          "id": 9,
+          "options": {
+            "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "rate(node_disk_written_bytes_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m])",
+              "legendFormat": "{{cluster}} / {{instance}} {{device}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Write Throughput per Device",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "iops",
+              "custom": { "fillOpacity": 10, "lineWidth": 2 }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 9, "w": 12, "x": 0, "y": 17 },
+          "id": 10,
+          "options": {
+            "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "rate(node_disk_reads_completed_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m])",
+              "legendFormat": "{{cluster}} / {{instance}} {{device}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Read IOPS per Device",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "iops",
+              "custom": { "fillOpacity": 10, "lineWidth": 2 }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 9, "w": 12, "x": 12, "y": 17 },
+          "id": 11,
+          "options": {
+            "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "rate(node_disk_writes_completed_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m])",
+              "legendFormat": "{{cluster}} / {{instance}} {{device}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Write IOPS per Device",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "min": 0
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 9, "w": 12, "x": 0, "y": 26 },
+          "id": 12,
+          "options": {
+            "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "rate(node_disk_read_time_seconds_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m]) / rate(node_disk_reads_completed_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m]) > 0",
+              "legendFormat": "{{cluster}} / {{instance}} {{device}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Read Latency per Device",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "min": 0
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 9, "w": 12, "x": 12, "y": 26 },
+          "id": 13,
+          "options": {
+            "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "rate(node_disk_write_time_seconds_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m]) / rate(node_disk_writes_completed_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m]) > 0",
+              "legendFormat": "{{cluster}} / {{instance}} {{device}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Write Latency per Device",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "color": { "mode": "palette-classic" }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 9, "w": 24, "x": 0, "y": 35 },
+          "id": 14,
+          "options": {
+            "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "rate(node_disk_io_time_seconds_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m])",
+              "legendFormat": "{{cluster}} / {{instance}} {{device}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Disk I/O Utilization per Device",
+          "type": "timeseries"
+        }
+      ],
+      "templating": {
+        "list": [
+          {
+            "name": "cluster",
+            "label": "Cluster",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "Mimir" },
+            "query": "label_values(node_disk_read_bytes_total, cluster)",
+            "refresh": 2,
+            "includeAll": true,
+            "multi": true,
+            "current": { "text": "All", "value": "$__all" }
+          },
+          {
+            "name": "node",
+            "label": "Node",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "Mimir" },
+            "query": "label_values(node_disk_read_bytes_total{cluster=~\"$cluster\"}, instance)",
+            "refresh": 2,
+            "includeAll": true,
+            "multi": true,
+            "current": { "text": "All", "value": "$__all" }
+          }
+        ]
+      }
+    }

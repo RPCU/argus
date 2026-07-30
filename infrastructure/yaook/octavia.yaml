@@ -48,7 +48,7 @@ spec:
           memory: 2G
   issuerRef:
     name: yaook-internal
-  targetRelease: "2025.1"
+  targetRelease: "2025.2"
   region:
     name: hetzner
   policy:

@@ -256,7 +256,7 @@ spec:
           memory: 512Mi
         limits:
           memory: 1Gi
-  targetRelease: "2025.1"
+  targetRelease: "2025.2"
   vnc:
     ingress:
       createIngress: false

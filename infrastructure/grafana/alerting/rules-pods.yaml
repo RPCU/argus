@@ -199,6 +199,12 @@ spec:
     # Uses the raw ready metric with a lt threshold (NOT `== 0`) so the
     # series always has data and NoData==OK holds.
     #
+    # Uses `and on` (set intersection) rather than `* on ... group_left`
+    # to filter to Running/Pending pods — avoids a PromQL parse ambiguity
+    # where the parser interprets the `(` of the RHS vector as a
+    # group_left label list. Semantically identical: `and` keeps left-side
+    # series where a matching right-side series exists.
+    #
     # Containers in Waiting state are excluded via `unless
     # kube_pod_container_status_waiting_reason` because:
     # - Init containers before completion: not ready is expected, not a fault
@@ -239,7 +245,7 @@ spec:
             expr: |
               (
                 min by (cluster, namespace, pod, container) (kube_pod_container_status_ready)
-                * on (cluster, namespace, pod) group_left
+                and on (cluster, namespace, pod)
                 (kube_pod_status_phase{phase=~"Running|Pending"} == 1)
               )
               unless on (cluster, namespace, pod, container)

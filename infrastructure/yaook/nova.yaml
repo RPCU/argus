@@ -210,13 +210,26 @@ spec:
         requests:
           cpu: 100m
           memory: 512Mi
+        # 2026-07-30: raised 1Gi -> 1536Mi. After the 2025.1 -> 2025.2 upgrade
+        # the nova-metadata container OOMKilled (exit 137) on startup on all 3
+        # replicas — it ran ~2Gi against a 1Gi limit because it forked
+        # `metadata_workers` WSGI workers (each loads the full nova stack,
+        # ~500Mi). The real fix is fewer workers (metadata_workers 4 -> 2 in
+        # novaConfig below, since this API only serves cloud-init at VM boot and
+        # sits at ~15m CPU); 2 workers land at ~1-1.2Gi, and 1536Mi leaves
+        # headroom so a transient spike doesn't re-trigger the OOM loop.
         limits:
-          memory: 1Gi
+          memory: 1536Mi
   novaConfig:
     DEFAULT:
       debug: false
       osapi_compute_workers: 4
-      metadata_workers: 4
+      # 2 (not 4): the metadata API only serves cloud-init/instance metadata at
+      # VM boot and idles at ~15m CPU. Each worker forks the full nova stack
+      # (~500Mi), so 4 workers pushed the container to ~2Gi and OOMKilled it
+      # against its limit after the 2025.2 upgrade. See the nova-metadata
+      # resources block above.
+      metadata_workers: 2
     conductor:
       workers: 4
     scheduler:

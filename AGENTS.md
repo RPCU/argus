@@ -1458,17 +1458,39 @@ reconciled by the operators above. Deployed by the `yaook` Flux Kustomization
 - `barbican.yaml` - BarbicanDeployment (key manager, simple_crypto plugin, KEK auto-generated)
 - `ca-cert.yaml` - CA certificate resources
 - `disruptionbudget.yaml` - `YaookDisruptionBudget` `nova-compute` (match-all
-  `nodeSelectors`, `maxUnavailable: 1`, **`preventDeletion: true`**). Guard rail
-  for the compute rollout: without it, ANY edit to `novaComputeConfig` makes the
-  nova operator delete each `NovaComputeNode` in turn to apply the new config,
-  which drains the node by migrating its VMs off — and cold migration is broken
-  on this cluster (see "ANY `novaComputeConfig` edit triggers a rolling
-  eviction" in Section 8). With `preventDeletion` the operator only **flags**
-  the node `RequiresRecreation` and labels it
-  `maintenance.yaook.cloud/maintenance-required-nova-compute=True`; a human then
-  recreates one node at a time via the runbook. `disruptiveMaintenance` is left
-  false so ACTIVE instances are LIVE migrated when an eviction is run
-  deliberately; `spareNodes` is unset (no spare host aggregate exists).
+  `nodeSelectors`, `maxUnavailable: 1`, **`disruptiveMaintenance: true`**,
+  **`preventDeletion: false`**). The compute rollout's disruption policy: any
+  edit to `novaComputeConfig` makes the nova operator delete each
+  `NovaComputeNode` in turn (one at a time — `maxUnavailable: 1`) to apply the
+  new config, which drains the node by migrating its VMs off.
+  `disruptiveMaintenance: true` means ACTIVE instances are **COLD** migrated
+  (not live); `preventDeletion: false` means the operator **auto-evicts** on a
+  config change rather than merely flagging the node. Cold migration copies the
+  local qcow2 root disk over the `nova` ssh account, which has an image bug
+  (missing `IdentityFile`) worked around by `nova-compute-ssh-fix.yaml` below —
+  apply that (and verify `remote_filesystem_transport = rsync`) BEFORE relying
+  on an eviction, or the drain wedges (see "Nova cold-migration / node eviction
+  fails" in Section 8). `spareNodes` is unset (no spare host aggregate exists).
+  NOTE: this supersedes the out-of-band `compute-cold-migrate` budget that used
+  to carry these same settings (deleted from the live cluster — a node may match
+  at most one budget or the operator raises `ConfigurationInvalid`).
+- `nova-compute-ssh-fix.yaml` - **Tactical workaround** for the nova
+  cold-migration ssh bug (ServiceAccount + Role/RoleBinding + CronJob, ns
+  yaook). The yaook `nova-compute-*-ubuntu` image ships an `/etc/ssh/ssh_config`
+  with no `IdentityFile` and gives the `nova` user passwd home `/var/empty`, so
+  ssh can't find the key `keygen` writes to `/home/nova/.ssh/id_ed25519` →
+  cold-migration rsync fails `Permission denied (publickey)` and every eviction
+  wedges (Section 8, bug #2). The nova-compute pods are operator-generated
+  StatefulSets and the NovaDeployment CRD's `compute` block exposes only
+  `configTemplates`/`resources` (no ssh_config/IdentityFile/extraVolumes/
+  lifecycle knob — verified against operator 4.1.208), so there is NO
+  declarative CR fix; the durable fix is upstream (fix the image). Until then
+  this CronJob (every 5 min, `kubectl exec` via a scoped `pods`+`pods/exec`
+  Role) idempotently appends the `IdentityFile` line to every nova-compute pod's
+  ssh_config, replacing the manual `sed` loop from the runbook. It is **racy**
+  (a pod recreated then immediately targeted can migrate before the next tick) —
+  for an in-flight eviction, trigger it now:
+  `kubectl create job -n yaook --from=cronjob/nova-compute-ssh-fix nova-ssh-fix-now`.
 - `secretstore*.yaml` / `externalsecret-*.yaml` - SecretStores + ExternalSecrets (crossplane creds, OIDC, rook-ceph client keys)
 - `gateway/` - HTTPRoutes + BackendTLSPolicies per service (includes `httproute-barbican.yaml` → `barbican.rpcu.vpn`, backend `barbican-api:9311`)
 - `kustomization.yaml` - Kustomization manifest (namespace: yaook)

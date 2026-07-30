@@ -20,7 +20,7 @@ spec:
     matchLabels:
       dashboards: grafana-central
   folder: "Monitoring"
-  json:
+  json: |
     {
       "annotations": { "list": [] },
       "editable": true,
@@ -31,232 +31,188 @@ spec:
       "tags": ["storage", "nodes", "hypervisor"],
       "time": { "from": "now-6h", "to": "now" },
       "refresh": "1m",
-      "panels":
-        [
-          {
-            "datasource": { "type": "prometheus", "uid": "Mimir" },
-            "fieldConfig":
-              {
-                "defaults":
-                  {
-                    "unit": "bytes",
-                    "color": { "mode": "thresholds" },
-                    "thresholds":
-                      {
-                        "mode": "absolute",
-                        "steps": [{ "color": "green", "value": null }],
-                      },
-                  },
-                "overrides": [],
-              },
-            "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
-            "id": 1,
-            "options":
-              {
-                "colorMode": "value",
-                "graphMode": "area",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "reduceOptions":
-                  { "calcs": ["lastNotNull"], "fields": "", "values": false },
-                "textMode": "auto",
-              },
-            "targets":
-              [
-                {
-                  "datasource": { "type": "prometheus", "uid": "Mimir" },
-                  "expr": 'sum(node_filesystem_size_bytes{cluster=~"$cluster", instance=~"$node", fstype!~"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs", mountpoint!~"/(run|var/lib/kubelet|boot/efi).*"})',
-                  "instant": true,
-                  "refId": "A",
-                },
-              ],
-            "title": "Total Filesystem Size",
-            "type": "stat",
-          },
-          {
-            "datasource": { "type": "prometheus", "uid": "Mimir" },
-            "fieldConfig":
-              {
-                "defaults":
-                  {
-                    "unit": "bytes",
-                    "color": { "mode": "thresholds" },
-                    "thresholds":
-                      {
-                        "mode": "absolute",
-                        "steps": [{ "color": "green", "value": null }],
-                      },
-                  },
-                "overrides": [],
-              },
-            "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
-            "id": 2,
-            "options":
-              {
-                "colorMode": "value",
-                "graphMode": "area",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "reduceOptions":
-                  { "calcs": ["lastNotNull"], "fields": "", "values": false },
-                "textMode": "auto",
-              },
-            "targets":
-              [
-                {
-                  "datasource": { "type": "prometheus", "uid": "Mimir" },
-                  "expr": 'sum(node_filesystem_size_bytes{cluster=~"$cluster", instance=~"$node", fstype!~"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs", mountpoint!~"/(run|var/lib/kubelet|boot/efi).*"}) - sum(node_filesystem_avail_bytes{cluster=~"$cluster", instance=~"$node", fstype!~"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs", mountpoint!~"/(run|var/lib/kubelet|boot/efi).*"})',
-                  "instant": true,
-                  "refId": "A",
-                },
-              ],
-            "title": "Total Used",
-            "type": "stat",
-          },
-          {
-            "datasource": { "type": "prometheus", "uid": "Mimir" },
-            "fieldConfig":
-              {
-                "defaults":
-                  {
-                    "unit": "bytes",
-                    "color": { "mode": "thresholds" },
-                    "thresholds":
-                      {
-                        "mode": "absolute",
-                        "steps": [{ "color": "green", "value": null }],
-                      },
-                  },
-                "overrides": [],
-              },
-            "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
-            "id": 3,
-            "options":
-              {
-                "colorMode": "value",
-                "graphMode": "area",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "reduceOptions":
-                  { "calcs": ["lastNotNull"], "fields": "", "values": false },
-                "textMode": "auto",
-              },
-            "targets":
-              [
-                {
-                  "datasource": { "type": "prometheus", "uid": "Mimir" },
-                  "expr": 'sum(node_filesystem_avail_bytes{cluster=~"$cluster", instance=~"$node", fstype!~"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs", mountpoint!~"/(run|var/lib/kubelet|boot/efi).*"})',
-                  "instant": true,
-                  "refId": "A",
-                },
-              ],
-            "title": "Total Available",
-            "type": "stat",
-          },
-          {
-            "datasource": { "type": "prometheus", "uid": "Mimir" },
-            "fieldConfig":
-              {
-                "defaults":
-                  {
-                    "unit": "percent",
-                    "color": { "mode": "thresholds" },
-                    "thresholds":
-                      {
-                        "mode": "absolute",
-                        "steps": [{ "color": "green", "value": null }],
-                      },
-                  },
-                "overrides": [],
-              },
-            "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
-            "id": 4,
-            "options":
-              {
-                "colorMode": "value",
-                "graphMode": "area",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "reduceOptions":
-                  { "calcs": ["lastNotNull"], "fields": "", "values": false },
-                "textMode": "auto",
-              },
-            "targets":
-              [
-                {
-                  "datasource": { "type": "prometheus", "uid": "Mimir" },
-                  "expr": '(1 - sum(node_filesystem_avail_bytes{cluster=~"$cluster", instance=~"$node", fstype!~"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs", mountpoint!~"/(run|var/lib/kubelet|boot/efi).*"}) / sum(node_filesystem_size_bytes{cluster=~"$cluster", instance=~"$node", fstype!~"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs", mountpoint!~"/(run|var/lib/kubelet|boot/efi).*"})) * 100',
-                  "instant": true,
-                  "refId": "A",
-                },
-              ],
-            "title": "Used %",
-            "type": "stat",
-          },
-          {
-            "datasource": { "type": "prometheus", "uid": "Mimir" },
-            "fieldConfig":
-              {
-                "defaults":
-                  {
-                    "unit": "percent",
-                    "custom": { "fillOpacity": 8, "lineWidth": 2 },
-                    "min": 0,
-                    "max": 100,
-                  },
-                "overrides": [],
-              },
-            "gridPos": { "h": 10, "w": 24, "x": 0, "y": 4 },
-            "id": 5,
-            "options":
-              {
-                "legend":
-                  {
-                    "displayMode": "table",
-                    "placement": "right",
-                    "calcs": ["lastNotNull", "max"],
-                  },
-                "tooltip": { "mode": "multi", "sort": "desc" },
-              },
-            "targets":
-              [
-                {
-                  "datasource": { "type": "prometheus", "uid": "Mimir" },
-                  "expr": '(1 - node_filesystem_avail_bytes{cluster=~"$cluster", instance=~"$node", fstype!~"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs", mountpoint!~"/(run|var/lib/kubelet|boot/efi).*"} / node_filesystem_size_bytes{cluster=~"$cluster", instance=~"$node", fstype!~"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs", mountpoint!~"/(run|var/lib/kubelet|boot/efi).*"}) * 100',
-                  "legendFormat": "{{cluster}} / {{instance}} {{mountpoint}}",
-                  "refId": "A",
-                },
-              ],
-            "title": "Filesystem Used % per Mountpoint",
-            "type": "timeseries",
-          },
-        ],
-      "templating":
+      "panels": [
         {
-          "list":
-            [
-              {
-                "name": "cluster",
-                "label": "Cluster",
-                "type": "query",
-                "datasource": { "type": "prometheus", "uid": "Mimir" },
-                "query": "label_values(node_filesystem_size_bytes, cluster)",
-                "refresh": 2,
-                "includeAll": true,
-                "multi": true,
-                "current": { "text": "All", "value": "$__all" },
-              },
-              {
-                "name": "node",
-                "label": "Node",
-                "type": "query",
-                "datasource": { "type": "prometheus", "uid": "Mimir" },
-                "query": 'label_values(node_filesystem_size_bytes{cluster=~"$cluster"}, instance)',
-                "refresh": 2,
-                "includeAll": true,
-                "multi": true,
-                "current": { "text": "All", "value": "$__all" },
-              },
-            ],
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "id": 1,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "sum(node_filesystem_size_bytes{cluster=~\"$cluster\", instance=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"})",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Total Filesystem Size",
+          "type": "stat"
         },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "id": 2,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "sum(node_filesystem_size_bytes{cluster=~\"$cluster\", instance=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"}) - sum(node_filesystem_avail_bytes{cluster=~\"$cluster\", instance=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"})",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Total Used",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "id": 3,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "sum(node_filesystem_avail_bytes{cluster=~\"$cluster\", instance=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"})",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Total Available",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+          "id": 4,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "(1 - sum(node_filesystem_avail_bytes{cluster=~\"$cluster\", instance=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"}) / sum(node_filesystem_size_bytes{cluster=~\"$cluster\", instance=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"})) * 100",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Used %",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "custom": { "fillOpacity": 8, "lineWidth": 2 },
+              "min": 0,
+              "max": 100
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 4 },
+          "id": 5,
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": ["lastNotNull", "max"]
+            },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "(1 - node_filesystem_avail_bytes{cluster=~\"$cluster\", instance=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"} / node_filesystem_size_bytes{cluster=~\"$cluster\", instance=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"}) * 100",
+              "legendFormat": "{{cluster}} / {{instance}} {{mountpoint}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Filesystem Used % per Mountpoint",
+          "type": "timeseries"
+        }
+      ],
+      "templating": {
+        "list": [
+          {
+            "name": "cluster",
+            "label": "Cluster",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "Mimir" },
+            "query": "label_values(node_filesystem_size_bytes, cluster)",
+            "refresh": 2,
+            "includeAll": true,
+            "multi": true,
+            "current": { "text": "All", "value": "$__all" }
+          },
+          {
+            "name": "node",
+            "label": "Node",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "Mimir" },
+            "query": "label_values(node_filesystem_size_bytes{cluster=~\"$cluster\"}, instance)",
+            "refresh": 2,
+            "includeAll": true,
+            "multi": true,
+            "current": { "text": "All", "value": "$__all" }
+          }
+        ]
+      }
     }

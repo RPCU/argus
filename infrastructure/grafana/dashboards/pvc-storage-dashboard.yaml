@@ -10,7 +10,7 @@ spec:
     matchLabels:
       dashboards: grafana-central
   folder: "Monitoring"
-  json:
+  json: |
     {
       "annotations": { "list": [] },
       "editable": true,
@@ -19,433 +19,381 @@ spec:
       "id": null,
       "links": [],
       "liveNow": false,
-      "panels":
-        [
-          {
-            "collapsed": false,
-            "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
-            "id": 1,
-            "title": "Global Storage Totals",
-            "type": "row",
+      "panels": [
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+          "id": 1,
+          "title": "Global Storage Totals",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [{ "color": "blue", "value": null }]
+              },
+              "unit": "short"
+            }
           },
-          {
-            "datasource": { "type": "prometheus", "uid": "Mimir" },
-            "fieldConfig":
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+          "id": 2,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "count(kube_persistentvolumeclaim_info{cluster=~\"$cluster\", namespace=~\"$namespace\"})",
+              "legendFormat": "Total PVCs",
+              "refId": "A"
+            }
+          ],
+          "title": "Total PVC Count",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [{ "color": "purple", "value": null }]
+              },
+              "unit": "bytes"
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+          "id": 3,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "sum(kube_persistentvolumeclaim_resource_requests_storage_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"})",
+              "legendFormat": "Max Capacity",
+              "refId": "A"
+            }
+          ],
+          "title": "Total Requested Capacity",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [{ "color": "orange", "value": null }]
+              },
+              "unit": "bytes"
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+          "id": 4,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "sum(max by (cluster, namespace, persistentvolumeclaim) (kubelet_volume_stats_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"}))",
+              "legendFormat": "Space Used",
+              "refId": "A"
+            }
+          ],
+          "title": "Total Space Used",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [{ "color": "green", "value": null }]
+              },
+              "unit": "bytes"
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+          "id": 5,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "sum(kube_persistentvolumeclaim_resource_requests_storage_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"}) - sum(max by (cluster, namespace, persistentvolumeclaim) (kubelet_volume_stats_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"}))",
+              "legendFormat": "Space Available",
+              "refId": "A"
+            }
+          ],
+          "title": "Total Free Space Available",
+          "type": "stat"
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+          "id": 6,
+          "title": "PVC Inventory (Capacity vs Used)",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": { "type": "auto" },
+                "inspect": true
+              }
+            },
+            "overrides": [
               {
-                "defaults":
+                "matcher": { "id": "byName", "options": "Max Capacity" },
+                "properties": [{ "id": "unit", "value": "bytes" }]
+              },
+              {
+                "matcher": { "id": "byName", "options": "Used" },
+                "properties": [{ "id": "unit", "value": "bytes" }]
+              },
+              {
+                "matcher": { "id": "byName", "options": "Usage %" },
+                "properties": [
+                  { "id": "unit", "value": "percent" },
                   {
-                    "color": { "mode": "thresholds" },
-                    "mappings": [],
-                    "thresholds":
-                      {
-                        "mode": "absolute",
-                        "steps": [{ "color": "blue", "value": null }],
-                      },
-                    "unit": "short",
+                    "id": "custom.cellOptions",
+                    "value": { "mode": "gradient", "type": "gauge" }
                   },
-              },
-            "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
-            "id": 2,
-            "options":
-              {
-                "colorMode": "value",
-                "graphMode": "area",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "reduceOptions":
-                  { "calcs": ["lastNotNull"], "fields": "", "values": false },
-                "textMode": "auto",
-              },
-            "targets":
-              [
-                {
-                  "datasource": { "type": "prometheus", "uid": "Mimir" },
-                  "expr": 'count(kube_persistentvolumeclaim_info{cluster=~"$cluster", namespace=~"$namespace"})',
-                  "legendFormat": "Total PVCs",
-                  "refId": "A",
-                },
-              ],
-            "title": "Total PVC Count",
-            "type": "stat",
-          },
-          {
-            "datasource": { "type": "prometheus", "uid": "Mimir" },
-            "fieldConfig":
-              {
-                "defaults":
+                  { "id": "max", "value": 100 },
+                  { "id": "min", "value": 0 },
                   {
-                    "color": { "mode": "thresholds" },
-                    "mappings": [],
-                    "thresholds":
-                      {
-                        "mode": "absolute",
-                        "steps": [{ "color": "purple", "value": null }],
-                      },
-                    "unit": "bytes",
-                  },
-              },
-            "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
-            "id": 3,
-            "options":
-              {
-                "colorMode": "value",
-                "graphMode": "area",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "reduceOptions":
-                  { "calcs": ["lastNotNull"], "fields": "", "values": false },
-                "textMode": "auto",
-              },
-            "targets":
-              [
-                {
-                  "datasource": { "type": "prometheus", "uid": "Mimir" },
-                  "expr": 'sum(kube_persistentvolumeclaim_resource_requests_storage_bytes{cluster=~"$cluster", namespace=~"$namespace"})',
-                  "legendFormat": "Max Capacity",
-                  "refId": "A",
-                },
-              ],
-            "title": "Total Requested Capacity",
-            "type": "stat",
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        { "color": "green", "value": null },
+                        { "color": "yellow", "value": 70 },
+                        { "color": "red", "value": 85 }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
           },
-          {
-            "datasource": { "type": "prometheus", "uid": "Mimir" },
-            "fieldConfig":
-              {
-                "defaults":
-                  {
-                    "color": { "mode": "thresholds" },
-                    "mappings": [],
-                    "thresholds":
-                      {
-                        "mode": "absolute",
-                        "steps": [{ "color": "orange", "value": null }],
-                      },
-                    "unit": "bytes",
-                  },
-              },
-            "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
-            "id": 4,
-            "options":
-              {
-                "colorMode": "value",
-                "graphMode": "area",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "reduceOptions":
-                  { "calcs": ["lastNotNull"], "fields": "", "values": false },
-                "textMode": "auto",
-              },
-            "targets":
-              [
-                {
-                  "datasource": { "type": "prometheus", "uid": "Mimir" },
-                  "expr": 'sum(max by (cluster, namespace, persistentvolumeclaim) (kubelet_volume_stats_used_bytes{cluster=~"$cluster", namespace=~"$namespace"}))',
-                  "legendFormat": "Space Used",
-                  "refId": "A",
-                },
-              ],
-            "title": "Total Space Used",
-            "type": "stat",
+          "gridPos": { "h": 15, "w": 24, "x": 0, "y": 6 },
+          "id": 7,
+          "options": {
+            "footer": {
+              "countRows": true,
+              "fields": "",
+              "reducer": ["sum"],
+              "show": true
+            },
+            "showHeader": true,
+            "sortBy": [{ "desc": true, "displayName": "Used" }]
           },
-          {
-            "datasource": { "type": "prometheus", "uid": "Mimir" },
-            "fieldConfig":
-              {
-                "defaults":
-                  {
-                    "color": { "mode": "thresholds" },
-                    "mappings": [],
-                    "thresholds":
-                      {
-                        "mode": "absolute",
-                        "steps": [{ "color": "green", "value": null }],
-                      },
-                    "unit": "bytes",
-                  },
-              },
-            "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
-            "id": 5,
-            "options":
-              {
-                "colorMode": "value",
-                "graphMode": "area",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "reduceOptions":
-                  { "calcs": ["lastNotNull"], "fields": "", "values": false },
-                "textMode": "auto",
-              },
-            "targets":
-              [
-                {
-                  "datasource": { "type": "prometheus", "uid": "Mimir" },
-                  "expr": 'sum(kube_persistentvolumeclaim_resource_requests_storage_bytes{cluster=~"$cluster", namespace=~"$namespace"}) - sum(max by (cluster, namespace, persistentvolumeclaim) (kubelet_volume_stats_used_bytes{cluster=~"$cluster", namespace=~"$namespace"}))',
-                  "legendFormat": "Space Available",
-                  "refId": "A",
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "max by (namespace, persistentvolumeclaim) (kubelet_volume_stats_capacity_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"})",
+              "format": "table",
+              "instant": true,
+              "legendFormat": "",
+              "refId": "Capacity"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "max by (namespace, persistentvolumeclaim) (kubelet_volume_stats_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"})",
+              "format": "table",
+              "instant": true,
+              "legendFormat": "",
+              "refId": "Used"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "max by (namespace, persistentvolumeclaim) ((kubelet_volume_stats_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"} / kubelet_volume_stats_capacity_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"}) * 100)",
+              "format": "table",
+              "instant": true,
+              "legendFormat": "",
+              "refId": "Usage"
+            }
+          ],
+          "title": "Complete PVC Inventory Listing (All Clusters & Namespaces)",
+          "type": "table",
+          "transformations": [
+            {
+              "id": "seriesToColumns",
+              "options": { "byField": "persistentvolumeclaim" }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "Time 1": true,
+                  "Time 2": true,
+                  "Time 3": true,
+                  "__name__": true,
+                  "__name__ 1": true,
+                  "__name__ 2": true,
+                  "__name__ 3": true,
+                  "job": true,
+                  "job 1": true,
+                  "job 2": true,
+                  "job 3": true,
+                  "endpoint": true,
+                  "endpoint 1": true,
+                  "endpoint 2": true,
+                  "endpoint 3": true,
+                  "instance": true,
+                  "instance 1": true,
+                  "instance 2": true,
+                  "instance 3": true
                 },
-              ],
-            "title": "Total Free Space Available",
-            "type": "stat",
+                "indexByName": {},
+                "renameByName": {
+                  "namespace": "Namespace",
+                  "persistentvolumeclaim": "PVC Name",
+                  "Value #Capacity": "Max Capacity",
+                  "Value #Used": "Used",
+                  "Value #Usage": "Usage %"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Per-PVC fill level: used / capacity as reported by the kubelet. Red at 90%, amber at 75%. NOTE for RWX volumes backed by the shared CephFS NFS export, BOTH used and capacity are statfs() on the whole export, so the figure is the export's fill level rather than that single claim's.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "color": { "mode": "thresholds" },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "#EAB839", "value": 75 },
+                  { "color": "red", "value": 90 }
+                ]
+              }
+            },
+            "overrides": []
           },
-          {
-            "collapsed": false,
-            "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
-            "id": 6,
-            "title": "PVC Inventory (Capacity vs Used)",
-            "type": "row",
+          "gridPos": { "h": 9, "w": 24, "x": 0, "y": 21 },
+          "id": 10,
+          "options": {
+            "displayMode": "gradient",
+            "minVizHeight": 18,
+            "minVizWidth": 8,
+            "orientation": "horizontal",
+            "showUnfilled": true,
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "valueMode": "color",
+            "namePlacement": "left",
+            "sizing": "auto"
           },
-          {
-            "datasource": { "type": "prometheus", "uid": "Mimir" },
-            "fieldConfig":
-              {
-                "defaults":
-                  {
-                    "custom":
-                      {
-                        "align": "auto",
-                        "cellOptions": { "type": "auto" },
-                        "inspect": true,
-                      },
-                  },
-                "overrides":
-                  [
-                    {
-                      "matcher": { "id": "byName", "options": "Max Capacity" },
-                      "properties": [{ "id": "unit", "value": "bytes" }],
-                    },
-                    {
-                      "matcher": { "id": "byName", "options": "Used" },
-                      "properties": [{ "id": "unit", "value": "bytes" }],
-                    },
-                    {
-                      "matcher": { "id": "byName", "options": "Usage %" },
-                      "properties":
-                        [
-                          { "id": "unit", "value": "percent" },
-                          {
-                            "id": "custom.cellOptions",
-                            "value": { "mode": "gradient", "type": "gauge" },
-                          },
-                          { "id": "max", "value": 100 },
-                          { "id": "min", "value": 0 },
-                          {
-                            "id": "thresholds",
-                            "value":
-                              {
-                                "mode": "absolute",
-                                "steps":
-                                  [
-                                    { "color": "green", "value": null },
-                                    { "color": "yellow", "value": 70 },
-                                    { "color": "red", "value": 85 },
-                                  ],
-                              },
-                          },
-                        ],
-                    },
-                  ],
-              },
-            "gridPos": { "h": 15, "w": 24, "x": 0, "y": 6 },
-            "id": 7,
-            "options":
-              {
-                "footer":
-                  {
-                    "countRows": true,
-                    "fields": "",
-                    "reducer": ["sum"],
-                    "show": true,
-                  },
-                "showHeader": true,
-                "sortBy": [{ "desc": true, "displayName": "Used" }],
-              },
-            "targets":
-              [
-                {
-                  "datasource": { "type": "prometheus", "uid": "Mimir" },
-                  "expr": 'max by (namespace, persistentvolumeclaim) (kubelet_volume_stats_capacity_bytes{cluster=~"$cluster", namespace=~"$namespace"})',
-                  "format": "table",
-                  "instant": true,
-                  "legendFormat": "",
-                  "refId": "Capacity",
-                },
-                {
-                  "datasource": { "type": "prometheus", "uid": "Mimir" },
-                  "expr": 'max by (namespace, persistentvolumeclaim) (kubelet_volume_stats_used_bytes{cluster=~"$cluster", namespace=~"$namespace"})',
-                  "format": "table",
-                  "instant": true,
-                  "legendFormat": "",
-                  "refId": "Used",
-                },
-                {
-                  "datasource": { "type": "prometheus", "uid": "Mimir" },
-                  "expr": 'max by (namespace, persistentvolumeclaim) ((kubelet_volume_stats_used_bytes{cluster=~"$cluster", namespace=~"$namespace"} / kubelet_volume_stats_capacity_bytes{cluster=~"$cluster", namespace=~"$namespace"}) * 100)',
-                  "format": "table",
-                  "instant": true,
-                  "legendFormat": "",
-                  "refId": "Usage",
-                },
-              ],
-            "title": "Complete PVC Inventory Listing (All Clusters & Namespaces)",
-            "type": "table",
-            "transformations":
-              [
-                {
-                  "id": "seriesToColumns",
-                  "options": { "byField": "persistentvolumeclaim" },
-                },
-                {
-                  "id": "organize",
-                  "options":
-                    {
-                      "excludeByName":
-                        {
-                          "Time": true,
-                          "Time 1": true,
-                          "Time 2": true,
-                          "Time 3": true,
-                          "__name__": true,
-                          "__name__ 1": true,
-                          "__name__ 2": true,
-                          "__name__ 3": true,
-                          "job": true,
-                          "job 1": true,
-                          "job 2": true,
-                          "job 3": true,
-                          "endpoint": true,
-                          "endpoint 1": true,
-                          "endpoint 2": true,
-                          "endpoint 3": true,
-                          "instance": true,
-                          "instance 1": true,
-                          "instance 2": true,
-                          "instance 3": true,
-                        },
-                      "indexByName": {},
-                      "renameByName":
-                        {
-                          "namespace": "Namespace",
-                          "persistentvolumeclaim": "PVC Name",
-                          "Value #Capacity": "Max Capacity",
-                          "Value #Used": "Used",
-                          "Value #Usage": "Usage %",
-                        },
-                    },
-                },
-              ],
-          },
-          {
-            "datasource": { "type": "prometheus", "uid": "Mimir" },
-            "description": "Per-PVC fill level: used / capacity as reported by the kubelet. Red at 90%, amber at 75%. NOTE for RWX volumes backed by the shared CephFS NFS export, BOTH used and capacity are statfs() on the whole export, so the figure is the export's fill level rather than that single claim's.",
-            "fieldConfig":
-              {
-                "defaults":
-                  {
-                    "unit": "percent",
-                    "min": 0,
-                    "max": 100,
-                    "color": { "mode": "thresholds" },
-                    "thresholds":
-                      {
-                        "mode": "absolute",
-                        "steps":
-                          [
-                            { "color": "green", "value": null },
-                            { "color": "#EAB839", "value": 75 },
-                            { "color": "red", "value": 90 },
-                          ],
-                      },
-                  },
-                "overrides": [],
-              },
-            "gridPos": { "h": 9, "w": 24, "x": 0, "y": 21 },
-            "id": 10,
-            "options":
-              {
-                "displayMode": "gradient",
-                "minVizHeight": 18,
-                "minVizWidth": 8,
-                "orientation": "horizontal",
-                "showUnfilled": true,
-                "reduceOptions":
-                  { "calcs": ["lastNotNull"], "fields": "", "values": false },
-                "valueMode": "color",
-                "namePlacement": "left",
-                "sizing": "auto",
-              },
-            "pluginVersion": "11.0.0",
-            "targets":
-              [
-                {
-                  "datasource": { "type": "prometheus", "uid": "Mimir" },
-                  "expr": '100 * (kubelet_volume_stats_used_bytes{cluster=~"$cluster", namespace=~"$namespace"} / kubelet_volume_stats_capacity_bytes{cluster=~"$cluster", namespace=~"$namespace"})',
-                  "instant": true,
-                  "legendFormat": "{{cluster}} / {{namespace}} / {{persistentvolumeclaim}}",
-                  "refId": "A",
-                },
-              ],
-            "title": "PVC Fill Level - Used vs Capacity (red >90%, amber >75%)",
-            "type": "bargauge",
-          },
-        ],
+          "pluginVersion": "11.0.0",
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "100 * (kubelet_volume_stats_used_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"} / kubelet_volume_stats_capacity_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\"})",
+              "instant": true,
+              "legendFormat": "{{cluster}} / {{namespace}} / {{persistentvolumeclaim}}",
+              "refId": "A"
+            }
+          ],
+          "title": "PVC Fill Level - Used vs Capacity (red >90%, amber >75%)",
+          "type": "bargauge"
+        }
+      ],
       "refresh": "30s",
       "schemaVersion": 39,
       "style": "dark",
       "tags": ["storage", "pvc", "inventory", "capacity"],
-      "templating":
-        {
-          "list":
-            [
-              {
-                "allValue": ".*",
-                "current":
-                  { "selected": true, "text": "All", "value": "$__all" },
-                "datasource": { "type": "prometheus", "uid": "Mimir" },
-                "definition": "label_values(kubelet_volume_stats_capacity_bytes, cluster)",
-                "includeAll": true,
-                "label": "Cluster Filter",
-                "multi": true,
-                "name": "cluster",
-                "options": [],
-                "query":
-                  {
-                    "query": "label_values(kubelet_volume_stats_capacity_bytes, cluster)",
-                    "refId": "StandardVariableQuery",
-                  },
-                "refresh": 1,
-                "regex": "",
-                "skipUrlSync": false,
-                "sort": 1,
-                "type": "query",
-              },
-              {
-                "allValue": ".*",
-                "current":
-                  { "selected": true, "text": "All", "value": "$__all" },
-                "datasource": { "type": "prometheus", "uid": "Mimir" },
-                "definition": 'label_values(kubelet_volume_stats_capacity_bytes{cluster=~"$cluster"}, namespace)',
-                "includeAll": true,
-                "label": "Namespace Filter",
-                "multi": true,
-                "name": "namespace",
-                "options": [],
-                "query":
-                  {
-                    "query": 'label_values(kubelet_volume_stats_capacity_bytes{cluster=~"$cluster"}, namespace)',
-                    "refId": "StandardVariableQuery",
-                  },
-                "refresh": 1,
-                "regex": "",
-                "skipUrlSync": false,
-                "sort": 1,
-                "type": "query",
-              },
-            ],
-        },
+      "templating": {
+        "list": [
+          {
+            "allValue": ".*",
+            "current": { "selected": true, "text": "All", "value": "$__all" },
+            "datasource": { "type": "prometheus", "uid": "Mimir" },
+            "definition": "label_values(kubelet_volume_stats_capacity_bytes, cluster)",
+            "includeAll": true,
+            "label": "Cluster Filter",
+            "multi": true,
+            "name": "cluster",
+            "options": [],
+            "query": {
+              "query": "label_values(kubelet_volume_stats_capacity_bytes, cluster)",
+              "refId": "StandardVariableQuery"
+            },
+            "refresh": 1,
+            "regex": "",
+            "skipUrlSync": false,
+            "sort": 1,
+            "type": "query"
+          },
+          {
+            "allValue": ".*",
+            "current": { "selected": true, "text": "All", "value": "$__all" },
+            "datasource": { "type": "prometheus", "uid": "Mimir" },
+            "definition": "label_values(kubelet_volume_stats_capacity_bytes{cluster=~\"$cluster\"}, namespace)",
+            "includeAll": true,
+            "label": "Namespace Filter",
+            "multi": true,
+            "name": "namespace",
+            "options": [],
+            "query": {
+              "query": "label_values(kubelet_volume_stats_capacity_bytes{cluster=~\"$cluster\"}, namespace)",
+              "refId": "StandardVariableQuery"
+            },
+            "refresh": 1,
+            "regex": "",
+            "skipUrlSync": false,
+            "sort": 1,
+            "type": "query"
+          }
+        ]
+      },
       "time": { "from": "now-1h", "to": "now" },
       "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"] },
       "timezone": "browser",
       "title": "Cluster PVC Inventory & Detailed Storage Capacity",
-      "uid": "cluster-pvc-storage-overview",
+      "uid": "cluster-pvc-storage-overview"
     }

@@ -21,21 +21,22 @@ spec:
   instanceSelector:
     matchLabels:
       dashboards: grafana-central
-  templates:
-    - name: discord.title
-      text: |
-        {{- $firing := false -}}
-        {{- range .Alerts -}}{{- if eq .Status "firing" -}}{{- $firing = true -}}{{- end -}}{{- end -}}
-        {{- if $firing -}}🔥{{ else -}}✅{{ end -}} {{ (index .Alerts 0).Labels.alertname }} ({{ len .Alerts }}) — {{ (index .Alerts 0).Labels.cluster | default "n/a" }}
-    - name: discord.message
-      text: |
-        {{- range .Alerts -}}
-        > {{ .Annotations.summary }}
-        {{ .Annotations.description }}
-        {{ end -}}
-        {{- $first := index .Alerts 0 -}}
-        {{- if $first.PanelURL }}
-        [📊 View panel]({{ $first.PanelURL }})
-        {{- else if $first.DashboardURL }}
-        [📊 View dashboard]({{ $first.DashboardURL }})
-        {{- end -}}
+  template: |
+    {{define "discord.title" -}}
+    {{- $firing := false -}}
+    {{- range .Alerts -}}{{- if eq .Status "firing" -}}{{- $firing = true -}}{{- end -}}{{- end -}}
+    {{- if $firing -}}🔥{{ else -}}✅{{ end -}} {{ (index .Alerts 0).Labels.alertname }} ({{ len .Alerts }}) — {{ (index .Alerts 0).Labels.cluster | default "n/a" }}
+    {{- end}}
+
+    {{define "discord.message" -}}
+    {{- range .Alerts -}}
+    > {{ .Annotations.summary }}
+    {{ .Annotations.description }}
+    {{ end -}}
+    {{- $first := index .Alerts 0 -}}
+    {{- if $first.PanelURL }}
+    [📊 View panel]({{ $first.PanelURL }})
+    {{- else if $first.DashboardURL }}
+    [📊 View dashboard]({{ $first.DashboardURL }})
+    {{- end -}}
+    {{- end}}

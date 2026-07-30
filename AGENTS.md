@@ -278,6 +278,57 @@ _trust-manager/configs/_ - Trust bundle configuration
   them (`kubeApiserver{Burnrate,Histogram,Slos}`, `k8sContainerMemory{Cache,Swap}`).
 - `kustomization.yaml` - Kustomization manifest
 
+**openstack-exporter/** - prometheus-openstack-exporter (image v1.6.0, openstack cluster)
+
+Exports the `openstack_*` metric family by querying the OpenStack APIs with the
+yaook admin credentials — the ONLY source of nova VM state, per-service health,
+quotas, and cinder/neutron/octavia/glance/designate resource counts in the whole
+repo. Before it existed the openstack cluster had zero `openstack_*` metrics
+(only the yaook infra exporters `rabbitmq_*`/`mysql_*`), so VM state was
+invisible to monitoring and the OpenStack Control Plane dashboard's VM panels /
+the VM-error alerts had nothing to query. Deployed on the **openstack cluster**
+only.
+
+Deployed as **plain manifests** (not a Flux HelmRelease) because the upstream
+`openstack-exporter/helm-charts` chart is not published to any Helm repo (only
+packaged locally in-repo), so it can't back a HelmRelease — same direct-manifest
+approach this repo uses for ORC and gateway-api.
+
+- `secretstore.yaml` - ServiceAccount `openstack-exporter-reader` (ns monitoring)
+  - Role/RoleBinding in `yaook` scoped to ONLY the `keystone-admin` secret + ESO
+    `SecretStore yaook-keystone-admin` (Kubernetes provider, `remoteNamespace:
+yaook`). Cross-namespace read of the yaook admin creds, same pattern as
+    capo-identity / openstack-ccm-identity. `caProvider.namespace` is unset (ESO
+    admission rejects it on a namespaced SecretStore).
+- `externalsecret.yaml` - ESO `ExternalSecret` rendering the os-client-config
+  `clouds.yaml` (secret `openstack-exporter-cloud-config`) from `keystone-admin`.
+  `auth_url` is the INTERNAL keystone `https://keystone.yaook.svc:5000/v3`
+  (verified reachable, HTTP 200), `verify: false` (keystone presents the RPCU
+  bundle CA the exporter image doesn't trust; cluster-internal endpoint — same
+  `insecure` choice the crossplane-provider-openstack ExternalSecret makes),
+  `region_name: hetzner`, `identity_interface: internal`, admin user
+  `yaook-sys-maint` / project `admin`.
+- `deployment.yaml` - Deployment (1 replica, ns monitoring, image
+  `ghcr.io/openstack-exporter/openstack-exporter:1.6.0`, `--endpoint-type
+internal`, `--cache --cache-ttl=300s` so it doesn't hammer the OpenStack APIs on
+  every scrape) + Service (9180) + ServiceMonitor (60s). The image is
+  **distroless** (no shell — scrape it via its pod IP, not `kubectl exec sh`).
+  The ServiceMonitor carries `release: kube-prometheus-stack` AND no yaook
+  component label, so it is scraped by BOTH the label-based default selector and
+  the openstack cluster's allow-by-default `NotIn` selector.
+- `kustomization.yaml` - Kustomization manifest.
+
+> **What it does NOT expose.** Verified live: the hypervisor-capacity nova
+> metrics (`openstack_nova_running_vms` / `vcpus_used` / `memory_used_bytes`) are
+> ABSENT on this cloud — its placement/nova setup does not serve the
+> os-hypervisors detail the exporter reads. VM counts therefore come from
+> `openstack_nova_total_vms` (cluster, verified = 11) and
+> `openstack_nova_limits_instances_used` (per tenant). Per-VM state comes from
+> `openstack_nova_server_status` (value 4 = ERROR, 0 = ACTIVE, 11 = SHUTOFF —
+> see the exporter's `knownServerStatuses`). Deployed by
+> `clusters/openstack/openstack-exporter.yaml` (dependsOn external-secrets +
+> monitoring, `wait: false`).
+
 **mimir/** - Grafana Mimir TSDB (v5.6.0)
 
 - `helmrepo.yaml` - HelmRepository `grafana`
@@ -298,7 +349,7 @@ _trust-manager/configs/_ - Trust bundle configuration
 - `dashboards/cluster-overview-dashboard.yaml` - `GrafanaDashboard` CR for CPU/RAM cluster & node metrics with a dropdown cluster selector.
 - `dashboards/pvc-storage-dashboard.yaml` - `GrafanaDashboard` CR for PVC storage & volume usage with dropdown cluster and namespace filters.
 - `dashboards/node-filesystem-dashboard.yaml` - `GrafanaDashboard` CR for node filesystem usage.
-- `dashboards/ceph-storage-dashboard.yaml` - `GrafanaDashboard` CR for Ceph/Rook storage.
+- `dashboards/ceph-storage-dashboard.yaml` - `GrafanaDashboard` CR for Ceph/Rook storage. **Fully rewritten** against real `ceph_*` metric names (the old dashboard queried `ceph_*` families that did exist but had never been scraped because `spec.monitoring.enabled` was unset). 20 panels: health status, OSD up/total, mon quorum, RAW utilisation%, unclean PGs, health checks table, capacity, pool stored bytes, pool fill%, objects/latency table, OSD apply latency, client throughput/IOPS per pool, PG states. Dashboard title changed from "Ceph Storage Health" to "Ceph / OpenStack Storage". Every panel verified against live Mimir before commit.
 - `dashboards/openstack-control-plane-dashboard.yaml` - `GrafanaDashboard` CR
   for the **openstack cluster ONLY**. Deliberately SINGLE-CLUSTER: every query
   is pinned to `cluster="openstack"` and there is no `$cluster` variable (the
@@ -315,6 +366,8 @@ _trust-manager/configs/_ - Trust bundle configuration
   absent metrics is exactly the failure being fixed. OVS coverage is limited to
   `socket_up` + `flow_limit` because that is genuinely all the yaook
   ovn-monitoring DaemonSet exports.
+- `dashboards/palworld-dashboard.yaml` -
+- `dashboards/palworld-dashboard.yaml`
 - `dashboards/palworld-dashboard.yaml` - `GrafanaDashboard` CR (uid `palworld-server`, folder `Gaming`) for the Palworld dedicated server. **Hand-built** (no longer the grafana.com 20421 import) against the metric set of [Banh-Canh/palworld-exporter-go](https://github.com/Banh-Canh/palworld-exporter-go), the `exporter` sidecar in the **atlas** repo (`clusters/production/palworld/deploy.yaml`) — that exporter's `ServiceMonitor` lives in atlas (labeled `release: kube-prometheus-stack`), gets scraped by the Sveltos-pushed Prometheus on the production cluster, and is `remote_write`n to central Mimir here. No app in argus produces these metrics; the dashboard is here only because Grafana is mgmt-only. 37 panels in 6 rows: **Server Health** (`palworld_up`/fps/frame_time/slot usage/uptime/version/Level.sav size), **Performance** (FPS + frame time trends, concurrency vs slots, per-player session lanes), **Container & Storage** (cAdvisor CPU/memory per container + `palworld-data` PVC gauge + 24h restart count — these come from kube-prometheus-stack, NOT the exporter), **Players** (join-by-name table of level/ping/buildings/pals/coords, level bar gauges, ping trend), **Pals & World** (owned/wild pal counts, guilds, unit-type donut, per-player party-vs-base pals, strongest characters), **Saves & Settings** (Level.sav growth + derivative, save-file ages/sizes, `palworld_setting` rates table). Single `$cluster` template variable (`label_values(palworld_up, cluster)`), every query filtered on it. The Pals & World row is empty unless `ENABLE_GAMEDATA_API: "true"` is set on the server (atlas `clusters/production/palworld/cm.yaml`), and the Saves panels need an exporter build newer than `v0.0.1`, whose save collector could not find a nested `Level.sav`. Every PromQL expression was validated against the production Prometheus before being committed.
 - `httproute.yaml` - HTTPRoute `grafana.mgmt.rpcu.lan` pointing to `grafana-service:3000` on mgmt internal Gateway.
 - `kustomization.yaml` - Kustomization manifest
@@ -357,6 +410,17 @@ nothing per-cluster to deploy.
   (interval 5m): `PersistentVolumeSpaceLow` (>85%, 15m) off
   `kubelet_volume_stats_*`. Split from the node group because a rule group has a
   single evaluation `interval` and volume stats move slowly.
+- `rules-pods.yaml` - `GrafanaAlertRuleGroup` `pods-health`
+  (interval 1m): `PodCrashLoopBackOff` (critical, 5m, waiting_reason
+  `CrashLoopBackOff`), `PodRestartingFrequently` (critical, 10m, >3 restarts in
+  15m), `PodContainerNotReady` (warning, 15m, not-ready excluding Jobs).
+- `rules-openstack.yaml` - `GrafanaAlertRuleGroup` `openstack-resources`
+  (interval 5m): `NovaVMInError` (critical, 5m, server_status==4),
+  `OpenStackServiceDown` (warning, 5m, any of 8 services reporting <1 up),
+  `NovaComputeAgentDown` (critical, 5m, agent_state{nova-compute} lt 1),
+  `OctaviaLoadBalancerNotOnline` (warning, 10m, LB status > 0 while ACTIVE).
+  All rules are single-cluster `cluster="openstack"` — these metrics only exist
+  where the openstack-exporter is deployed.
 - `kustomization.yaml` - Kustomization manifest (namespace monitoring).
 
 Non-obvious things that were verified live and must not be "simplified":
@@ -434,6 +498,16 @@ _rook/csi-drivers/_ - Ceph-CSI drivers chart (NEW requirement in Rook v1.20)
 _rook/configs/_ - Ceph cluster configuration
 
 - `cephcluster.yaml` - Ceph cluster with 3 monitors (lucy, makise, quinn).
+  **Sets `monitoring.enabled: true`** so the Rook operator creates the
+  `rook-ceph-mgr` ServiceMonitor (target `rook-ceph-mgr:9283`, the Ceph mgr
+  `prometheus` module → the standard `ceph_*` family). WITHOUT this the mgr
+  endpoint existed but nothing scraped it (no ServiceMonitor,
+  `spec.monitoring` empty), so Mimir held ZERO ceph metrics and the entire Ceph
+  Storage Health dashboard was permanently blank. The openstack
+  kube-prometheus-stack picks the generated ServiceMonitor up automatically via
+  its allow-by-default `NotIn` serviceMonitorSelector (it carries no
+  `state.yaook.cloud/component` label). No PrometheusRule is generated — alerting
+  is centralized in Grafana unified alerting against Mimir.
   Sets `priorityClassNames` (mon/osd `system-node-critical`, mgr
   `system-cluster-critical`) and `resources` for mon/mgr/osd (osd: **500m** CPU /
   5Gi request, 8Gi limit; Rook auto-tunes `osd_memory_target` from the
@@ -1731,6 +1805,7 @@ _fluxcd/instances/_ - Instance configuration
 | openstack-cinder-csi | 2.35.0  | kubernetes.github.io/cloud-provider-openstack  | 5m            |
 | ceph-csi-cephfs      | 3.15.0  | ceph.github.io/csi-charts                      | 5m            |
 | external-dns         | 1.21.1  | kubernetes-sigs.github.io/external-dns/        | 5m            |
+| openstack-exporter   | 1.6.0   | ghcr.io/openstack-exporter/openstack-exporter  | 60s (SM)      |
 
 ---
 
@@ -3249,7 +3324,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 2026 (kube-apiserver CPU reduction: added `infrastructure/cluster-api-templates/templates/controlplane-v3.yaml` (`openstack-default-control-plane-v3`) — identical to `-v2` plus `clusterConfiguration.encryptionAlgorithm: ECDSA-P256`, and repointed the `openstack-default` ClusterClass `controlPlane.templateRef` at it (registered in `kustomization.yaml`). ROOT CAUSE: the openstack cluster's 3 apiservers burn ~2 cores each (~6 total) despite only 2-3 inflight requests and ~10 req/s — the cost is the per-connection TLS handshake (RSA-2048 asymmetric crypto), amplified by baremetal CPU contention (lucy/quinn at 89-97%, shared with Ceph+VMs). ECDSA-P256 handshakes are ~5-10x cheaper server-side. The openstack cluster is baremetal (bootstrapped from **hephaestus**, not argus), so its fix lives in hephaestus `nixosModules/rpcuIaaSCP/confs/kubeadm-bootstrap.nix` (added `encryptionAlgorithm: ECDSA-P256`, migrated that file kubeadm v1beta3→v1beta4 since the field is v1beta4-only, converted `apiServer.extraArgs` map→list, and fixed two pre-existing YAML indentation bugs in the certSANs join and the InitConfiguration `nodeRegistration` block; join template also bumped to v1beta4). Kamaji ClusterClass deliberately unchanged (manages its own tenant cert keys, tenant apiservers not CPU-stressed). Only takes effect on certs generated at kubeadm init/cert renewal — running control planes keep RSA certs until rolled/rotated. Also corrected a measurement red herring: a spurious "108k auth/s storm" on mgmt was an artifact of subtracting per-process cumulative counters across LB-routed apiserver replicas — mgmt is healthy. See "kube-apiserver CPU is TLS-handshake bound" in Section 8. — Prior: Rewrote `infrastructure/grafana/dashboards/palworld-dashboard.yaml` from scratch — the grafana.com 20421 import only covered the handful of metrics the OLD Python exporter emitted (`palworld_up`, `palworld_player_count`, `palworld_server_info`, save-file sizes) and its remaining panels were permanently blank. The atlas repo swapped the exporter sidecar to `docker.io/banhcanh/palworld-exporter` ([Banh-Canh/palworld-exporter-go](https://github.com/Banh-Canh/palworld-exporter-go)), which exports the full REST-API metric set, so the dashboard is now hand-built against it: 37 panels / 6 rows (Server Health, Performance, Container & Storage, Players, Pals & World, Saves & Settings), a `$cluster` template variable applied to every query, and kube-prometheus-stack panels (cAdvisor CPU/memory per container, `palworld-data` PVC gauge, 24h restart count) alongside the game metrics. Kept uid `palworld-server`, title "Palworld", folder `Gaming`. Every PromQL expression was executed against the production Prometheus before commit (0 invalid); the panels that return nothing today do so only because they need the new exporter deployed, players online, or `ENABLE_GAMEDATA_API`. Two known gates documented in the file header: the Pals & World row needs `ENABLE_GAMEDATA_API: "true"` on the server (set in atlas `cm.yaml`), and the Saves panels are blank on exporter image `v0.0.1`, whose save reader does a flat `os.ReadDir` of `SAVE_DIRECTORY` and never finds the nested `Level.sav` (fixed upstream in palworld-exporter-go after that tag; needs a new image release + an atlas `image:` bump). — Prior: Added `infrastructure/grafana/dashboards/palworld-dashboard.yaml` — a `GrafanaDashboard` CR (folder `Gaming`, `instanceSelector` `dashboards: grafana-central`) for the Palworld dedicated server, imported from grafana.com dashboard 20421 with all datasource UIDs rewritten from `${DS_PROMETHEUS}` to `Mimir` and the `__inputs`/`__requires`/`__elements` export wrappers stripped. Registered it in `infrastructure/grafana/kustomization.yaml`. It visualizes the `palworld_*` metrics produced by the `palworld-exporter` sidecar defined in the **atlas** repo (`clusters/production/palworld/`); that exporter's `ServiceMonitor` (labeled `release: kube-prometheus-stack`) is scraped by the Sveltos-pushed Prometheus on the production cluster and `remote_write`n to central Mimir here — the dashboard lives in argus only because Grafana is mgmt-only. — Prior: Grafana Operator & DaaS transition: added Grafana Operator v5 (`infrastructure/grafana-operator`, `clusters/mgmt/grafana-operator.yaml`) watching all namespaces, migrated Grafana instance to `Grafana` CR (v1beta1) in `infrastructure/grafana/grafana.yaml` preserving Zitadel OIDC & 2Gi PVC, added `GrafanaDatasource` for Mimir, updated HTTPRoute to `grafana-service:3000`, and enabled `allowCrossNamespaceImport: true` for cross-namespace DaaS.)
+**Last Updated**: July 2026 (Added `infrastructure/openstack-exporter/` — plain manifests deploying `ghcr.io/openstack-exporter/openstack-exporter:1.6.0` (distroless, no shell) on the openstack cluster: ESO `SecretStore` reads `keystone-admin` from ns `yaook` via cross-namespace SA RBAC, renders `clouds.yaml` with `auth_url: https://keystone.yaook.svc:5000/v3` (internal, `verify: false`), Deployment with `--cache --cache-ttl=300s` + `--endpoint-type internal` and a ServiceMonitor (interval 60s, no yaook component label → scraped by kube-prometheus-stack's allow-by-default `NotIn` selector). Deployed by `clusters/openstack/openstack-exporter.yaml` (dependsOn external-secrets + monitoring, `wait: false` — requires the manually-created `keystone-admin` secret first). Fully rewritten `infrastructure/grafana/dashboards/openstack-control-plane-dashboard.yaml` against live exporter metrics: 24 panels in 6 rows — Service Health (services-up stat, total VMs, VMs-not-active, VMs-in-error, nova-compute-up, RPC backlog, API availability timeseries), Virtual Machines Nova (VM status table w/ color-coded status, instances-per-tenant bar gauge, VMs-by-status stacked chart, nova agent state), Message Bus RabbitMQ (ready msgs, unacked, memory vs watermark), Service Databases Galera (db status table, connection pool%, aborted connections), Resources Network/Storage (resource inventory timeseries, Octavia LB status table). Every metric verified live (62 `openstack_*` families confirmed). Deliberately has NO OVN/SDN panels (yaook ovn-monitoring PodMonitor selects wrong container ports → zero series). Also added `infrastructure/grafana/alerting/rules-openstack.yaml` (4 rules: `NovaVMInError` critical 5m server*status==4, `OpenStackServiceDown` warning 5m sum(8 services up) < 8, `NovaComputeAgentDown` critical 5m agent_state{nova-compute} lt 1, `OctaviaLoadBalancerNotOnline` warning 10m LB status > 0 while ACTIVE) and `infrastructure/grafana/alerting/rules-pods.yaml` (3 rules: `PodCrashLoopBackOff` critical 5m waiting_reason CrashLoopBackOff, `PodRestartingFrequently` critical 10m restarts>3 in 15m, `PodContainerNotReady` warning 15m not-ready excluding Jobs). Also enabled `spec.monitoring.enabled: true` on `infrastructure/rook/configs/cephcluster.yaml` — without this, the Rook operator never created the `rook-ceph-mgr` ServiceMonitor (port 9283, the Ceph mgr `prometheus` module), so Mimir held zero `ceph*\_`metrics and the Ceph dashboard was permanently blank. Fully rewrote`infrastructure/grafana/dashboards/ceph-storage-dashboard.yaml`against the now-live`ceph\__` family: 20 panels using real metric names (`ceph*cluster_status_code`, `ceph_osd_up`, `ceph_osd_in`, `ceph_pg*_`, `ceph*osd_utilization`, `ceph_pool_metadata`, `ceph_osd_metadata`), with `rook-ceph-mgr:9283`scraped automatically by the openstack kube-prometheus-stack's allow-by-default`NotIn`ServiceMonitor selector. — Prior: kube-apiserver CPU reduction: added`infrastructure/cluster-api-templates/templates/controlplane-v3.yaml` (ECDSA-P256). See "kube-apiserver CPU is TLS-handshake bound" in Section 8.) (`openstack-default-control-plane-v3`) — identical to `-v2`plus`clusterConfiguration.encryptionAlgorithm: ECDSA-P256`, and repointed the `openstack-default`ClusterClass`controlPlane.templateRef`at it (registered in`kustomization.yaml`). ROOT CAUSE: the openstack cluster's 3 apiservers burn ~2 cores each (~6 total) despite only 2-3 inflight requests and ~10 req/s — the cost is the per-connection TLS handshake (RSA-2048 asymmetric crypto), amplified by baremetal CPU contention (lucy/quinn at 89-97%, shared with Ceph+VMs). ECDSA-P256 handshakes are ~5-10x cheaper server-side. The openstack cluster is baremetal (bootstrapped from **hephaestus**, not argus), so its fix lives in hephaestus `nixosModules/rpcuIaaSCP/confs/kubeadm-bootstrap.nix`(added`encryptionAlgorithm: ECDSA-P256`, migrated that file kubeadm v1beta3→v1beta4 since the field is v1beta4-only, converted `apiServer.extraArgs`map→list, and fixed two pre-existing YAML indentation bugs in the certSANs join and the InitConfiguration`nodeRegistration`block; join template also bumped to v1beta4). Kamaji ClusterClass deliberately unchanged (manages its own tenant cert keys, tenant apiservers not CPU-stressed). Only takes effect on certs generated at kubeadm init/cert renewal — running control planes keep RSA certs until rolled/rotated. Also corrected a measurement red herring: a spurious "108k auth/s storm" on mgmt was an artifact of subtracting per-process cumulative counters across LB-routed apiserver replicas — mgmt is healthy. See "kube-apiserver CPU is TLS-handshake bound" in Section 8. — Prior: Rewrote`infrastructure/grafana/dashboards/palworld-dashboard.yaml` from scratch — the grafana.com 20421 import only covered the handful of metrics the OLD Python exporter emitted (`palworld_up`, `palworld_player_count`, `palworld_server_info`, save-file sizes) and its remaining panels were permanently blank. The atlas repo swapped the exporter sidecar to `docker.io/banhcanh/palworld-exporter`([Banh-Canh/palworld-exporter-go](https://github.com/Banh-Canh/palworld-exporter-go)), which exports the full REST-API metric set, so the dashboard is now hand-built against it: 37 panels / 6 rows (Server Health, Performance, Container & Storage, Players, Pals & World, Saves & Settings), a`$cluster` template variable applied to every query, and kube-prometheus-stack panels (cAdvisor CPU/memory per container, `palworld-data` PVC gauge, 24h restart count) alongside the game metrics. Kept uid `palworld-server`, title "Palworld", folder `Gaming`. Every PromQL expression was executed against the production Prometheus before commit (0 invalid); the panels that return nothing today do so only because they need the new exporter deployed, players online, or `ENABLE_GAMEDATA_API`. Two known gates documented in the file header: the Pals & World row needs `ENABLE_GAMEDATA_API: "true"` on the server (set in atlas `cm.yaml`), and the Saves panels are blank on exporter image `v0.0.1`, whose save reader does a flat `os.ReadDir` of `SAVE_DIRECTORY` and never finds the nested `Level.sav` (fixed upstream in palworld-exporter-go after that tag; needs a new image release + an atlas `image:` bump). — Prior: Added `infrastructure/grafana/dashboards/palworld-dashboard.yaml` — a `GrafanaDashboard` CR (folder `Gaming`, `instanceSelector` `dashboards: grafana-central`) for the Palworld dedicated server, imported from grafana.com dashboard 20421 with all datasource UIDs rewritten from `${DS_PROMETHEUS}`to`Mimir`and the`**inputs`/`**requires`/`\_\_elements`export wrappers stripped. Registered it in`infrastructure/grafana/kustomization.yaml`. It visualizes the `palworld*\_`metrics produced by the`palworld-exporter` sidecar defined in the **atlas** repo (`clusters/production/palworld/`); that exporter's `ServiceMonitor`(labeled`release: kube-prometheus-stack`) is scraped by the Sveltos-pushed Prometheus on the production cluster and `remote_write`n to central Mimir here — the dashboard lives in argus only because Grafana is mgmt-only. — Prior: Grafana Operator & DaaS transition: added Grafana Operator v5 (`infrastructure/grafana-operator`, `clusters/mgmt/grafana-operator.yaml`) watching all namespaces, migrated Grafana instance to `Grafana`CR (v1beta1) in`infrastructure/grafana/grafana.yaml`preserving Zitadel OIDC & 2Gi PVC, added`GrafanaDatasource`for Mimir, updated HTTPRoute to`grafana-service:3000`, and enabled `allowCrossNamespaceImport: true` for cross-namespace DaaS.)
 
 **Previously**: July 26, 2026 (Monitoring: made the mgmt stack minimalist and stable. TWO independent faults — `mimir-ingester-0` CrashLoopBackOff was DISK (stale 2Gi PVC vs a 5Gi StatefulSet template; expanded in place, since raising the chart value would instead wedge the Helm upgrade on the immutable `volumeClaimTemplates`), while Prometheus OOM-looping under a 1Gi limit was CARDINALITY: **313,505 active head series**, of which the apiserver job alone was 82%. Dropped nine apiserver/etcd histogram families whole plus inert metrics (`kubernetes_feature_enabled`, openapi regeneration counters, `apiserver_{storage,cache}_list_*`, kubelet `prober_probe_duration_seconds`) for a **65% cut to ~108,600 series**, keeping `apiserver_request_total` for `KubeAPIDown`; disabled the kube-apiserver SLO rule groups that depended on the dropped buckets. Added `GOMEMLIMIT` (a hard limit alone is a cliff → OOM loop; GOMEMLIMIT makes the GC trade CPU for memory), bounded `remoteWrite` shards, 60s scrape, 6h local retention (Mimir owns retention). Also disabled the Kafka/ingest-storage architecture that the Mimir v6 Renovate bump silently enabled, and added the missing `monitoring` Sveltos toggle to the chihiro ConfigMap. See "Monitoring: Prometheus OOM was cardinality, not tuning" in Section 8.)
 

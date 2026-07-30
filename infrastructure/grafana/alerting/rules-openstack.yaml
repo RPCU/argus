@@ -1,0 +1,265 @@
+# OpenStack alert rules — VM errors, service/agent down, load-balancer errors.
+#
+# Grafana-MANAGED alerts (evaluated by Grafana against Mimir), same delivery
+# rationale as rules-node.yaml. These fire ONLY for the openstack cluster because
+# the backing metrics (openstack_*) are produced solely by the
+# prometheus-openstack-exporter deployed there
+# (infrastructure/openstack-exporter). Every metric + value mapping used here was
+# verified by scraping that exporter against the live cloud before commit:
+#   openstack_<svc>_up                     1/0 per service (8 services)
+#   openstack_nova_server_status           value 4 = ERROR (0 ACTIVE, 11 SHUTOFF);
+#                                          also carries a `status` string label
+#   openstack_nova_agent_state{service}    1/0 per nova agent per host
+#   openstack_loadbalancer_loadbalancer_status  value 4 = ERROR (0 ONLINE)
+#
+# Standard three-stage shape (A instant query -> B reduce(last) -> C threshold,
+# condition: C). noDataState: OK throughout — at steady state there are no ERROR
+# VMs and no down services, so those queries return empty; `or vector(0)` is used
+# where the alert must still evaluate to a concrete 0 rather than NoData.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaAlertRuleGroup
+metadata:
+  name: openstack
+  namespace: monitoring
+spec:
+  allowCrossNamespaceImport: true
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana-central"
+  folderRef: alerts
+  interval: 1m
+  rules:
+    # ---------------------------------------------------------------------
+    # A VM is in ERROR. openstack_nova_server_status == 4 (the exporter's
+    # status map). Per-VM series carrying name/tenant_id/status, so grouping in
+    # notification-policy.yaml collapses a multi-VM incident into one message.
+    # for: 5m avoids paging on a transient BUILD->ERROR->rebuild blip.
+    # ---------------------------------------------------------------------
+    - uid: argus-os-vm-error
+      title: NovaVMInError
+      condition: C
+      for: "5m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: critical
+        component: openstack
+      annotations:
+        summary: "VM in ERROR: {{ $labels.name }} ({{ $labels.tenant_id }})"
+        description: "Nova instance {{ $labels.name }} (id {{ $labels.id }}) in tenant {{ $labels.tenant_id }} has been in ERROR state for 5m. Nova failed to build, migrate, reboot or delete it. Check `openstack server show {{ $labels.id }}`."
+      data:
+        - refId: A
+          relativeTimeRange: { from: 600, to: 0 }
+          datasourceUid: Mimir
+          model:
+            datasource: { type: prometheus, uid: Mimir }
+            editorMode: code
+            expr: max by (name, id, tenant_id) (openstack_nova_server_status{cluster="openstack"} == 4)
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource: { type: __expr__, uid: __expr__ }
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource: { type: __expr__, uid: __expr__ }
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator: { type: gt, params: [0] }
+                operator: { type: and }
+                query: { params: [C] }
+                reducer: { type: last, params: [] }
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    # ---------------------------------------------------------------------
+    # An OpenStack API service is down. Sum every *_up; the total should be 8.
+    # `or vector(8)` keeps the rule at a concrete value (healthy) if the whole
+    # exporter is briefly unscraped, so a scrape gap doesn't false-page. for:5m.
+    # ---------------------------------------------------------------------
+    - uid: argus-os-service-down
+      title: OpenStackServiceDown
+      condition: C
+      for: "5m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: critical
+        component: openstack
+      annotations:
+        summary: "OpenStack service down (openstack cluster)"
+        description: 'Only {{ printf "%.0f" $values.B.Value }} of 8 OpenStack API services are up (keystone, nova, neutron, cinder, glance, octavia, designate, placement). See the API Service Availability panel.'
+      data:
+        - refId: A
+          relativeTimeRange: { from: 600, to: 0 }
+          datasourceUid: Mimir
+          model:
+            datasource: { type: prometheus, uid: Mimir }
+            editorMode: code
+            expr: |
+              (openstack_identity_up{cluster="openstack"} + openstack_nova_up{cluster="openstack"}
+               + openstack_neutron_up{cluster="openstack"} + openstack_cinder_up{cluster="openstack"}
+               + openstack_glance_up{cluster="openstack"} + openstack_loadbalancer_up{cluster="openstack"}
+               + openstack_designate_up{cluster="openstack"} + openstack_placement_up{cluster="openstack"})
+              or vector(8)
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource: { type: __expr__, uid: __expr__ }
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource: { type: __expr__, uid: __expr__ }
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator: { type: lt, params: [8] }
+                operator: { type: and }
+                query: { params: [C] }
+                reducer: { type: last, params: [] }
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    # ---------------------------------------------------------------------
+    # A nova-compute agent is down = a hypervisor left the scheduling pool.
+    # Per-host series; raw metric with lt-1 threshold (NOT ==0) so the series
+    # always has data and NoData==OK holds. for:5m.
+    # ---------------------------------------------------------------------
+    - uid: argus-os-nova-compute-down
+      title: NovaComputeAgentDown
+      condition: C
+      for: "5m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: critical
+        component: openstack
+      annotations:
+        summary: "nova-compute down on {{ $labels.hostname }}"
+        description: "The nova-compute agent on hypervisor {{ $labels.hostname }} has been down for 5m. No VMs can be scheduled to or managed on that host. Check the nova-compute pod and the node's CPU (starvation is the usual cause on this hyperconverged cluster)."
+      data:
+        - refId: A
+          relativeTimeRange: { from: 600, to: 0 }
+          datasourceUid: Mimir
+          model:
+            datasource: { type: prometheus, uid: Mimir }
+            editorMode: code
+            expr: max by (hostname) (openstack_nova_agent_state{cluster="openstack",service="nova-compute"})
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource: { type: __expr__, uid: __expr__ }
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource: { type: __expr__, uid: __expr__ }
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator: { type: lt, params: [1] }
+                operator: { type: and }
+                query: { params: [C] }
+                reducer: { type: last, params: [] }
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    # ---------------------------------------------------------------------
+    # An Octavia load balancer is not ONLINE (operating_status value != 0) while
+    # it is provisioned ACTIVE. On this cloud LBs front the CAPI clusters'
+    # kube-apiservers and every gateway, so a non-ONLINE LB breaks real ingress.
+    # for:10m — Octavia briefly reports non-ONLINE during member rewiring.
+    # ---------------------------------------------------------------------
+    - uid: argus-os-lb-not-online
+      title: OctaviaLoadBalancerNotOnline
+      condition: C
+      for: "10m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: warning
+        component: openstack
+      annotations:
+        summary: "Octavia LB not ONLINE: {{ $labels.name }}"
+        description: "Load balancer {{ $labels.name }} (VIP {{ $labels.vip_address }}) has a non-ONLINE operating status for 10m. Whatever sits behind it (a kube-apiserver or gateway) may be unreachable."
+      data:
+        - refId: A
+          relativeTimeRange: { from: 600, to: 0 }
+          datasourceUid: Mimir
+          model:
+            datasource: { type: prometheus, uid: Mimir }
+            editorMode: code
+            expr: max by (name, vip_address) (openstack_loadbalancer_loadbalancer_status{cluster="openstack",provisioning_status="ACTIVE"} > 0)
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource: { type: __expr__, uid: __expr__ }
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource: { type: __expr__, uid: __expr__ }
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator: { type: gt, params: [0] }
+                operator: { type: and }
+                query: { params: [C] }
+                reducer: { type: last, params: [] }
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C

@@ -1,0 +1,270 @@
+# Pod / workload alert rules: CrashLoopBackOff, not-ready, restart storms.
+#
+# Grafana-MANAGED alerts (evaluated by Grafana against Mimir), same rationale as
+# rules-node.yaml: Mimir's ruler is disabled and every cluster's local
+# Alertmanager has no receivers, so Grafana unified alerting is the only path
+# that delivers a Discord notification. Because the queries run against Mimir,
+# ONE rule set covers every cluster that remote_writes in (mgmt, openstack,
+# production) — the `cluster` external label comes back as an alert label
+# automatically, so grouping/routing is per-cluster with no per-cluster CRs.
+#
+# Standard three-stage shape (A instant query -> B reduce(last) -> C threshold,
+# condition: C). noDataState is OK on purpose across the board: at steady state
+# a healthy cluster emits NO CrashLoopBackOff series and NO positive restart
+# rate, so the query legitimately returns empty. Treating empty as OK (not
+# NoData) is what keeps a healthy fleet quiet instead of firing DatasourceNoData.
+#
+# Backing metrics (kube-state-metrics), all verified present in Mimir and NOT
+# dropped by the monitoring base's cardinality relabeling:
+#   kube_pod_container_status_waiting_reason{reason,namespace,pod,container,cluster}
+#       — emitted ONLY while a container is actually waiting for that reason, so
+#         `{reason="CrashLoopBackOff"}` appears exactly when a crash loop starts
+#         and disappears when it clears. This is why the rule must key on it
+#         directly rather than on `waiting == 1` (that name has no reason label).
+#   kube_pod_container_status_restarts_total{...}  — cumulative restart counter.
+#   kube_pod_container_status_ready / running      — 1/0 per container.
+#   kube_pod_owner{owner_kind}                      — used to EXCLUDE Jobs, whose
+#         pods legitimately go NotReady on completion.
+#
+# Namespace scope: these are cluster-wide on purpose (a CrashLoopBackOff in ANY
+# namespace is worth a page), but kube-system/CNI churn is not special-cased —
+# if a noisy namespace needs muting later, add an object_matcher route in
+# notification-policy.yaml rather than narrowing the query here.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaAlertRuleGroup
+metadata:
+  name: pod-health
+  namespace: monitoring
+spec:
+  allowCrossNamespaceImport: true
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana-central"
+  folderRef: alerts
+  interval: 1m
+  rules:
+    # ---------------------------------------------------------------------
+    # CrashLoopBackOff — the headline ask. Fires when a container has been
+    # sitting in CrashLoopBackOff for 5m. Per-container series, so grouping in
+    # notification-policy.yaml (by alertname+cluster) collapses a multi-pod
+    # crash into one Discord message per cluster.
+    # ---------------------------------------------------------------------
+    - uid: argus-pod-crashloop
+      title: PodCrashLoopBackOff
+      condition: C
+      for: "5m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: critical
+        component: workload
+      annotations:
+        summary: "CrashLoopBackOff: {{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.cluster }})"
+        description: "Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} on cluster {{ $labels.cluster }} has been in CrashLoopBackOff for 5m. Check `kubectl -n {{ $labels.namespace }} logs {{ $labels.pod }} -c {{ $labels.container }} --previous`."
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: max by (cluster, namespace, pod, container) (kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"})
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: gt
+                  params:
+                    - 0
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    # ---------------------------------------------------------------------
+    # High restart rate — catches a container that keeps dying and restarting
+    # but never dwells in CrashLoopBackOff long enough to trip the rule above
+    # (e.g. probe-kill loops on the hyperconverged nodes — the documented OVN
+    # ovsdb / PowerDNS-Galera failure signature). >=3 restarts in 15m.
+    # ---------------------------------------------------------------------
+    - uid: argus-pod-restarting
+      title: PodRestartingFrequently
+      condition: C
+      for: "10m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: warning
+        component: workload
+      annotations:
+        summary: "Frequent restarts: {{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.cluster }})"
+        description: 'Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} on cluster {{ $labels.cluster }} restarted {{ printf "%.0f" $values.B.Value }} times in the last 15m. On the openstack cluster this is usually a starvation-induced probe-kill loop — correlate with node CPU.'
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: sum by (cluster, namespace, pod, container) (increase(kube_pod_container_status_restarts_total[15m]))
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: gt
+                  params:
+                    - 3
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    # ---------------------------------------------------------------------
+    # Container not ready — a container that is NOT ready for 15m without
+    # necessarily crash-looping (stuck init, failing readiness, wedged
+    # dependency). Job-owned pods are excluded: they go NotReady on normal
+    # completion, which is not a fault. Uses the raw ready metric with a lt
+    # threshold (NOT `== 0`) so the series always has data and NoData==OK holds.
+    # ---------------------------------------------------------------------
+    - uid: argus-pod-not-ready
+      title: PodContainerNotReady
+      condition: C
+      for: "15m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: warning
+        component: workload
+      annotations:
+        summary: "Container not ready: {{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.cluster }})"
+        description: "Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} on cluster {{ $labels.cluster }} has not been Ready for 15m."
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 900
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: |
+              min by (cluster, namespace, pod, container) (kube_pod_container_status_ready)
+              * on (cluster, namespace, pod) group_left
+              max by (cluster, namespace, pod) (kube_pod_owner{owner_kind!="Job"})
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: lt
+                  params:
+                    - 1
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C

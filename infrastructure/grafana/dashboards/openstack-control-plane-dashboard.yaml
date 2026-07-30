@@ -1,42 +1,44 @@
 # GrafanaDashboard — OpenStack Control Plane (openstack cluster ONLY).
 #
-# SCOPE: this dashboard is deliberately SINGLE-CLUSTER. Every query is pinned to
-# `cluster="openstack"` and there is NO $cluster template variable — it exists to
-# answer "how is OpenStack behaving, and what is the baremetal Kubernetes
-# underneath it doing?", not to compare clusters. Cross-cluster views belong in
-# the cluster-overview dashboard.
+# SCOPE: single-cluster on purpose. Every query is pinned to
+# `cluster="openstack"`; there is no $cluster selector. This dashboard answers
+# "how is the OpenStack cloud itself behaving?" — services, virtual machines,
+# the RPC bus and the service databases — NOT "how is the Kubernetes underneath
+# it doing?" (that is the cluster-overview / node dashboards). The previous
+# version mixed in generic baremetal-Kubernetes panels (node CPU, pod restarts,
+# top-pods-by-cpu); those were moved out so this dashboard is purely OpenStack
+# components.
 #
-# WHAT IT REPLACED: the previous version of this file was a generic multi-cluster
-# Kubernetes dashboard with a `$cluster` selector and a single empty "OpenStack
-# Control Plane" row. It contained no OpenStack metrics at all, and several of
-# its panels were permanently blank because they queried
-# `apiserver_request_duration_seconds_bucket`, which infrastructure/monitoring
-# drops for cardinality reasons.
+# METRIC PROVENANCE — every metric was verified to EXIST and RETURN DATA by
+# scraping the live exporters before the panel was written:
 #
-# METRIC PROVENANCE — every metric used below was verified to EXIST on the live
-# openstack cluster by scraping the exporter before the panel was written. This
-# matters: the failure mode being fixed here is dashboards built on plausible-
-# looking metric names that never resolve.
+#   openstack_*   prometheus-openstack-exporter (infrastructure/openstack-exporter)
+#                 — queries the OpenStack APIs with the yaook admin creds. Verified
+#                 live: 8 services up, 11 total VMs, per-tenant instance counts,
+#                 nova/neutron/cinder agent states, octavia LB status, glance/
+#                 designate/cinder resource counts.
+#   rabbitmq_*    yaook amqp_service_monitor   (RabbitMQ prometheus plugin)
+#   mysql_*       yaook mysql_service_monitor  (mysqld_exporter, incl. Galera wsrep)
 #
-#   rabbitmq_*  yaook amqp_service_monitor    (RabbitMQ prometheus plugin)
-#   mysql_*     yaook mysql_service_monitor   (mysqld_exporter, incl. Galera wsrep)
-#   socket_up   yaook ovn_monitoring pods, port 9999/8008
-#   flow_limit  yaook ovn_monitoring pods, port 9999/8008
-#   node_*      node-exporter
-#   kube_*      kube-state-metrics
-#   container_* cAdvisor (only the two families kept after the cardinality trim)
+# WHAT WAS REMOVED AND WHY:
+#   - The OVS/OVN data-plane row (socket_up / flow_limit). Confirmed ZERO series
+#     in Mimir: the yaook ovn_monitoring PodMonitor is broken upstream (it
+#     references container ports `prometheus`/`ovs-vswitchd-metrics` that the pods
+#     don't expose), so those panels were permanently blank. Removed rather than
+#     left dead. If that PodMonitor is fixed upstream, restore an OVS row here.
+#   - The generic baremetal-Kubernetes rows (node CPU/mem/load, pod restarts,
+#     top pods by cpu/mem). Not OpenStack-component metrics — they belong on the
+#     node/cluster dashboards.
+#   - Hypervisor-capacity nova metrics (openstack_nova_running_vms / vcpus_used /
+#     memory_used_bytes). Confirmed ABSENT: this cloud's placement/nova setup does
+#     not expose the os-hypervisors detail the exporter reads, so those return
+#     nothing. VM counts come from openstack_nova_total_vms (cluster) and
+#     openstack_nova_limits_instances_used (per tenant), which DO return data.
 #
-# DELIBERATE OMISSIONS:
-#   - No `openstack_*` panels (nova hypervisors, VM counts, quotas). Those come
-#     from prometheus-openstack-exporter, which is NOT deployed. Adding panels
-#     for them would just create more empty graphs.
-#   - OVS coverage is thin (socket_up, flow_limit) because that is genuinely all
-#     the yaook ovn-monitoring DaemonSet exports. Its PodMonitor is ALSO broken
-#     upstream: it references container ports named `prometheus` /
-#     `ovs-vswitchd-metrics`, but the pods actually expose `metrics` (8008) and
-#     `ovs-metrics` (8007), so it selects no targets at all. Until that is fixed
-#     the two gauges below are best-effort.
-#   - No apiserver latency histograms — dropped upstream for cardinality.
+# VM ERROR SEMANTICS: openstack_nova_server_status carries a `status` string
+# label and a numeric value from the exporter's status map — 0=ACTIVE, 4=ERROR,
+# 11=SHUTOFF (see exporters/nova.go knownServerStatuses). The VM panels and the
+# rules-openstack.yaml alerts key on that.
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
@@ -56,19 +58,22 @@ spec:
       "id": null,
       "links": [],
       "refresh": "1m",
-      "tags": ["openstack", "yaook", "baremetal"],
+      "schemaVersion": 39,
+      "tags": ["openstack", "yaook", "nova"],
       "time": { "from": "now-6h", "to": "now" },
       "timezone": "browser",
       "title": "OpenStack Control Plane",
       "uid": "openstack-control-plane",
+      "version": 1,
+      "weekStart": "",
       "templating": {
         "list": [
           {
-            "name": "node",
-            "label": "Baremetal node",
+            "name": "tenant",
+            "label": "Tenant",
             "type": "query",
             "datasource": { "type": "prometheus", "uid": "Mimir" },
-            "query": "label_values(kube_node_info{cluster=\"openstack\"}, node)",
+            "query": "label_values(openstack_nova_limits_instances_used{cluster=\"openstack\"}, tenant)",
             "includeAll": true,
             "multi": true,
             "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
@@ -82,398 +87,306 @@ spec:
           "collapsed": false,
           "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
           "id": 1,
-          "title": "Health Summary",
+          "title": "Service Health",
           "type": "row"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "Galera/MariaDB instances backing the OpenStack services that are reachable by their exporter. Any value below the total means a service database is down - OpenStack API calls against that service will fail.",
+          "description": "Reachable OpenStack API services out of the 8 the exporter probes (nova, neutron, cinder, glance, keystone/identity, octavia/load-balancer, designate, placement). Any value below 8 means an API is down — clicks in Horizon and every automation against it will fail.",
           "fieldConfig": {
             "defaults": {
               "color": { "mode": "thresholds" },
               "unit": "short",
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "red", "value": null },
-                  { "color": "green", "value": 1 }
-                ]
-              }
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 7 }, { "color": "green", "value": 8 }] }
             }
           },
           "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
           "id": 2,
-          "options": {
-            "colorMode": "value",
-            "graphMode": "none",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "textMode": "auto"
-          },
+          "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
           "targets": [
-            {
-              "expr": "sum(mysql_up{cluster=\"openstack\"})",
-              "legendFormat": "up",
-              "refId": "A"
-            }
+            { "expr": "openstack_identity_up{cluster=\"openstack\"} + openstack_nova_up{cluster=\"openstack\"} + openstack_neutron_up{cluster=\"openstack\"} + openstack_cinder_up{cluster=\"openstack\"} + openstack_glance_up{cluster=\"openstack\"} + openstack_loadbalancer_up{cluster=\"openstack\"} + openstack_designate_up{cluster=\"openstack\"} + openstack_placement_up{cluster=\"openstack\"}", "legendFormat": "services up", "refId": "A" }
           ],
-          "title": "Databases Up",
+          "title": "Services Up (of 8)",
           "type": "stat"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "Galera nodes reporting wsrep_ready=1, i.e. able to accept writes. A node that is connected but NOT ready is still syncing (SST/IST) and will reject queries.",
+          "description": "Total virtual machines across all tenants (openstack_nova_total_vms). The headline capacity number for the cloud.",
           "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "thresholds" },
-              "unit": "short",
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "red", "value": null },
-                  { "color": "green", "value": 1 }
-                ]
-              }
-            }
+            "defaults": { "color": { "mode": "thresholds" }, "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }
           },
           "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
           "id": 3,
-          "options": {
-            "colorMode": "value",
-            "graphMode": "none",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "textMode": "auto"
-          },
-          "targets": [
-            {
-              "expr": "sum(mysql_global_status_wsrep_ready{cluster=\"openstack\"})",
-              "legendFormat": "ready",
-              "refId": "A"
-            }
-          ],
-          "title": "Galera Write-Ready",
+          "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+          "targets": [ { "expr": "openstack_nova_total_vms{cluster=\"openstack\"}", "legendFormat": "VMs", "refId": "A" } ],
+          "title": "Total VMs",
           "type": "stat"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "Total messages sitting READY (undelivered) across every RabbitMQ queue. This is THE leading indicator of an OpenStack stall: agents publish RPC into the bus and a growing backlog means consumers (nova-compute, neutron agents, cinder-volume) are not keeping up or are dead.",
+          "description": "VMs NOT in ACTIVE state (status != ACTIVE). ERROR/SHUTOFF/UNKNOWN VMs count here. Green 0 is healthy; any non-zero warrants a look at the VM Status table below.",
           "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "thresholds" },
-              "unit": "short",
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "green", "value": null },
-                  { "color": "yellow", "value": 100 },
-                  { "color": "red", "value": 1000 }
-                ]
-              }
-            }
+            "defaults": { "color": { "mode": "thresholds" }, "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 3 }] } }
           },
           "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
           "id": 4,
-          "options": {
-            "colorMode": "value",
-            "graphMode": "area",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "textMode": "auto"
-          },
-          "targets": [
-            {
-              "expr": "sum(rabbitmq_queue_messages_ready{cluster=\"openstack\"})",
-              "legendFormat": "ready",
-              "refId": "A"
-            }
-          ],
-          "title": "Message Backlog",
+          "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+          "targets": [ { "expr": "count(openstack_nova_server_status{cluster=\"openstack\"} != 0) or vector(0)", "legendFormat": "not active", "refId": "A" } ],
+          "title": "VMs Not Active",
           "type": "stat"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "Active RabbitMQ resource alarms (memory watermark, disk watermark, file-descriptor limit). ANY non-zero value means RabbitMQ has BLOCKED publishers - OpenStack will appear to hang rather than error.",
+          "description": "VMs in ERROR state (status value 4). This is the direct 'a VM is broken' signal — non-zero means Nova failed to build, migrate, or reboot an instance.",
           "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "thresholds" },
-              "unit": "short",
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "green", "value": null },
-                  { "color": "red", "value": 1 }
-                ]
-              }
-            }
+            "defaults": { "color": { "mode": "thresholds" }, "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }
           },
           "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
           "id": 5,
-          "options": {
-            "colorMode": "background",
-            "graphMode": "none",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "textMode": "auto"
-          },
-          "targets": [
-            {
-              "expr": "sum(rabbitmq_alarms_memory_used_watermark{cluster=\"openstack\"}) + sum(rabbitmq_alarms_free_disk_space_watermark{cluster=\"openstack\"}) + sum(rabbitmq_alarms_file_descriptor_limit{cluster=\"openstack\"})",
-              "legendFormat": "alarms",
-              "refId": "A"
-            }
-          ],
-          "title": "RabbitMQ Alarms",
+          "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+          "targets": [ { "expr": "count(openstack_nova_server_status{cluster=\"openstack\"} == 4) or vector(0)", "legendFormat": "error", "refId": "A" } ],
+          "title": "VMs in ERROR",
           "type": "stat"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "ovs-vswitchd sockets reachable, one per hypervisor. If this drops below the node count, that node's data plane is degraded and VMs on it lose connectivity.",
+          "description": "nova-compute agents reporting up, one per hypervisor (lucy/makise/quinn). Below 3 means a hypervisor's compute service is down — no VMs can be scheduled or managed there.",
           "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "thresholds" },
-              "unit": "short",
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "red", "value": null },
-                  { "color": "green", "value": 1 }
-                ]
-              }
-            }
+            "defaults": { "color": { "mode": "thresholds" }, "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 2 }, { "color": "green", "value": 3 }] } }
           },
           "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
           "id": 6,
-          "options": {
-            "colorMode": "value",
-            "graphMode": "none",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "textMode": "auto"
-          },
-          "targets": [
-            {
-              "expr": "sum(socket_up{cluster=\"openstack\"})",
-              "legendFormat": "vswitchd",
-              "refId": "A"
-            }
-          ],
-          "title": "OVS vswitchd Up",
+          "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+          "targets": [ { "expr": "sum(openstack_nova_agent_state{cluster=\"openstack\",service=\"nova-compute\"})", "legendFormat": "compute up", "refId": "A" } ],
+          "title": "nova-compute Up",
           "type": "stat"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "Highest CPU utilisation across the three hypervisors. These hosts are HYPERCONVERGED - they run the OpenStack control plane, Ceph OSDs and tenant VMs together. Sustained high values are the documented root cause of both the OVN control-plane collapse and the PowerDNS/Galera restart loop, because BestEffort pods get cpu.weight=1 and are starved.",
+          "description": "RabbitMQ ready-message backlog across the whole bus. The leading indicator of an OpenStack stall: a growing backlog means RPC consumers (nova-compute, neutron/cinder agents) are not keeping up or are dead.",
           "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "thresholds" },
-              "unit": "percent",
-              "max": 100,
-              "min": 0,
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "green", "value": null },
-                  { "color": "yellow", "value": 75 },
-                  { "color": "red", "value": 90 }
-                ]
-              }
-            }
+            "defaults": { "color": { "mode": "thresholds" }, "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 100 }, { "color": "red", "value": 1000 }] } }
           },
           "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
           "id": 7,
-          "options": {
-            "colorMode": "background",
-            "graphMode": "area",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "textMode": "auto"
-          },
-          "targets": [
-            {
-              "expr": "max(100 * (1 - avg by (node) (rate(node_cpu_seconds_total{cluster=\"openstack\",mode=\"idle\"}[5m]))))",
-              "legendFormat": "peak",
-              "refId": "A"
-            }
-          ],
-          "title": "Peak Node CPU",
+          "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+          "targets": [ { "expr": "sum(rabbitmq_queue_messages_ready{cluster=\"openstack\"})", "legendFormat": "ready", "refId": "A" } ],
+          "title": "RPC Backlog",
           "type": "stat"
         },
-
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Per-service API reachability over time (1 = up). Each OpenStack service exporter publishes its own _up; a dip pinpoints exactly which API went unavailable and when.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter", "lineWidth": 2, "fillOpacity": 15, "showPoints": "never", "spanNulls": true },
+              "unit": "short", "max": 1, "min": 0,
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+            }
+          },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 5 },
+          "id": 8,
+          "options": { "legend": { "calcs": ["min", "lastNotNull"], "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [
+            { "expr": "openstack_identity_up{cluster=\"openstack\"}", "legendFormat": "keystone", "refId": "A" },
+            { "expr": "openstack_nova_up{cluster=\"openstack\"}", "legendFormat": "nova", "refId": "B" },
+            { "expr": "openstack_neutron_up{cluster=\"openstack\"}", "legendFormat": "neutron", "refId": "C" },
+            { "expr": "openstack_cinder_up{cluster=\"openstack\"}", "legendFormat": "cinder", "refId": "D" },
+            { "expr": "openstack_glance_up{cluster=\"openstack\"}", "legendFormat": "glance", "refId": "E" },
+            { "expr": "openstack_loadbalancer_up{cluster=\"openstack\"}", "legendFormat": "octavia", "refId": "F" },
+            { "expr": "openstack_designate_up{cluster=\"openstack\"}", "legendFormat": "designate", "refId": "G" },
+            { "expr": "openstack_placement_up{cluster=\"openstack\"}", "legendFormat": "placement", "refId": "H" }
+          ],
+          "title": "API Service Availability",
+          "type": "timeseries"
+        },
         {
           "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 },
           "id": 10,
+          "title": "Virtual Machines (Nova)",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Every VM with its current status. status=ACTIVE (green) is healthy; ERROR/SHUTOFF/etc. stand out. Joined columns: name, tenant, availability zone, and the raw status. This is the authoritative 'which VM is broken' list.",
+          "fieldConfig": {
+            "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" } } },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "Status" },
+                "properties": [
+                  { "id": "custom.cellOptions", "value": { "type": "color-text" } },
+                  { "id": "mappings", "value": [ { "type": "value", "options": { "ACTIVE": { "color": "green", "index": 0 }, "ERROR": { "color": "red", "index": 1 }, "SHUTOFF": { "color": "yellow", "index": 2 }, "BUILD": { "color": "blue", "index": 3 } } } ] }
+                ]
+              }
+            ]
+          },
+          "gridPos": { "h": 9, "w": 24, "x": 0, "y": 14 },
+          "id": 11,
+          "options": { "showHeader": true, "sortBy": [{ "desc": true, "displayName": "Status" }] },
+          "targets": [
+            { "expr": "openstack_nova_server_status{cluster=\"openstack\"}", "format": "table", "instant": true, "refId": "A" }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true, "__name__": true, "cluster": true, "container": true, "endpoint": true, "instance": true, "job": true, "namespace": true, "pod": true, "service": true, "Value": true,
+                  "id": true, "uuid": true, "user_id": true, "host_id": true, "address_ipv4": true, "address_ipv6": true, "flavor_id": true, "instance_libvirt": true, "hypervisor_hostname": true
+                },
+                "renameByName": {
+                  "name": "VM", "status": "Status", "tenant_id": "Tenant", "availability_zone": "AZ"
+                }
+              }
+            }
+          ],
+          "title": "VM Status (all tenants)",
+          "type": "table"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Instances used per tenant (openstack_nova_limits_instances_used) vs the tenant's max (-1 = unlimited, shown as no cap). Shows where the VMs actually live and which tenant is approaching its quota.",
+          "fieldConfig": {
+            "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
+          "id": 12,
+          "options": {
+            "displayMode": "gradient", "orientation": "horizontal", "showUnfilled": true,
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+          },
+          "targets": [
+            { "expr": "openstack_nova_limits_instances_used{cluster=\"openstack\",tenant=~\"$tenant\"}", "legendFormat": "{{tenant}}", "refId": "A" }
+          ],
+          "title": "Instances Used per Tenant",
+          "type": "bargauge"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "VM count by status over time. A rising ERROR line, or ACTIVE dropping while SHUTOFF rises, is the shape of a hypervisor incident (e.g. the documented nova cold-migration wedge left VMs SHUTOFF/ERROR).",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 20, "showPoints": "never", "stacking": { "mode": "normal" }, "spanNulls": true },
+              "unit": "short"
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
+          "id": 13,
+          "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [
+            { "expr": "count by (status) (openstack_nova_server_status{cluster=\"openstack\"})", "legendFormat": "{{status}}", "refId": "A" }
+          ],
+          "title": "VMs by Status",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Nova service agents (compute/conductor/scheduler) up state per host. A 0 here is a down agent — nova-compute down = that hypervisor is out of the scheduling pool; conductor/scheduler down = control-plane degraded.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter", "lineWidth": 2, "fillOpacity": 15, "showPoints": "never", "spanNulls": true },
+              "unit": "short", "max": 1, "min": 0,
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+            }
+          },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 31 },
+          "id": 14,
+          "options": { "legend": { "calcs": ["min", "lastNotNull"], "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [
+            { "expr": "openstack_nova_agent_state{cluster=\"openstack\"}", "legendFormat": "{{service}} @ {{hostname}}", "refId": "A" }
+          ],
+          "title": "Nova Agent State",
+          "type": "timeseries"
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 39 },
+          "id": 20,
           "title": "Message Bus (RabbitMQ) — OpenStack RPC",
           "type": "row"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "Ready (undelivered) messages per OpenStack service bus. A queue that climbs and does not drain identifies WHICH component is stuck - e.g. a rising nova queue with healthy neutron points at nova-compute, not at RabbitMQ.",
+          "description": "Ready (undelivered) messages per OpenStack service bus. A queue that climbs and does not drain identifies WHICH component is stuck.",
           "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "palette-classic" },
-              "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
-              "unit": "short"
-            }
+            "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true }, "unit": "short" }
           },
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
-          "id": 11,
-          "options": {
-            "legend": { "calcs": ["max", "lastNotNull"], "displayMode": "table", "placement": "right" },
-            "tooltip": { "mode": "multi", "sort": "desc" }
-          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
+          "id": 21,
+          "options": { "legend": { "calcs": ["max", "lastNotNull"], "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi", "sort": "desc" } },
           "targets": [
-            {
-              "expr": "sum by (job) (rabbitmq_queue_messages_ready{cluster=\"openstack\"})",
-              "legendFormat": "{{job}}",
-              "refId": "A"
-            }
+            { "expr": "sum by (job) (rabbitmq_queue_messages_ready{cluster=\"openstack\"})", "legendFormat": "{{job}}", "refId": "A" }
           ],
           "title": "Queue Backlog — Ready Messages by Service",
           "type": "timeseries"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "Unacknowledged messages: delivered to a consumer but not yet acked. Persistently high means a consumer took work and never finished it (hung agent), which is different from a backlog of undelivered work.",
+          "description": "Unacknowledged messages: delivered to a consumer but not yet acked. Persistently high means a consumer took work and never finished it (hung agent).",
           "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "palette-classic" },
-              "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
-              "unit": "short"
-            }
+            "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true }, "unit": "short" }
           },
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
-          "id": 12,
-          "options": {
-            "legend": { "calcs": ["max", "lastNotNull"], "displayMode": "table", "placement": "right" },
-            "tooltip": { "mode": "multi", "sort": "desc" }
-          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
+          "id": 22,
+          "options": { "legend": { "calcs": ["max", "lastNotNull"], "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi", "sort": "desc" } },
           "targets": [
-            {
-              "expr": "sum by (job) (rabbitmq_queue_messages_unacked{cluster=\"openstack\"})",
-              "legendFormat": "{{job}}",
-              "refId": "A"
-            }
+            { "expr": "sum by (job) (rabbitmq_queue_messages_unacked{cluster=\"openstack\"})", "legendFormat": "{{job}}", "refId": "A" }
           ],
           "title": "Unacknowledged Messages by Service",
           "type": "timeseries"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "Publish vs deliver rate across the bus. Healthy OpenStack keeps these two curves close together; a sustained gap is the bus falling behind.",
+          "description": "RabbitMQ memory against its own high-watermark limit. Crossing the watermark blocks publishers, which manifests as OpenStack API calls hanging rather than erroring.",
           "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "palette-classic" },
-              "custom": { "fillOpacity": 0, "showPoints": "never", "spanNulls": true },
-              "unit": "reqps"
-            }
+            "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true }, "unit": "percent", "max": 100, "min": 0 }
           },
-          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 14 },
-          "id": 13,
-          "options": {
-            "legend": { "calcs": ["mean"], "displayMode": "list", "placement": "bottom" },
-            "tooltip": { "mode": "multi", "sort": "desc" }
-          },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 48 },
+          "id": 23,
+          "options": { "legend": { "calcs": ["max", "lastNotNull"], "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi", "sort": "desc" } },
           "targets": [
-            {
-              "expr": "sum(rate(rabbitmq_queue_messages_published_total{cluster=\"openstack\"}[5m]))",
-              "legendFormat": "published",
-              "refId": "A"
-            },
-            {
-              "expr": "sum(rate(rabbitmq_queue_messages_delivered_total{cluster=\"openstack\"}[5m]))",
-              "legendFormat": "delivered",
-              "refId": "B"
-            },
-            {
-              "expr": "sum(rate(rabbitmq_queue_messages_redelivered_total{cluster=\"openstack\"}[5m]))",
-              "legendFormat": "redelivered",
-              "refId": "C"
-            }
-          ],
-          "title": "Bus Throughput",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "RabbitMQ memory against its own high-watermark limit. Crossing the watermark blocks publishers, which manifests as OpenStack API calls hanging.",
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "palette-classic" },
-              "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
-              "unit": "percent",
-              "max": 100,
-              "min": 0
-            }
-          },
-          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 14 },
-          "id": 14,
-          "options": {
-            "legend": { "calcs": ["max", "lastNotNull"], "displayMode": "table", "placement": "right" },
-            "tooltip": { "mode": "multi", "sort": "desc" }
-          },
-          "targets": [
-            {
-              "expr": "100 * rabbitmq_process_resident_memory_bytes{cluster=\"openstack\"} / clamp_min(rabbitmq_resident_memory_limit_bytes{cluster=\"openstack\"}, 1)",
-              "legendFormat": "{{job}}",
-              "refId": "A"
-            }
+            { "expr": "100 * rabbitmq_process_resident_memory_bytes{cluster=\"openstack\"} / clamp_min(rabbitmq_resident_memory_limit_bytes{cluster=\"openstack\"}, 1)", "legendFormat": "{{job}}", "refId": "A" }
           ],
           "title": "RabbitMQ Memory vs Watermark",
           "type": "timeseries"
         },
-
         {
           "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 21 },
-          "id": 20,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 55 },
+          "id": 30,
           "title": "Service Databases (Galera / MariaDB)",
           "type": "row"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "Per-database health. `up` = exporter reachable; `wsrep_ready` = accepting writes; `wsrep_connected` = joined to the cluster. A row where up=1 but ready=0 is a database that is running but refusing queries.",
+          "description": "Per-database health. up = exporter reachable; wsrep_ready = accepting writes; wsrep_connected = joined to the cluster. A row where up=1 but ready=0 is a DB that is running but refusing queries (SST/IST in progress).",
           "fieldConfig": {
             "defaults": {
               "color": { "mode": "thresholds" },
               "unit": "short",
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "red", "value": null },
-                  { "color": "green", "value": 1 }
-                ]
-              },
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] },
               "custom": { "align": "auto", "cellOptions": { "type": "color-background" } }
             }
           },
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
-          "id": 21,
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 56 },
+          "id": 31,
           "options": { "showHeader": true },
           "targets": [
-            {
-              "expr": "mysql_up{cluster=\"openstack\"}",
-              "format": "table",
-              "instant": true,
-              "legendFormat": "up",
-              "refId": "A"
-            },
-            {
-              "expr": "mysql_global_status_wsrep_ready{cluster=\"openstack\"}",
-              "format": "table",
-              "instant": true,
-              "legendFormat": "ready",
-              "refId": "B"
-            },
-            {
-              "expr": "mysql_global_status_wsrep_connected{cluster=\"openstack\"}",
-              "format": "table",
-              "instant": true,
-              "legendFormat": "connected",
-              "refId": "C"
-            }
+            { "expr": "mysql_up{cluster=\"openstack\"}", "format": "table", "instant": true, "refId": "A" },
+            { "expr": "mysql_global_status_wsrep_ready{cluster=\"openstack\"}", "format": "table", "instant": true, "refId": "B" },
+            { "expr": "mysql_global_status_wsrep_connected{cluster=\"openstack\"}", "format": "table", "instant": true, "refId": "C" }
           ],
           "transformations": [
             { "id": "merge", "options": {} },
             {
               "id": "organize",
               "options": {
-                "excludeByName": { "Time": true, "__name__": true, "cluster": true, "endpoint": true, "namespace": true, "service": true, "container": true, "pod": true },
+                "excludeByName": { "Time": true, "__name__": true, "cluster": true, "endpoint": true, "namespace": true, "service": true, "container": true, "pod": true, "instance": true },
                 "renameByName": { "Value #A": "up", "Value #B": "wsrep_ready", "Value #C": "wsrep_connected", "job": "database" }
               }
             }
@@ -485,376 +398,91 @@ spec:
           "datasource": { "type": "prometheus", "uid": "Mimir" },
           "description": "Connection pool utilisation per database. OpenStack services open long-lived pools; hitting max_connections makes API calls fail with 500s that look like application bugs.",
           "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "palette-classic" },
-              "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
-              "unit": "percent",
-              "max": 100,
-              "min": 0
-            }
+            "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true }, "unit": "percent", "max": 100, "min": 0 }
           },
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
-          "id": 22,
-          "options": {
-            "legend": { "calcs": ["max", "lastNotNull"], "displayMode": "table", "placement": "right" },
-            "tooltip": { "mode": "multi", "sort": "desc" }
-          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 56 },
+          "id": 32,
+          "options": { "legend": { "calcs": ["max", "lastNotNull"], "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi", "sort": "desc" } },
           "targets": [
-            {
-              "expr": "100 * mysql_global_status_threads_connected{cluster=\"openstack\"} / clamp_min(mysql_global_variables_max_connections{cluster=\"openstack\"}, 1)",
-              "legendFormat": "{{job}}",
-              "refId": "A"
-            }
+            { "expr": "100 * mysql_global_status_threads_connected{cluster=\"openstack\"} / clamp_min(mysql_global_variables_max_connections{cluster=\"openstack\"}, 1)", "legendFormat": "{{job}}", "refId": "A" }
           ],
           "title": "Connection Pool Usage",
           "type": "timeseries"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "Query throughput per database. Useful for spotting a service hot-looping against its DB (a common yaook operator misconfiguration signature).",
+          "description": "Aborted connection attempts. Spikes coincide with the ssl-terminator sidecar restarting — the exact failure that took PowerDNS/Galera down and broke rpcu.lan resolution cluster-wide.",
           "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "palette-classic" },
-              "custom": { "fillOpacity": 0, "showPoints": "never", "spanNulls": true },
-              "unit": "reqps"
-            }
+            "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 0, "showPoints": "never", "spanNulls": true }, "unit": "reqps" }
           },
-          "gridPos": { "h": 7, "w": 8, "x": 0, "y": 30 },
-          "id": 23,
-          "options": {
-            "legend": { "calcs": ["mean"], "displayMode": "list", "placement": "bottom" },
-            "tooltip": { "mode": "multi", "sort": "desc" }
-          },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 64 },
+          "id": 33,
+          "options": { "legend": { "calcs": ["max"], "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi", "sort": "desc" } },
           "targets": [
-            {
-              "expr": "sum by (job) (rate(mysql_global_status_queries{cluster=\"openstack\"}[5m]))",
-              "legendFormat": "{{job}}",
-              "refId": "A"
-            }
+            { "expr": "sum by (job) (rate(mysql_global_status_aborted_connects{cluster=\"openstack\"}[5m]))", "legendFormat": "{{job}}", "refId": "A" }
           ],
-          "title": "Query Rate",
+          "title": "Aborted DB Connections",
           "type": "timeseries"
         },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "Slow queries. On this hyperconverged cluster a rise here usually tracks Ceph latency or CPU starvation rather than bad SQL.",
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "palette-classic" },
-              "custom": { "fillOpacity": 0, "showPoints": "never", "spanNulls": true },
-              "unit": "reqps"
-            }
-          },
-          "gridPos": { "h": 7, "w": 8, "x": 8, "y": 30 },
-          "id": 24,
-          "options": {
-            "legend": { "calcs": ["max"], "displayMode": "list", "placement": "bottom" },
-            "tooltip": { "mode": "multi", "sort": "desc" }
-          },
-          "targets": [
-            {
-              "expr": "sum by (job) (rate(mysql_global_status_slow_queries{cluster=\"openstack\"}[5m]))",
-              "legendFormat": "{{job}}",
-              "refId": "A"
-            }
-          ],
-          "title": "Slow Query Rate",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "Aborted connection attempts. Spikes here coincide with the ssl-terminator sidecar restarting - the exact failure that took PowerDNS down and broke rpcu.lan resolution cluster-wide.",
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "palette-classic" },
-              "custom": { "fillOpacity": 0, "showPoints": "never", "spanNulls": true },
-              "unit": "reqps"
-            }
-          },
-          "gridPos": { "h": 7, "w": 8, "x": 16, "y": 30 },
-          "id": 25,
-          "options": {
-            "legend": { "calcs": ["max"], "displayMode": "list", "placement": "bottom" },
-            "tooltip": { "mode": "multi", "sort": "desc" }
-          },
-          "targets": [
-            {
-              "expr": "sum by (job) (rate(mysql_global_status_aborted_connects{cluster=\"openstack\"}[5m]))",
-              "legendFormat": "{{job}}",
-              "refId": "A"
-            }
-          ],
-          "title": "Aborted Connections",
-          "type": "timeseries"
-        },
-
         {
           "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 37 },
-          "id": 30,
-          "title": "Network Data Plane (OVS / OVN)",
-          "type": "row"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "Per-hypervisor ovs-vswitchd socket reachability. A zero here means that node cannot program flows: existing VMs may keep running on cached flows while all NEW port binds fail, which surfaces as VMs that boot but never get network.",
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "thresholds" },
-              "custom": { "fillOpacity": 30, "showPoints": "never", "spanNulls": true },
-              "unit": "short",
-              "max": 1,
-              "min": 0,
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "red", "value": null },
-                  { "color": "green", "value": 1 }
-                ]
-              }
-            }
-          },
-          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 38 },
-          "id": 31,
-          "options": {
-            "legend": { "calcs": ["min", "lastNotNull"], "displayMode": "table", "placement": "right" },
-            "tooltip": { "mode": "multi", "sort": "desc" }
-          },
-          "targets": [
-            {
-              "expr": "socket_up{cluster=\"openstack\"}",
-              "legendFormat": "{{pod}}",
-              "refId": "A"
-            }
-          ],
-          "title": "ovs-vswitchd Socket Up",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "vswitchd flow limit per node. ovs-vswitchd lowers this automatically when it is under pressure and cannot keep up with flow setups - a falling value is an early warning of data-plane CPU starvation.",
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "palette-classic" },
-              "custom": { "fillOpacity": 0, "showPoints": "never", "spanNulls": true },
-              "unit": "short"
-            }
-          },
-          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 38 },
-          "id": 32,
-          "options": {
-            "legend": { "calcs": ["min", "lastNotNull"], "displayMode": "table", "placement": "right" },
-            "tooltip": { "mode": "multi", "sort": "desc" }
-          },
-          "targets": [
-            {
-              "expr": "flow_limit{cluster=\"openstack\"}",
-              "legendFormat": "{{pod}}",
-              "refId": "A"
-            }
-          ],
-          "title": "OVS Flow Limit",
-          "type": "timeseries"
-        },
-
-        {
-          "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 45 },
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 71 },
           "id": 40,
-          "title": "Baremetal Kubernetes (lucy / makise / quinn)",
+          "title": "Resources (Network / Storage / Images / DNS)",
           "type": "row"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "CPU utilisation per hypervisor. THE most important panel here: these nodes run the OpenStack control plane, Ceph OSDs and tenant VMs on the same cores. Every documented outage on this cluster (OVN raft loss, PowerDNS SERVFAIL) began with a node pinned near 100% starving BestEffort pods.",
+          "description": "Cloud resource inventory. Sudden drops (e.g. networks or volumes going to 0) indicate an API returning empty — often the first visible sign of a service that is up but malfunctioning.",
           "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "palette-classic" },
-              "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
-              "unit": "percent",
-              "max": 100,
-              "min": 0,
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "green", "value": null },
-                  { "color": "yellow", "value": 75 },
-                  { "color": "red", "value": 90 }
-                ]
-              }
-            }
+            "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter", "lineWidth": 2, "fillOpacity": 0, "showPoints": "auto", "spanNulls": true }, "unit": "short" }
           },
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 46 },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 72 },
           "id": 41,
-          "options": {
-            "legend": { "calcs": ["mean", "max", "lastNotNull"], "displayMode": "table", "placement": "right" },
-            "tooltip": { "mode": "multi", "sort": "desc" }
-          },
+          "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi", "sort": "desc" } },
           "targets": [
-            {
-              "expr": "100 * (1 - avg by (node) (rate(node_cpu_seconds_total{cluster=\"openstack\",mode=\"idle\",node=~\"$node\"}[5m])))",
-              "legendFormat": "{{node}}",
-              "refId": "A"
-            }
+            { "expr": "openstack_neutron_networks{cluster=\"openstack\"}", "legendFormat": "networks", "refId": "A" },
+            { "expr": "openstack_neutron_ports{cluster=\"openstack\"}", "legendFormat": "ports", "refId": "B" },
+            { "expr": "openstack_neutron_floating_ips{cluster=\"openstack\"}", "legendFormat": "floating IPs", "refId": "C" },
+            { "expr": "openstack_cinder_volumes{cluster=\"openstack\"}", "legendFormat": "volumes", "refId": "D" },
+            { "expr": "openstack_glance_images{cluster=\"openstack\"}", "legendFormat": "images", "refId": "E" },
+            { "expr": "openstack_designate_zones{cluster=\"openstack\"}", "legendFormat": "dns zones", "refId": "F" }
           ],
-          "title": "Node CPU Utilisation",
+          "title": "Resource Inventory",
           "type": "timeseries"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "Run-queue pressure relative to core count. A value above 1.0 means more runnable work than cores - processes are waiting. This is the metric that read 5.75 (load 69 on 12 cores) during the OVN collapse, while plain CPU% looked merely 'busy'.",
+          "description": "Octavia load balancers by operating status (0=ONLINE, 1=DRAINING, 2=OFFLINE, 3=DEGRADED, 4=ERROR). Non-ONLINE balancers break ingress for whatever service sits behind them — on this cloud that includes the CAPI clusters' kube-apiservers.",
           "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "palette-classic" },
-              "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
-              "unit": "short",
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "green", "value": null },
-                  { "color": "yellow", "value": 1 },
-                  { "color": "red", "value": 2 }
-                ]
+            "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" } } },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "Op Status" },
+                "properties": [ { "id": "custom.cellOptions", "value": { "type": "color-text" } }, { "id": "mappings", "value": [ { "type": "value", "options": { "ONLINE": { "color": "green", "index": 0 }, "ERROR": { "color": "red", "index": 1 }, "OFFLINE": { "color": "red", "index": 2 }, "DEGRADED": { "color": "yellow", "index": 3 } } } ] } ]
               }
-            }
+            ]
           },
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 46 },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 72 },
           "id": 42,
-          "options": {
-            "legend": { "calcs": ["mean", "max", "lastNotNull"], "displayMode": "table", "placement": "right" },
-            "tooltip": { "mode": "multi", "sort": "desc" }
-          },
+          "options": { "showHeader": true, "sortBy": [{ "desc": true, "displayName": "Op Status" }] },
           "targets": [
-            {
-              "expr": "sum by (node) (node_load1{cluster=\"openstack\",node=~\"$node\"}) / clamp_min(count by (node) (node_cpu_seconds_total{cluster=\"openstack\",mode=\"idle\",node=~\"$node\"}), 1)",
-              "legendFormat": "{{node}}",
-              "refId": "A"
-            }
+            { "expr": "openstack_loadbalancer_loadbalancer_status{cluster=\"openstack\"}", "format": "table", "instant": true, "refId": "A" }
           ],
-          "title": "Load per Core",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "Memory utilisation per hypervisor (excludes reclaimable cache).",
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "palette-classic" },
-              "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
-              "unit": "percent",
-              "max": 100,
-              "min": 0,
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "green", "value": null },
-                  { "color": "yellow", "value": 80 },
-                  { "color": "red", "value": 90 }
-                ]
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true, "__name__": true, "cluster": true, "container": true, "endpoint": true, "instance": true, "job": true, "namespace": true, "pod": true, "service": true, "Value": true,
+                  "id": true, "project_id": true, "provisioning_status": true
+                },
+                "renameByName": { "name": "Load Balancer", "operating_status": "Op Status", "provider": "Provider", "vip_address": "VIP" }
               }
             }
-          },
-          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 54 },
-          "id": 43,
-          "options": {
-            "legend": { "calcs": ["mean", "max", "lastNotNull"], "displayMode": "table", "placement": "right" },
-            "tooltip": { "mode": "multi", "sort": "desc" }
-          },
-          "targets": [
-            {
-              "expr": "100 * (1 - sum by (node) (node_memory_MemAvailable_bytes{cluster=\"openstack\",node=~\"$node\"}) / clamp_min(sum by (node) (node_memory_MemTotal_bytes{cluster=\"openstack\",node=~\"$node\"}), 1))",
-              "legendFormat": "{{node}}",
-              "refId": "A"
-            }
           ],
-          "title": "Node Memory Utilisation",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "Pods in the yaook namespace that are NOT Running, plus container restarts. Restarts on this cluster are usually starvation-induced probe failures rather than application crashes - correlate with the CPU panel above.",
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "palette-classic" },
-              "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
-              "unit": "short"
-            }
-          },
-          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 54 },
-          "id": 44,
-          "options": {
-            "legend": { "calcs": ["max", "lastNotNull"], "displayMode": "table", "placement": "right" },
-            "tooltip": { "mode": "multi", "sort": "desc" }
-          },
-          "targets": [
-            {
-              "expr": "sum by (phase) (kube_pod_status_phase{cluster=\"openstack\",namespace=\"yaook\",phase!=\"Running\"} > 0)",
-              "legendFormat": "pods {{phase}}",
-              "refId": "A"
-            },
-            {
-              "expr": "sum(increase(kube_pod_container_status_restarts_total{cluster=\"openstack\",namespace=\"yaook\"}[1h]))",
-              "legendFormat": "container restarts (1h)",
-              "refId": "B"
-            }
-          ],
-          "title": "OpenStack Pod Health",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "Top OpenStack control-plane pods by CPU. Identifies which yaook component is consuming the hypervisor cores that the data plane and Ceph also need.",
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "palette-classic" },
-              "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
-              "unit": "short"
-            }
-          },
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 61 },
-          "id": 45,
-          "options": {
-            "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "right" },
-            "tooltip": { "mode": "multi", "sort": "desc" }
-          },
-          "targets": [
-            {
-              "expr": "topk(10, sum by (pod) (rate(container_cpu_usage_seconds_total{cluster=\"openstack\",namespace=\"yaook\",container!=\"\"}[5m])))",
-              "legendFormat": "{{pod}}",
-              "refId": "A"
-            }
-          ],
-          "title": "Top 10 OpenStack Pods by CPU (cores)",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "description": "Top OpenStack control-plane pods by memory working set.",
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "palette-classic" },
-              "custom": { "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
-              "unit": "bytes"
-            }
-          },
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 61 },
-          "id": 46,
-          "options": {
-            "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "right" },
-            "tooltip": { "mode": "multi", "sort": "desc" }
-          },
-          "targets": [
-            {
-              "expr": "topk(10, sum by (pod) (container_memory_working_set_bytes{cluster=\"openstack\",namespace=\"yaook\",container!=\"\"}))",
-              "legendFormat": "{{pod}}",
-              "refId": "A"
-            }
-          ],
-          "title": "Top 10 OpenStack Pods by Memory",
-          "type": "timeseries"
+          "title": "Octavia Load Balancers",
+          "type": "table"
         }
-      ],
-      "schemaVersion": 39,
-      "version": 1,
-      "weekStart": ""
+      ]
     }

@@ -1,0 +1,36 @@
+# prometheus openstack-exporter on the openstack cluster.
+#
+# Provides the openstack_* metric family (nova VM counts & per-VM status,
+# per-service up/health, quotas, cinder/neutron/octavia/designate resources) that
+# NOTHING else in this repo produces — the OpenStack Control Plane dashboard's VM
+# panels and the VM/resource-error alerts depend on it. Before this existed the
+# cluster had zero openstack_* metrics (only the yaook infra exporters:
+# rabbitmq_*, mysql_*), so VM state was invisible to monitoring.
+#
+# dependsOn:
+#   external-secrets — the clouds.yaml is rendered by an ESO ExternalSecret from
+#                      the yaook `keystone-admin` secret.
+#   monitoring       — the ServiceMonitor needs the prometheus-operator CRDs +
+#                      the kube-prometheus-stack Prometheus to scrape it.
+#
+# wait: false — the ExternalSecret + exporter Pod only become healthy once ESO is
+# running and has rendered the cloud-config; we do not want that to block the
+# Kustomization (same rationale as monitoring.yaml itself).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: openstack-exporter
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  path: ./infrastructure/openstack-exporter
+  prune: true
+  wait: false
+  timeout: 5m
+  dependsOn:
+    - name: external-secrets
+    - name: monitoring

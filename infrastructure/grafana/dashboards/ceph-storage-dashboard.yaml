@@ -1,5 +1,40 @@
 # GrafanaDashboard — Ceph Storage Health (openstack cluster).
-# Focused on troubleshooting & performance: capacity, OSD tree, I/O, latency, pools.
+#
+# METRIC PROVENANCE — every query below uses the STANDARD `ceph_*` family
+# emitted by the Ceph mgr `prometheus` module (rook-ceph-mgr:9283), verified by
+# scraping that endpoint live on the openstack cluster (Ceph v19.2.3 "squid").
+#
+# WHY THIS WAS A FULL REWRITE: the previous version of this dashboard queried
+# `osd_df`, `osd_up`, `osd_df_bytes_used` — names that DO NOT EXIST. The real
+# mgr module exposes `ceph_osd_up`, `ceph_cluster_total_bytes`,
+# `ceph_pool_bytes_used`, `ceph_pg_*`, etc. On top of that, NOTHING was
+# scraping the mgr at all (no ServiceMonitor; `cephcluster.spec.monitoring` was
+# empty), so Mimir held ZERO ceph metrics and every panel was blank regardless
+# of the query. Both halves are fixed:
+#   - scrape:  infrastructure/rook/configs/cephcluster.yaml `spec.monitoring.enabled: true`
+#   - queries: this file, rewritten onto the real metric names.
+#
+# LABEL SCHEMA (as scraped):
+#   ceph_cluster_total_bytes / _used_bytes        cluster-wide capacity (no per-OSD df in this build)
+#   ceph_osd_up / _in / _weight {ceph_daemon}     per-OSD state; join host via ceph_osd_metadata
+#   ceph_osd_metadata {ceph_daemon,hostname,device_class}
+#   ceph_osd_apply_latency_ms / _commit_latency_ms {ceph_daemon}
+#   ceph_pool_bytes_used / _max_avail / _objects / _percent_used {pool_id}   join name via ceph_pool_metadata{pool_id,name}
+#   ceph_pool_rd_bytes / _wr_bytes (counters)     per-pool client throughput
+#   ceph_pg_total / _active / _clean / _degraded / _undersized {pool_id}
+#   ceph_health_status (0 OK / 1 WARN / 2 ERR)    scalar
+#   ceph_health_detail {name,severity}            per active health check
+#   ceph_mon_quorum_status {ceph_daemon}          per-mon quorum membership
+#   ceph_mgr_status {ceph_daemon}                 active mgr
+#
+# DELIBERATE OMISSION: there is no per-OSD capacity/utilisation metric in this
+# mgr build (no ceph_osd_stat_bytes). Per-OSD fill is therefore approximated is
+# NOT shown; capacity is cluster-total + per-pool, which is what exists. The OSD
+# table shows state (up/in/weight) + latency, which is what the mgr provides.
+#
+# SCOPE: single production Ceph cluster (openstack). A `$cluster` variable is
+# still provided (defaults to openstack) so the dashboard keeps working if a
+# second Ceph cluster is ever added to Mimir.
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
@@ -15,427 +50,407 @@ spec:
     {
       "annotations": { "list": [] },
       "editable": true,
-      "fiscalYearStartMonth": 0,
       "graphTooltip": 1,
       "id": null,
       "links": [],
-      "liveNow": false,
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "style": "dark",
+      "tags": ["storage", "ceph", "rook"],
+      "time": { "from": "now-6h", "to": "now" },
+      "timepicker": { "refresh_intervals": ["10s", "30s", "1m", "5m"] },
+      "timezone": "browser",
+      "title": "Ceph Storage Health",
+      "uid": "ceph-storage-health",
+      "version": 1,
+      "weekStart": "",
+      "templating": {
+        "list": [
+          {
+            "name": "cluster",
+            "label": "Cluster",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "Mimir" },
+            "definition": "label_values(ceph_health_status, cluster)",
+            "query": { "query": "label_values(ceph_health_status, cluster)", "refId": "StandardVariableQuery" },
+            "includeAll": false,
+            "multi": false,
+            "current": { "selected": true, "text": "openstack", "value": "openstack" },
+            "refresh": 2,
+            "sort": 1
+          }
+        ]
+      },
       "panels": [
         {
           "collapsed": false,
           "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
           "id": 1,
-          "title": "Ceph Cluster Capacity",
-          "type": "row"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "thresholds" },
-              "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
-              "unit": "bytes"
-            }
-          },
-          "gridPos": { "h": 4, "w": 8, "x": 0, "y": 1 },
-          "id": 2,
-          "options": {
-            "colorMode": "value",
-            "graphMode": "none",
-            "justifyMode": "auto",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "textMode": "auto"
-          },
-          "targets": [
-            {
-              "expr": "sum(osd_df{cluster=~\"$cluster\"} * on(cluster, instance) group_left osd_up{cluster=~\"$cluster\"})",
-              "legendFormat": "Total RAW Capacity",
-              "refId": "A"
-            }
-          ],
-          "title": "Total RAW Capacity",
-          "type": "stat"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "thresholds" },
-              "thresholds": { "mode": "absolute", "steps": [{ "color": "orange", "value": null }] },
-              "unit": "bytes"
-            }
-          },
-          "gridPos": { "h": 4, "w": 8, "x": 8, "y": 1 },
-          "id": 3,
-          "options": {
-            "colorMode": "value",
-            "graphMode": "none",
-            "justifyMode": "auto",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "textMode": "auto"
-          },
-          "targets": [
-            {
-              "expr": "sum(osd_df{cluster=~\"$cluster\"} * on(cluster, instance) group_left osd_up{cluster=~\"$cluster\"} * osd_df_bytes_used{cluster=~\"$cluster\"})",
-              "legendFormat": "Used",
-              "refId": "A"
-            }
-          ],
-          "title": "RAW Used",
-          "type": "stat"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "thresholds" },
-              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-              "unit": "percent"
-            }
-          },
-          "gridPos": { "h": 4, "w": 8, "x": 16, "y": 1 },
-          "id": 4,
-          "options": {
-            "colorMode": "value",
-            "graphMode": "none",
-            "justifyMode": "auto",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "textMode": "auto"
-          },
-          "targets": [
-            {
-              "expr": "sum(osd_df_bytes_used{cluster=~\"$cluster\"}) / sum(osd_df{cluster=~\"$cluster\"} * on(cluster, instance) group_left osd_up{cluster=~\"$cluster\"}) * 100",
-              "legendFormat": "Utilization",
-              "refId": "A"
-            }
-          ],
-          "title": "Cluster Utilization %",
-          "type": "stat"
-        },
-        {
-          "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
-          "id": 5,
-          "title": "OSD Tree & Health",
-          "type": "row"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" }, "inspect": true } },
-            "overrides": [
-              { "matcher": { "id": "byName", "options": "Size" }, "properties": [{ "id": "unit", "value": "bytes" }] },
-              { "matcher": { "id": "byName", "options": "Used" }, "properties": [{ "id": "unit", "value": "bytes" }] },
-              { "matcher": { "id": "byName", "options": "Util%" }, "properties": [{ "id": "unit", "value": "percent" }] },
-              {
-                "matcher": { "id": "byName", "options": "Util%" },
-                "properties": [
-                  { "id": "custom.cellOptions", "value": { "mode": "basic", "type": "gauge" } },
-                  { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "#EAB839", "value": 70 }, { "color": "red", "value": 85 }] } }
-                ]
-              }
-            ]
-          },
-          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 6 },
-          "id": 6,
-          "options": { "footer": { "countRows": true, "fields": "", "reducer": ["sum"], "show": true }, "showHeader": true, "sortBy": [{ "desc": true, "displayName": "Util%" }] },
-          "targets": [
-            {
-              "expr": "osd_df{cluster=~\"$cluster\"}",
-              "format": "table",
-              "instant": true,
-              "legendFormat": "",
-              "refId": "A"
-            },
-            {
-              "expr": "osd_up{cluster=~\"$cluster\"}",
-              "format": "table",
-              "instant": true,
-              "legendFormat": "",
-              "refId": "B"
-            },
-            {
-              "expr": "osd_df_bytes_used{cluster=~\"$cluster\"}",
-              "format": "table",
-              "instant": true,
-              "legendFormat": "",
-              "refId": "C"
-            },
-            {
-              "expr": "100 * (osd_df_bytes_used{cluster=~\"$cluster\"} / osd_df{cluster=~\"$cluster\"})",
-              "format": "table",
-              "instant": true,
-              "legendFormat": "",
-              "refId": "D"
-            }
-          ],
-          "title": "OSD Tree — Status, Size, Used, Utilization",
-          "transformations": [
-            { "id": "seriesToColumns", "options": { "byField": "instance" } },
-            {
-              "id": "organize",
-              "options": {
-                "excludeByName": { "Time": true, "Time 1": true, "Time 2": true, "Time 3": true, "Time 4": true, "__name__": true, "job": true },
-                "renameByName": {
-                  "Value #A": "Size",
-                  "Value #B": "Up",
-                  "Value #C": "Used",
-                  "Value #D": "Util%",
-                  "instance": "OSD",
-                  "host": "Host",
-                  "device_class": "Device Class"
-                }
-              }
-            }
-          ],
-          "type": "table"
-        },
-        {
-          "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
-          "id": 7,
-          "title": "I/O Throughput & Latency",
-          "type": "row"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 20 },
-              "unit": "Bps"
-            }
-          },
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
-          "id": 8,
-          "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-          "targets": [
-            {
-              "expr": "sum(rate(osd_op{cluster=~\"$cluster\", op_type=\"read\"}[5m])) by (pool_name)",
-              "legendFormat": "{{pool_name}} read",
-              "refId": "A"
-            },
-            {
-              "expr": "sum(rate(osd_op{cluster=~\"$cluster\", op_type=\"write\"}[5m])) by (pool_name)",
-              "legendFormat": "{{pool_name}} write",
-              "refId": "B"
-            }
-          ],
-          "title": "I/O Rate per Pool",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 20 },
-              "unit": "s"
-            }
-          },
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
-          "id": 9,
-          "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-          "targets": [
-            {
-              "expr": "histogram_quantile(0.99, sum(rate(osd_op_latency_bucket{cluster=~\"$cluster\"}[5m])) by (le, pool_name))",
-              "legendFormat": "p99 {{pool_name}}",
-              "refId": "A"
-            },
-            {
-              "expr": "histogram_quantile(0.50, sum(rate(osd_op_latency_bucket{cluster=~\"$cluster\"}[5m])) by (le, pool_name))",
-              "legendFormat": "p50 {{pool_name}}",
-              "refId": "B"
-            }
-          ],
-          "title": "I/O Latency per Pool (p50 / p99)",
-          "type": "timeseries"
-        },
-        {
-          "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
-          "id": 10,
-          "title": "Pool Utilization",
-          "type": "row"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "palette-classic" },
-              "unit": "bytes"
-            }
-          },
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
-          "id": 11,
-          "options": {
-            "displayMode": "gradient",
-            "orientation": "horizontal",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "showUnfilled": true
-          },
-          "targets": [
-            {
-              "expr": "ceph_pool_bytes_used{cluster=~\"$cluster\"}",
-              "legendFormat": "{{pool_name}}",
-              "refId": "A"
-            }
-          ],
-          "title": "Pool Usage (Bytes Used)",
-          "type": "bargauge"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 20 },
-              "unit": "Bps"
-            }
-          },
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
-          "id": 12,
-          "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-          "targets": [
-            {
-              "expr": "sum(rate(ceph_pool_read_bytes_total{cluster=~\"$cluster\"}[5m])) by (pool_name)",
-              "legendFormat": "{{pool_name}} read",
-              "refId": "A"
-            },
-            {
-              "expr": "sum(rate(ceph_pool_write_bytes_total{cluster=~\"$cluster\"}[5m])) by (pool_name)",
-              "legendFormat": "{{pool_name}} write",
-              "refId": "B"
-            }
-          ],
-          "title": "Pool I/O Throughput",
-          "type": "timeseries"
-        },
-        {
-          "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
-          "id": 13,
           "title": "Cluster Health",
           "type": "row"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Overall Ceph health. HEALTH_OK means all PGs are active+clean; WARN/ERR mean a health check is firing — see the 'Active Health Checks' table for which one.",
           "fieldConfig": {
             "defaults": {
               "color": { "mode": "thresholds" },
               "mappings": [
-                { "options": { "0": { "color": "green", "text": "HEALTH_OK" }, "1": { "color": "red", "text": "HEALTH_WARN" } }, "type": "value" }
+                { "type": "value", "options": { "0": { "color": "green", "text": "HEALTH_OK" }, "1": { "color": "yellow", "text": "HEALTH_WARN" }, "2": { "color": "red", "text": "HEALTH_ERR" } } }
               ],
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 2 }] },
+              "unit": "short"
+            }
+          },
+          "gridPos": { "h": 4, "w": 5, "x": 0, "y": 1 },
+          "id": 2,
+          "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+          "targets": [ { "expr": "ceph_health_status{cluster=~\"$cluster\"}", "legendFormat": "Health", "refId": "A" } ],
+          "title": "Ceph Health",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "OSDs up (daemon reachable) vs total. Any shortfall means an OSD is down — capacity and redundancy are reduced until it recovers.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
               "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
               "unit": "short"
             }
           },
-          "gridPos": { "h": 4, "w": 8, "x": 0, "y": 33 },
+          "gridPos": { "h": 4, "w": 5, "x": 5, "y": 1 },
+          "id": 3,
+          "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+          "targets": [
+            { "expr": "sum(ceph_osd_up{cluster=~\"$cluster\"})", "legendFormat": "up", "refId": "A" },
+            { "expr": "count(ceph_osd_metadata{cluster=~\"$cluster\"})", "legendFormat": "total", "refId": "B" }
+          ],
+          "title": "OSDs Up / Total",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Monitors in quorum. Ceph needs a strict majority (2 of 3 here) in quorum at all times; losing quorum freezes all I/O cluster-wide.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 2 }, { "color": "green", "value": 3 }] },
+              "unit": "short"
+            }
+          },
+          "gridPos": { "h": 4, "w": 4, "x": 10, "y": 1 },
+          "id": 4,
+          "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+          "targets": [ { "expr": "sum(ceph_mon_quorum_status{cluster=~\"$cluster\"})", "legendFormat": "in quorum", "refId": "A" } ],
+          "title": "Monitors In Quorum",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "RAW cluster utilisation (used / total across all OSDs). Ceph blocks writes per-OSD at 95%, so watch this well before then — the documented OSD_FULL incident began here.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "max": 100, "min": 0,
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 70 }, { "color": "red", "value": 85 }] },
+              "unit": "percent"
+            }
+          },
+          "gridPos": { "h": 4, "w": 5, "x": 14, "y": 1 },
+          "id": 5,
+          "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+          "targets": [ { "expr": "100 * ceph_cluster_total_used_bytes{cluster=~\"$cluster\"} / clamp_min(ceph_cluster_total_bytes{cluster=~\"$cluster\"}, 1)", "legendFormat": "used %", "refId": "A" } ],
+          "title": "RAW Utilisation %",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "PGs that are NOT active+clean (degraded, undersized, recovering, etc.). Zero is healthy; a sustained non-zero value means data is under-replicated or rebalancing.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 20 }] },
+              "unit": "short"
+            }
+          },
+          "gridPos": { "h": 4, "w": 5, "x": 19, "y": 1 },
+          "id": 6,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+          "targets": [ { "expr": "clamp_min(sum(ceph_pg_total{cluster=~\"$cluster\"}) - sum(ceph_pg_clean{cluster=~\"$cluster\"}), 0)", "legendFormat": "unclean", "refId": "A" } ],
+          "title": "PGs Not active+clean",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Active Ceph health checks (name + severity). Empty table = HEALTH_OK. This is the authoritative 'what is wrong' list — e.g. OSD_FULL, PG_DEGRADED, TOO_FEW_OSDS.",
+          "fieldConfig": {
+            "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" } } }
+          },
+          "gridPos": { "h": 6, "w": 24, "x": 0, "y": 5 },
+          "id": 7,
+          "options": { "showHeader": true, "sortBy": [{ "desc": true, "displayName": "severity" }] },
+          "targets": [ { "expr": "ceph_health_detail{cluster=~\"$cluster\"} > 0", "format": "table", "instant": true, "refId": "A" } ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": { "Time": true, "__name__": true, "cluster": true, "container": true, "endpoint": true, "instance": true, "job": true, "namespace": true, "pod": true, "service": true, "Value": true },
+                "renameByName": { "name": "Health Check", "severity": "Severity" }
+              }
+            }
+          ],
+          "title": "Active Health Checks (empty = OK)",
+          "type": "table"
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 11 },
+          "id": 10,
+          "title": "Capacity",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "RAW capacity used vs total over time. The gap is free raw space (before replication). On a replica-2 cluster usable space is roughly half of free raw.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 15, "showPoints": "never", "spanNulls": true },
+              "unit": "bytes"
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "id": 11,
+          "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [
+            { "expr": "ceph_cluster_total_bytes{cluster=~\"$cluster\"}", "legendFormat": "total raw", "refId": "A" },
+            { "expr": "ceph_cluster_total_used_bytes{cluster=~\"$cluster\"}", "legendFormat": "used raw", "refId": "B" }
+          ],
+          "title": "RAW Capacity — Total vs Used",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Stored bytes per pool (client data before replication). Identifies which pool is consuming the cluster — on this cluster rpcu-fs-data0 (CephFS/NFS media) dominates.",
+          "fieldConfig": {
+            "defaults": { "color": { "mode": "palette-classic" }, "unit": "bytes" }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+          "id": 12,
+          "options": {
+            "displayMode": "gradient", "orientation": "horizontal", "showUnfilled": true,
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+          },
+          "targets": [
+            { "expr": "sum by (pool_id) (ceph_pool_bytes_used{cluster=~\"$cluster\"}) * on (pool_id) group_left(name) ceph_pool_metadata{cluster=~\"$cluster\"}", "legendFormat": "{{name}}", "refId": "A" }
+          ],
+          "title": "Stored Bytes per Pool",
+          "type": "bargauge"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Per-pool fill against its own max-available. A pool nearing 100% will start returning ENOSPC to its clients (RBD volumes, CephFS, RGW).",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "max": 100, "min": 0,
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 75 }, { "color": "red", "value": 90 }] },
+              "unit": "percent"
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+          "id": 13,
+          "options": {
+            "displayMode": "basic", "orientation": "horizontal", "showUnfilled": true,
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+          },
+          "targets": [
+            { "expr": "100 * sum by (pool_id) (ceph_pool_bytes_used{cluster=~\"$cluster\"}) / clamp_min(sum by (pool_id) (ceph_pool_bytes_used{cluster=~\"$cluster\"} + ceph_pool_max_avail{cluster=~\"$cluster\"}), 1) * on (pool_id) group_left(name) ceph_pool_metadata{cluster=~\"$cluster\"}", "legendFormat": "{{name}}", "refId": "A" }
+          ],
+          "title": "Pool Fill % (used / (used+avail))",
+          "type": "bargauge"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Object count per pool. A pool with many tiny objects (RGW index, CephFS metadata) stresses OSDs differently from a few large RBD objects.",
+          "fieldConfig": {
+            "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
           "id": 14,
           "options": {
-            "colorMode": "background",
-            "graphMode": "none",
-            "justifyMode": "center",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "textMode": "auto"
+            "displayMode": "gradient", "orientation": "horizontal", "showUnfilled": true,
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
           },
           "targets": [
-            {
-              "expr": "ceph_health_status{cluster=~\"$cluster\"}",
-              "legendFormat": "Status",
-              "refId": "A"
-            }
+            { "expr": "sum by (pool_id) (ceph_pool_objects{cluster=~\"$cluster\"}) * on (pool_id) group_left(name) ceph_pool_metadata{cluster=~\"$cluster\"}", "legendFormat": "{{name}}", "refId": "A" }
           ],
-          "title": "Ceph Health Status",
-          "type": "stat"
+          "title": "Objects per Pool",
+          "type": "bargauge"
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 28 },
+          "id": 20,
+          "title": "OSDs",
+          "type": "row"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Per-OSD state and latency. up=daemon reachable, in=participating in data placement, weight=CRUSH weight. apply/commit latency are the OSD write-path latencies (ms); sustained high values point at a slow disk or a starved node.",
           "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "thresholds" },
-              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 3 }] },
-              "unit": "short"
-            }
+            "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" } } },
+            "overrides": [
+              { "matcher": { "id": "byName", "options": "Up" }, "properties": [{ "id": "custom.cellOptions", "value": { "type": "color-background" } }, { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } }, { "id": "unit", "value": "short" }] },
+              { "matcher": { "id": "byName", "options": "In" }, "properties": [{ "id": "custom.cellOptions", "value": { "type": "color-background" } }, { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } }, { "id": "unit", "value": "short" }] },
+              { "matcher": { "id": "byName", "options": "Apply ms" }, "properties": [{ "id": "unit", "value": "ms" }, { "id": "custom.cellOptions", "value": { "mode": "basic", "type": "gauge" } }, { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 50 }, { "color": "red", "value": 100 }] } }] },
+              { "matcher": { "id": "byName", "options": "Commit ms" }, "properties": [{ "id": "unit", "value": "ms" }] }
+            ]
           },
-          "gridPos": { "h": 4, "w": 8, "x": 8, "y": 33 },
-          "id": 15,
-          "options": {
-            "colorMode": "value",
-            "graphMode": "none",
-            "justifyMode": "auto",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "textMode": "auto"
-          },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 29 },
+          "id": 21,
+          "options": { "showHeader": true, "sortBy": [{ "desc": true, "displayName": "Apply ms" }] },
           "targets": [
+            { "expr": "ceph_osd_metadata{cluster=~\"$cluster\"}", "format": "table", "instant": true, "refId": "M" },
+            { "expr": "ceph_osd_up{cluster=~\"$cluster\"}", "format": "table", "instant": true, "refId": "A" },
+            { "expr": "ceph_osd_in{cluster=~\"$cluster\"}", "format": "table", "instant": true, "refId": "B" },
+            { "expr": "ceph_osd_weight{cluster=~\"$cluster\"}", "format": "table", "instant": true, "refId": "C" },
+            { "expr": "ceph_osd_apply_latency_ms{cluster=~\"$cluster\"}", "format": "table", "instant": true, "refId": "D" },
+            { "expr": "ceph_osd_commit_latency_ms{cluster=~\"$cluster\"}", "format": "table", "instant": true, "refId": "E" }
+          ],
+          "transformations": [
+            { "id": "joinByField", "options": { "byField": "ceph_daemon", "mode": "outer" } },
             {
-              "expr": "count(osd_up{cluster=~\"$cluster\"} == 1)",
-              "legendFormat": "OSDs Up",
-              "refId": "A"
-            },
-            {
-              "expr": "count(osd_up{cluster=~\"$cluster\"} == 0)",
-              "legendFormat": "OSDs Down",
-              "refId": "B"
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true, "Time 1": true, "Time 2": true, "Time 3": true, "Time 4": true, "Time 5": true, "Time 6": true,
+                  "__name__": true, "__name__ 1": true, "__name__ 2": true, "__name__ 3": true, "__name__ 4": true, "__name__ 5": true, "__name__ 6": true,
+                  "cluster": true, "cluster 1": true, "cluster 2": true, "cluster 3": true, "cluster 4": true, "cluster 5": true, "cluster 6": true,
+                  "container": true, "endpoint": true, "instance": true, "job": true, "namespace": true, "pod": true, "service": true,
+                  "back_iface": true, "front_iface": true, "cluster_addr": true, "public_addr": true, "objectstore": true, "ceph_version": true,
+                  "Value #M": true
+                },
+                "renameByName": {
+                  "ceph_daemon": "OSD", "hostname": "Host", "device_class": "Class",
+                  "Value #A": "Up", "Value #B": "In", "Value #C": "Weight", "Value #D": "Apply ms", "Value #E": "Commit ms"
+                }
+              }
             }
           ],
-          "title": "OSDs Up / Down",
-          "type": "stat"
+          "title": "OSD Status & Latency",
+          "type": "table"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "OSD apply (write) latency over time, per OSD. The clearest early-warning of a degrading disk or a CPU-starved node on this hyperconverged cluster.",
           "fieldConfig": {
             "defaults": {
-              "color": { "mode": "thresholds" },
-              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+              "color": { "mode": "palette-classic" },
+              "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
+              "unit": "ms"
+            }
+          },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 37 },
+          "id": 22,
+          "options": { "legend": { "calcs": ["mean", "max", "lastNotNull"], "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [
+            { "expr": "ceph_osd_apply_latency_ms{cluster=~\"$cluster\"} * on (ceph_daemon) group_left(hostname) ceph_osd_metadata{cluster=~\"$cluster\"}", "legendFormat": "{{ceph_daemon}} ({{hostname}})", "refId": "A" }
+          ],
+          "title": "OSD Apply Latency",
+          "type": "timeseries"
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 45 },
+          "id": 30,
+          "title": "Client I/O & Recovery",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Per-pool client throughput (read/write bytes/s), derived from the pool byte counters. Shows which workload is driving the cluster.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
+              "unit": "Bps"
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 46 },
+          "id": 31,
+          "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [
+            { "expr": "sum by (pool_id) (rate(ceph_pool_rd_bytes{cluster=~\"$cluster\"}[5m])) * on (pool_id) group_left(name) ceph_pool_metadata{cluster=~\"$cluster\"}", "legendFormat": "{{name}} read", "refId": "A" },
+            { "expr": "sum by (pool_id) (rate(ceph_pool_wr_bytes{cluster=~\"$cluster\"}[5m])) * on (pool_id) group_left(name) ceph_pool_metadata{cluster=~\"$cluster\"}", "legendFormat": "{{name}} write", "refId": "B" }
+          ],
+          "title": "Client Throughput per Pool",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Per-pool client IOPS (read/write ops/s). Read together with OSD latency: high IOPS + rising latency = the disks are the bottleneck.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
+              "unit": "iops"
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 46 },
+          "id": 32,
+          "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [
+            { "expr": "sum by (pool_id) (rate(ceph_pool_rd{cluster=~\"$cluster\"}[5m])) * on (pool_id) group_left(name) ceph_pool_metadata{cluster=~\"$cluster\"}", "legendFormat": "{{name}} read", "refId": "A" },
+            { "expr": "sum by (pool_id) (rate(ceph_pool_wr{cluster=~\"$cluster\"}[5m])) * on (pool_id) group_left(name) ceph_pool_metadata{cluster=~\"$cluster\"}", "legendFormat": "{{name}} write", "refId": "B" }
+          ],
+          "title": "Client IOPS per Pool",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Objects degraded (under-replicated) and misplaced (on the wrong OSD, rebalancing). Both should be 0 at steady state; non-zero means recovery/backfill is in progress after an OSD change.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never", "spanNulls": true },
               "unit": "short"
             }
           },
-          "gridPos": { "h": 4, "w": 8, "x": 16, "y": 33 },
-          "id": 16,
-          "options": {
-            "colorMode": "value",
-            "graphMode": "none",
-            "justifyMode": "auto",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "textMode": "auto"
-          },
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 54 },
+          "id": 33,
+          "options": { "legend": { "calcs": ["max", "lastNotNull"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
           "targets": [
-            {
-              "expr": "sum(ceph_mon{cluster=~\"$cluster\"})",
-              "legendFormat": "Monitors",
-              "refId": "A"
-            }
+            { "expr": "sum(ceph_num_objects_degraded{cluster=~\"$cluster\"})", "legendFormat": "degraded", "refId": "A" },
+            { "expr": "sum(ceph_num_objects_misplaced{cluster=~\"$cluster\"})", "legendFormat": "misplaced", "refId": "B" },
+            { "expr": "sum(ceph_num_objects_unfound{cluster=~\"$cluster\"})", "legendFormat": "unfound", "refId": "C" }
           ],
-          "title": "Monitors",
-          "type": "stat"
+          "title": "Recovery — Degraded / Misplaced / Unfound Objects",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "PG states across all pools. active+clean should equal total; anything else (degraded, undersized, peering, backfilling) is a transient or a problem depending on how long it persists.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never", "stacking": { "mode": "none" }, "spanNulls": true },
+              "unit": "short"
+            }
+          },
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 54 },
+          "id": 34,
+          "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [
+            { "expr": "sum(ceph_pg_total{cluster=~\"$cluster\"})", "legendFormat": "total", "refId": "A" },
+            { "expr": "sum(ceph_pg_active{cluster=~\"$cluster\"})", "legendFormat": "active", "refId": "B" },
+            { "expr": "sum(ceph_pg_clean{cluster=~\"$cluster\"})", "legendFormat": "clean", "refId": "C" },
+            { "expr": "sum(ceph_pg_degraded{cluster=~\"$cluster\"})", "legendFormat": "degraded", "refId": "D" },
+            { "expr": "sum(ceph_pg_undersized{cluster=~\"$cluster\"})", "legendFormat": "undersized", "refId": "E" }
+          ],
+          "title": "Placement Group States",
+          "type": "timeseries"
         }
-      ],
-      "refresh": "30s",
-      "schemaVersion": 38,
-      "style": "dark",
-      "tags": ["storage", "ceph", "rook"],
-      "templating": {
-        "list": [
-          {
-            "allValue": ".*",
-            "current": { "selected": true, "text": "All", "value": "$__all" },
-            "datasource": { "type": "prometheus", "uid": "Mimir" },
-            "definition": "label_values(osd_df, cluster)",
-            "includeAll": true,
-            "label": "Cluster",
-            "multi": true,
-            "name": "cluster",
-            "options": [],
-            "query": { "query": "label_values(osd_df, cluster)", "refId": "StandardVariableQuery" },
-            "refresh": 1,
-            "regex": "",
-            "skipUrlSync": false,
-            "sort": 1,
-            "type": "query"
-          }
-        ]
-      },
-      "time": { "from": "now-1h", "to": "now" },
-      "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"] },
-      "timezone": "browser",
-      "title": "Ceph Storage Health",
-      "uid": "ceph-storage-health"
+      ]
     }

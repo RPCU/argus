@@ -12,6 +12,7 @@ resources:
   - glance.yaml
   - neutron.yaml
   - nova.yaml
+  - nova-compute-ssh-fix.yaml
   - cinder.yaml
   - horizon.yaml
   - octavia.yaml

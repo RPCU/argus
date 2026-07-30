@@ -12,7 +12,9 @@
 # `--endpoint-type internal` matches the clouds.yaml identity_interface so every
 # service is reached via in-cluster catalog endpoints. `--disable-slow-metrics` is NOT
 # set — the per-tenant limits metrics are wanted for quota panels, and this cloud
-# is small (single region, a handful of projects).
+# is small (single region, a handful of projects). The `tmp` emptyDir + workingDir
+# is needed because gophercloud's os-client-config calls `stat(".")` when loading
+# clouds.yaml, which fails with `readOnlyRootFilesystem: true` on a non-root user.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -39,6 +41,7 @@ spec:
       containers:
         - name: openstack-exporter
           image: ghcr.io/openstack-exporter/openstack-exporter:1.6.0
+          workingDir: /tmp
           args:
             - "--os-client-config=/etc/openstack/clouds.yaml"
             - "--endpoint-type=internal"
@@ -79,10 +82,14 @@ spec:
             - name: cloud-config
               mountPath: /etc/openstack
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: cloud-config
           secret:
             secretName: openstack-exporter-cloud-config
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

@@ -1,0 +1,30 @@
+# ServiceMonitor for the Ceph mgr prometheus module (port 9283).
+#
+# The Rook operator SHOULD create this when spec.monitoring.enabled: true,
+# but it can't — the rook-ceph-system ServiceAccount lacks RBAC for
+# servicemonitors.monitoring.coreos.com (spams "forbidden" errors in the
+# operator log). Creating it declaratively here so Prometheus can scrape it.
+#
+# The openstack kube-prometheus-stack's serviceMonitorSelector uses a NotIn
+# on state.yaook.cloud/component, so any ServiceMonitor without that label
+# (including this one) is automatically scraped.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: rook-ceph-mgr
+  namespace: rook-ceph
+  labels:
+    # Must NOT carry state.yaook.cloud/component — the NotIn selector drops
+    # matching values, and the absence of the label is what lets this through.
+    app.kubernetes.io/part-of: rook-ceph
+spec:
+  namespaceSelector:
+    matchNames:
+      - rook-ceph
+  selector:
+    matchLabels:
+      app: rook-ceph-mgr
+  endpoints:
+    - port: http-metrics
+      interval: 60s
+      path: /metrics

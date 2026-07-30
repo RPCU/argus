@@ -26,7 +26,7 @@ spec:
     {{define "discord.title" -}}
     {{- $firing := false -}}
     {{- range .Alerts -}}{{- if eq .Status "firing" -}}{{- $firing = true -}}{{- end -}}{{- end -}}
-    {{- if $firing -}}🔥{{ else -}}✅{{ end -}} {{ (index .Alerts 0).Labels.alertname }} ({{ len .Alerts }}) — {{ (index .Alerts 0).Labels.cluster | default "n/a" }}
+    {{- if $firing -}}🔥{{ else -}}✅{{ end -}} {{ (index .Alerts 0).Labels.alertname }} ({{ len .Alerts }}) — {{ if (index .Alerts 0).Labels.cluster }}{{ (index .Alerts 0).Labels.cluster }}{{ else }}n/a{{ end }}
     {{- end}}
 
     {{define "discord.message" -}}

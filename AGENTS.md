@@ -412,7 +412,9 @@ nothing per-cluster to deploy.
 - `rules-pods.yaml` - `GrafanaAlertRuleGroup` `pods-health`
   (interval 1m): `PodCrashLoopBackOff` (critical, 5m, waiting_reason
   `CrashLoopBackOff`), `PodRestartingFrequently` (critical, 10m, >3 restarts in
-  15m), `PodContainerNotReady` (warning, 15m, not-ready excluding Jobs).
+  15m), `PodContainerNotReady` (warning, 15m, not-ready excluding Jobs and
+  containers in Waiting state to avoid false positives from init containers and
+  rolling-update transitions).
 - `rules-openstack.yaml` - `GrafanaAlertRuleGroup` `openstack-resources`
   (interval 5m): `NovaVMInError` (critical, 5m, server_status==4),
   `OpenStackServiceDown` (warning, 5m, any of 8 services reporting <1 up),

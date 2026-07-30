@@ -8,6 +8,7 @@ resources:
   - nfs-export-ensure.yaml
   - openstack-clients.yaml
   - rook-ceph-config.yaml
+  - servicemonitor.yaml
   - storageclassrdb.yaml
   - storageclasscephfs.yaml
   - toolbox-deployment.yaml

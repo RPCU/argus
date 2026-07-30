@@ -12,6 +12,27 @@ spec:
     allowMultiplePerNode: false
   dashboard:
     enabled: true
+  # Prometheus scraping of the Ceph mgr `prometheus` module (rook-ceph-mgr:9283).
+  # WITHOUT this the mgr endpoint exists but NOTHING scrapes it: there was no
+  # ServiceMonitor in rook-ceph and `spec.monitoring` was empty, so Mimir held
+  # ZERO `ceph_*` metrics and every panel on the Ceph Storage Health dashboard
+  # was permanently blank. `enabled: true` makes the Rook operator create the
+  # `rook-ceph-mgr` ServiceMonitor (target rook-ceph-mgr:9283, the mgr
+  # prometheus module which emits the standard `ceph_*` family:
+  # ceph_health_status, ceph_osd_up, ceph_pool_bytes_used, ceph_pg_*, …).
+  #
+  # It is picked up automatically by the openstack kube-prometheus-stack: that
+  # Prometheus uses an ALLOW-BY-DEFAULT `NotIn` serviceMonitorSelector keyed on
+  # `state.yaook.cloud/component` (clusters/openstack/monitoring.yaml), so any
+  # ServiceMonitor WITHOUT that yaook label is scraped — the Rook-generated one
+  # has no such label, so no extra selector wiring is required.
+  #
+  # `metricsDisabled` is left false (default) — we want the metrics. No
+  # `monitoring.rulesNamespaceOverride`/PrometheusRule is set: alerting is done
+  # centrally via Grafana unified alerting against Mimir
+  # (infrastructure/grafana/alerting), not per-cluster PrometheusRules.
+  monitoring:
+    enabled: true
   # Guaranteed scheduling for the storage daemons on the hyperconverged nodes
   # (they share the hosts with nova-compute VMs and the k8s control plane).
   # Without priorityClassNames the daemons are first in line for eviction under

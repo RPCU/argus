@@ -11,6 +11,7 @@ resources:
   - flux-operator.yaml
   - rook.yaml
   - monitoring.yaml
+  - openstack-exporter.yaml
   - golinky.yaml
   - yaook-operator.yaml
   - fluxcd/

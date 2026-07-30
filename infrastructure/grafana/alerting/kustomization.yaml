@@ -6,3 +6,5 @@ resources:
   - notification-policy.yaml
   - rules-node.yaml
   - rules-storage.yaml
+  - rules-pods.yaml
+  - rules-openstack.yaml

@@ -25,6 +25,15 @@ spec:
   # risk). Requests guarantee scheduling weight; memory limits bound blast
   # radius. No CPU limits (throttling an OSD/mon hurts tail latency).
   # Rook auto-tunes osd_memory_target from the OSD memory request.
+  #
+  # OSD cpu request is 500m, NOT the raw core count: eviction protection comes
+  # from the osd `system-node-critical` priorityClass above (not the request),
+  # and measured OSD usage peaks at ~350m. A 2-CPU request was a ~6x
+  # over-reservation that, on the smallest hyperconverged node (quinn, 8 cores
+  # vs 12 on lucy/makise), left <300m free and wedged the per-node OVN
+  # dataplane rollout (ovs-vswitchd/ovn-controller each request 300m and are
+  # node-pinned). With no CPU limit the OSD still bursts freely past 500m under
+  # recovery; the request only governs scheduling admission + cpu.weight.
   resources:
     mon:
       requests:
@@ -40,7 +49,7 @@ spec:
         memory: 1Gi
     osd:
       requests:
-        cpu: "2"
+        cpu: 500m
         memory: 5Gi
       limits:
         memory: 8Gi

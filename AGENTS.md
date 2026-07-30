@@ -435,11 +435,24 @@ _rook/configs/_ - Ceph cluster configuration
 
 - `cephcluster.yaml` - Ceph cluster with 3 monitors (lucy, makise, quinn).
   Sets `priorityClassNames` (mon/osd `system-node-critical`, mgr
-  `system-cluster-critical`) and `resources` for mon/mgr/osd (osd: 2 CPU /
+  `system-cluster-critical`) and `resources` for mon/mgr/osd (osd: **500m** CPU /
   5Gi request, 8Gi limit; Rook auto-tunes `osd_memory_target` from the
   request). Previously all daemons ran BestEffort — first eviction/OOM
   victims on the hyperconverged nodes (they share the hosts with
   nova-compute VMs). No CPU limits on purpose (throttling hurts tail latency).
+  **OSD cpu request is 500m, not the raw core count**: eviction protection
+  comes from the `system-node-critical` priorityClass (NOT the request), and
+  measured OSD usage peaks at ~350m. The former `cpu: "2"` was a ~6x
+  over-reservation that, on the smallest hyperconverged node (**quinn has 8
+  cores vs 12 on lucy/makise** — otherwise identical role/labels: all three are
+  control-plane + hypervisor), left <300m allocatable and **wedged the per-node
+  OVN dataplane rollout**: `neutron-ovs-vswitchd-*` / `neutron-ovn-controller-*`
+  each request 300m and are hard node-pinned (nodeAffinity `metadata.name`), so
+  they could not schedule anywhere else and sat `Pending` on quinn
+  (`FailedScheduling ... Insufficient cpu`). With no CPU limit the OSD still
+  bursts freely past 500m during recovery; the request only governs scheduling
+  admission + `cpu.weight` under contention. See "Ceph OSD CPU over-reservation
+  wedges the OVN rollout on the small node" in Section 8.
 - `cephblockpool.yaml` - RBD block pool (replica 2, nvme, `pg_autoscale_mode`
   on + `target_size_ratio: 0.8`). See the "PG autoscaler / overlapping CRUSH
   roots" note in Section 8 — ALL pools must use nvme-classed CRUSH rules.
@@ -2372,6 +2385,36 @@ Repo side: `cephblockpool.yaml` sets `pg_autoscale_mode: on` +
 both pools. When adding ANY new pool (including Rook-implicit ones like
 `.nfs`), make sure it lands on an nvme-classed rule or the autoscaler breaks
 again cluster-wide.
+
+#### Ceph OSD CPU over-reservation wedges the OVN rollout on the small node (openstack cluster)
+
+On the openstack cluster, `quinn` has only 8 cores versus 12 on `lucy`/`makise`
+(verified with `kubectl get node <node> -o jsonpath='cpu={.status.capacity.cpu}'`).
+All three nodes are `control-plane`, `hypervisor`, and run the full set of
+yaook control-plane, Ceph, and kube control-plane workloads.
+
+When the OVN dataplane pods (`neutron-ovs-vswitchd-*` and
+`neutron-ovn-controller-*`) were updated to include CPU requests of 300m each
+(the fix for "OVN control plane must not be BestEffort"), the rollout wedged
+on `quinn`.
+
+Diagnosis: `quinn` had 8000m allocatable CPU, with 7730m already requested by
+running pods (96%). This left only 270m unrequested. Since each OVN pod
+requested 300m, they couldn't fit by 30m. The OVN pods are hard-pinned to their
+respective hypervisor nodes via `nodeAffinity`, so they could not be scheduled
+elsewhere.
+
+The dominant CPU request on `quinn` was the Ceph OSD pod, which requested 2 CPU
+(2000m) while actual usage consistently remained around 200-350m. This was a 6x
+over-reservation. While the OSD's `system-node-critical` priorityClass protects
+it from eviction, the excessive CPU request unnecessarily consumed allocatable
+capacity, preventing other critical pods from scheduling.
+
+Fix: The CPU request for the Ceph OSD (`infrastructure/rook/configs/cephcluster.yaml`)
+was reduced from `2` (2000m) to `500m`. This freed 1500m of allocatable CPU on
+each node, including `quinn`, allowing the OVN dataplane pods to schedule
+without impacting OSD performance (as they still operate without CPU limits and
+with `system-node-critical` priority).
 
 #### Ceph single OSD full from too-few PGs on the dominant pool (openstack cluster)
 

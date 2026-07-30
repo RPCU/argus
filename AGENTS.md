@@ -1487,7 +1487,13 @@ reconciled by the operators above. Deployed by the `yaook` Flux Kustomization
   declarative CR fix; the durable fix is upstream (fix the image). Until then
   this CronJob (every 5 min, `kubectl exec` via a scoped `pods`+`pods/exec`
   Role) idempotently appends the `IdentityFile` line to every nova-compute pod's
-  ssh_config, replacing the manual `sed` loop from the runbook. It is **racy**
+  ssh_config, replacing the manual `sed` loop from the runbook. Two non-obvious
+  gotchas baked in: it selects the pods by
+  `state.yaook.cloud/component=compute,parent-plural=novacomputenodes` (the
+  component label value is `compute`, NOT `nova-compute`), and it uses the
+  Alpine-based `docker.io/alpine/k8s` image — NOT `registry.k8s.io/kubectl` or
+  `rancher/kubectl`, both of which are DISTROLESS (no `/bin/sh`, so the shell
+  loop fails `StartError: exec /bin/sh: no such file or directory`). It is **racy**
   (a pod recreated then immediately targeted can migrate before the next tick) —
   for an in-flight eviction, trigger it now:
   `kubectl create job -n yaook --from=cronjob/nova-compute-ssh-fix nova-ssh-fix-now`.

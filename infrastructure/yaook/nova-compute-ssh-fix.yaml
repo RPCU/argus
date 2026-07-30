@@ -99,16 +99,24 @@ spec:
           restartPolicy: OnFailure
           serviceAccountName: nova-compute-ssh-fix
           containers:
+            # alpine/k8s (NOT registry.k8s.io/kubectl or rancher/kubectl —
+            # both are DISTROLESS with no /bin/sh, so a shell loop can't run in
+            # them). This image is Alpine-based: it has kubectl + a POSIX shell.
+            # The loop below runs in THIS container; the sed/grep that edit the
+            # ssh_config run INSIDE each nova-compute pod via `kubectl exec`.
             - name: ssh-fix
-              image: registry.k8s.io/kubectl:v1.36.1
+              image: docker.io/alpine/k8s:1.36.1
               imagePullPolicy: IfNotPresent
               command:
                 - /bin/sh
                 - -ec
                 - |
-                  # nova-compute StatefulSet pods carry this operator label.
+                  # nova-compute StatefulSet pods carry these operator labels.
+                  # NOTE the component label value is `compute` (not
+                  # `nova-compute`); pinning parent-plural=novacomputenodes keeps
+                  # the selector unambiguous.
                   pods=$(kubectl get pods -n yaook \
-                    -l state.yaook.cloud/component=nova-compute \
+                    -l 'state.yaook.cloud/component=compute,state.yaook.cloud/parent-plural=novacomputenodes' \
                     -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')
                   if [ -z "${pods}" ]; then
                     echo "no nova-compute pods found — nothing to do"

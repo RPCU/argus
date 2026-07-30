@@ -17,6 +17,7 @@ metadata:
   name: discord-custom
   namespace: monitoring
 spec:
+  name: discord-custom
   allowCrossNamespaceImport: true
   instanceSelector:
     matchLabels:

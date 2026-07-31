@@ -59,6 +59,8 @@ spec:
         severity: critical
         component: workload
       annotations:
+        __dashboardUid__: cluster-cpu-ram-overview
+        __panelId__: "10"
         summary: "CrashLoopBackOff: {{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.cluster }})"
         description: "Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} on cluster {{ $labels.cluster }} has been in CrashLoopBackOff for 5m. Check `kubectl -n {{ $labels.namespace }} logs {{ $labels.pod }} -c {{ $labels.container }} --previous`."
       data:
@@ -133,6 +135,8 @@ spec:
         severity: warning
         component: workload
       annotations:
+        __dashboardUid__: cluster-cpu-ram-overview
+        __panelId__: "10"
         summary: "Frequent restarts: {{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.cluster }})"
         description: 'Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} on cluster {{ $labels.cluster }} restarted {{ printf "%.0f" $values.B.Value }} times in the last 15m. On the openstack cluster this is usually a starvation-induced probe-kill loop — correlate with node CPU.'
       data:
@@ -229,6 +233,8 @@ spec:
         severity: warning
         component: workload
       annotations:
+        __dashboardUid__: cluster-cpu-ram-overview
+        __panelId__: "10"
         summary: "Container not ready: {{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.cluster }})"
         description: "Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} on cluster {{ $labels.cluster }} has not been Ready for 15m."
       data:

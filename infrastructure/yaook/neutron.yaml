@@ -8,7 +8,7 @@ spec:
       createIngress: false
       fqdn: "neutron.rpcu.vpn"
       port: 443
-    replicas: 6
+    replicas: 2
     resources:
       neutron-api:
         requests:

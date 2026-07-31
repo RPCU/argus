@@ -9,7 +9,7 @@ spec:
       fqdn: keystone.rpcu.vpn
       ingressClassName: nginx
       port: 443
-    replicas: 3
+    replicas: 2
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     wsgiProcesses: 10
     resources:

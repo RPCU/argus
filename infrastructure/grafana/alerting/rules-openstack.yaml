@@ -45,6 +45,8 @@ spec:
         severity: critical
         component: openstack
       annotations:
+        __dashboardUid__: openstack-control-plane
+        __panelId__: "5"
         summary: "VM in ERROR: {{ $labels.name }} ({{ $labels.tenant_id }})"
         description: "Nova instance {{ $labels.name }} (id {{ $labels.id }}) in tenant {{ $labels.tenant_id }} has been in ERROR state for 5m. Nova failed to build, migrate, reboot or delete it. Check `openstack server show {{ $labels.id }}`."
       data:
@@ -102,6 +104,8 @@ spec:
         severity: critical
         component: openstack
       annotations:
+        __dashboardUid__: openstack-control-plane
+        __panelId__: "8"
         summary: "OpenStack service down (openstack cluster)"
         description: 'Only {{ printf "%.0f" $values.B.Value }} of 8 OpenStack API services are up (keystone, nova, neutron, cinder, glance, octavia, designate, placement). See the API Service Availability panel.'
       data:
@@ -164,6 +168,8 @@ spec:
         severity: critical
         component: openstack
       annotations:
+        __dashboardUid__: openstack-control-plane
+        __panelId__: "6"
         summary: "nova-compute down on {{ $labels.hostname }}"
         description: "The nova-compute agent on hypervisor {{ $labels.hostname }} has been down for 5m. No VMs can be scheduled to or managed on that host. Check the nova-compute pod and the node's CPU (starvation is the usual cause on this hyperconverged cluster)."
       data:
@@ -222,6 +228,8 @@ spec:
         severity: warning
         component: openstack
       annotations:
+        __dashboardUid__: openstack-control-plane
+        __panelId__: "42"
         summary: "Octavia LB not ONLINE: {{ $labels.name }}"
         description: "Load balancer {{ $labels.name }} (VIP {{ $labels.vip_address }}) has a non-ONLINE operating status for 10m. Whatever sits behind it (a kube-apiserver or gateway) may be unreachable."
       data:

@@ -13,8 +13,9 @@
 #   node_disk_written_bytes_total         — cumulative bytes written.
 #   node_disk_writes_completed_total      — cumulative write operations.
 #
-# Loop devices and device-mapper (dm-0) are excluded to match the dashboard
-# (they carry no real signal on these NixOS hosts). Per-device alerts are used
+# Loop devices are excluded (no real signal). Device-mapper (dm-*) devices
+# are KEPT — on NixOS hosts dm-0 is the LVM root volume and its I/O is the
+# dominant signal for capacity planning. Per-device alerts are used
 # rather than node-level aggregates so the notification names the exact device
 # that is saturated or slow.
 #
@@ -66,7 +67,7 @@ spec:
               type: prometheus
               uid: Mimir
             editorMode: code
-            expr: max by (cluster, instance, device) (100 * rate(node_disk_io_time_seconds_total{device!~"loop.*|dm-0"}[5m]))
+            expr: max by (cluster, instance, device) (100 * rate(node_disk_io_time_seconds_total{device!~"loop.*"}[5m]))
             instant: true
             range: false
             intervalMs: 1000
@@ -142,7 +143,7 @@ spec:
               type: prometheus
               uid: Mimir
             editorMode: code
-            expr: max by (cluster, instance, device) (1000 * rate(node_disk_read_time_seconds_total{device!~"loop.*|dm-0"}[5m]) / rate(node_disk_reads_completed_total{device!~"loop.*|dm-0"}[5m]) > 0)
+            expr: max by (cluster, instance, device) (1000 * rate(node_disk_read_time_seconds_total{device!~"loop.*"}[5m]) / rate(node_disk_reads_completed_total{device!~"loop.*"}[5m]) > 0)
             instant: true
             range: false
             intervalMs: 1000
@@ -217,7 +218,7 @@ spec:
               type: prometheus
               uid: Mimir
             editorMode: code
-            expr: max by (cluster, instance, device) (1000 * rate(node_disk_write_time_seconds_total{device!~"loop.*|dm-0"}[5m]) / rate(node_disk_writes_completed_total{device!~"loop.*|dm-0"}[5m]) > 0)
+            expr: max by (cluster, instance, device) (1000 * rate(node_disk_write_time_seconds_total{device!~"loop.*"}[5m]) / rate(node_disk_writes_completed_total{device!~"loop.*"}[5m]) > 0)
             instant: true
             range: false
             intervalMs: 1000

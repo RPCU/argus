@@ -336,6 +336,34 @@ spec:
     # toggle for the parent chart) and `kube-state-metrics` (actual subchart
     # values). The customResourceState config MUST go under the hyphenated key.
     kube-state-metrics:
+      # Flux CRD RBAC: the customResourceState auto-generated rules cover the
+      # resource types in config.spec.resources, but some chart versions don't
+      # wire them into the ClusterRole correctly. Adding the same rules to the
+      # top-level rbac.extraRules is a belt-and-suspenders fix — they land in
+      # the main kube-state-metrics ClusterRole which is always bound to the SA.
+      rbac:
+        extraRules:
+          - apiGroups:
+              - source.toolkit.fluxcd.io
+              - kustomize.toolkit.fluxcd.io
+              - helm.toolkit.fluxcd.io
+              - notification.toolkit.fluxcd.io
+              - image.toolkit.fluxcd.io
+            resources:
+              - gitrepositories
+              - buckets
+              - helmrepositories
+              - helmcharts
+              - ocirepositories
+              - kustomizations
+              - helmreleases
+              - alerts
+              - providers
+              - receivers
+              - imagerepositories
+              - imagepolicies
+              - imageupdateautomations
+            verbs: ["list", "watch"]
       # kube-state-metrics custom resource state for Flux CRDs.
       # Generates gotk_resource_info metrics with ready/suspended/status labels
       # for Kustomizations, HelmReleases, GitRepositories, HelmRepositories,
@@ -344,29 +372,6 @@ spec:
       # See: https://fluxcd.io/flux/monitoring/custom-metrics/
       customResourceState:
         enabled: true
-        rbac:
-          extraRules:
-            - apiGroups:
-                - source.toolkit.fluxcd.io
-                - kustomize.toolkit.fluxcd.io
-                - helm.toolkit.fluxcd.io
-                - notification.toolkit.fluxcd.io
-                - image.toolkit.fluxcd.io
-              resources:
-                - gitrepositories
-                - buckets
-                - helmrepositories
-                - helmcharts
-                - ocirepositories
-                - kustomizations
-                - helmreleases
-                - alerts
-                - providers
-                - receivers
-                - imagerepositories
-                - imagepolicies
-                - imageupdateautomations
-              verbs: ["list", "watch"]
         config:
           spec:
             resources:

@@ -10,6 +10,10 @@
 # ~5k+ series. This dashboard therefore shows NODE-level I/O only, which is
 # where the real signal lives for capacity planning, Ceph OSD diagnostics,
 # and Nova cold-migration throughput.
+#
+# Loop devices are excluded (no real signal). Device-mapper (dm-*) devices
+# are KEPT — on NixOS hosts dm-0 is the LVM root volume and its I/O is the
+# dominant signal for capacity planning.
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
@@ -55,7 +59,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum(rate(node_disk_read_bytes_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m]))",
+              "expr": "sum(rate(node_disk_read_bytes_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*\"}[5m]))",
               "instant": true,
               "refId": "A"
             }
@@ -85,7 +89,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum(rate(node_disk_written_bytes_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m]))",
+              "expr": "sum(rate(node_disk_written_bytes_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*\"}[5m]))",
               "instant": true,
               "refId": "A"
             }
@@ -115,7 +119,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum(rate(node_disk_reads_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m]))",
+              "expr": "sum(rate(node_disk_reads_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*\"}[5m]))",
               "instant": true,
               "refId": "A"
             }
@@ -145,7 +149,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum(rate(node_disk_writes_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m]))",
+              "expr": "sum(rate(node_disk_writes_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*\"}[5m]))",
               "instant": true,
               "refId": "A"
             }
@@ -183,7 +187,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "100 * sum(rate(node_disk_io_time_seconds_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m])) / count without (device) (rate(node_disk_io_time_seconds_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m]))",
+              "expr": "100 * avg by (cluster, node) (rate(node_disk_io_time_seconds_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*\"}[5m]))",
               "instant": true,
               "refId": "A"
             }
@@ -220,7 +224,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum(rate(node_disk_read_time_seconds_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m])) / sum(rate(node_disk_reads_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m])) > 0",
+              "expr": "sum(rate(node_disk_read_time_seconds_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*\"}[5m])) / sum(rate(node_disk_reads_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*\"}[5m])) > 0",
               "instant": true,
               "refId": "A"
             }
@@ -257,7 +261,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum(rate(node_disk_write_time_seconds_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m])) / sum(rate(node_disk_writes_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m])) > 0",
+              "expr": "sum(rate(node_disk_write_time_seconds_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*\"}[5m])) / sum(rate(node_disk_writes_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*\"}[5m])) > 0",
               "instant": true,
               "refId": "A"
             }
@@ -283,7 +287,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "rate(node_disk_read_bytes_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m])",
+              "expr": "rate(node_disk_read_bytes_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*\"}[5m])",
               "legendFormat": "{{cluster}} / {{node}} {{device}}",
               "refId": "A"
             }
@@ -309,7 +313,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "rate(node_disk_written_bytes_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m])",
+              "expr": "rate(node_disk_written_bytes_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*\"}[5m])",
               "legendFormat": "{{cluster}} / {{node}} {{device}}",
               "refId": "A"
             }
@@ -335,7 +339,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "rate(node_disk_reads_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m])",
+              "expr": "rate(node_disk_reads_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*\"}[5m])",
               "legendFormat": "{{cluster}} / {{node}} {{device}}",
               "refId": "A"
             }
@@ -361,7 +365,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "rate(node_disk_writes_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m])",
+              "expr": "rate(node_disk_writes_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*\"}[5m])",
               "legendFormat": "{{cluster}} / {{node}} {{device}}",
               "refId": "A"
             }
@@ -388,7 +392,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "rate(node_disk_read_time_seconds_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m]) / rate(node_disk_reads_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m]) > 0",
+              "expr": "rate(node_disk_read_time_seconds_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*\"}[5m]) / rate(node_disk_reads_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*\"}[5m]) > 0",
               "legendFormat": "{{cluster}} / {{node}} {{device}}",
               "refId": "A"
             }
@@ -415,7 +419,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "rate(node_disk_write_time_seconds_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m]) / rate(node_disk_writes_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m]) > 0",
+              "expr": "rate(node_disk_write_time_seconds_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*\"}[5m]) / rate(node_disk_writes_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*\"}[5m]) > 0",
               "legendFormat": "{{cluster}} / {{node}} {{device}}",
               "refId": "A"
             }
@@ -444,7 +448,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "rate(node_disk_io_time_seconds_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m])",
+              "expr": "rate(node_disk_io_time_seconds_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*\"}[5m])",
               "legendFormat": "{{cluster}} / {{node}} {{device}}",
               "refId": "A"
             }

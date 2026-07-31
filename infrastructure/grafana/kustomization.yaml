@@ -9,5 +9,6 @@ resources:
   - dashboards/openstack-control-plane-dashboard.yaml
   - dashboards/palworld-dashboard.yaml
   - dashboards/node-disk-io-dashboard.yaml
+  - dashboards/pod-io-dashboard.yaml
   - dashboards/fluxcd-dashboard.yaml
   - httproute.yaml

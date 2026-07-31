@@ -116,8 +116,22 @@ spec:
     # The kubelet ServiceMonitor scrapes THREE separate endpoints and the chart
     # exposes a SEPARATE relabeling list for each. Putting a rule in the wrong
     # one silently does nothing — see the probes note below.
+    #
+    # A target-level `relabelings` adds the `node` label (Kubernetes node name)
+    # to every kubelet time series, matching what node-exporter already does.
+    # This is required for dashboards that filter cAdvisor metrics by node
+    # (e.g. pod-io-overview).
     kubelet:
       serviceMonitor:
+        # Target-level relabeling: add `node` label (Kubernetes node name) to
+        # ALL kubelet endpoints (/metrics, /metrics/cadvisor, /metrics/probes).
+        # Without this, cAdvisor metrics only carry `instance` (IP:port) and
+        # `pod`, so dashboards that filter by `node=~"$node"` (e.g.
+        # pod-io-overview) would show nothing. node-exporter already adds this
+        # via its own relabeling; this mirrors the same for kubelet.
+        relabelings:
+          - sourceLabels: [__meta_kubernetes_pod_node_name]
+            targetLabel: node
         # ---- endpoint 1: /metrics ----
         metricRelabelings:
           # KEEP the chart's own default first — setting metricRelabelings
@@ -186,9 +200,16 @@ spec:
           # Largest single offender at 5,268 series. Real disk behaviour is
           # answered by node-exporter at the node/device level, which is where
           # anyone actually looks when Ceph or a VM is slow.
+          #
+          # NOTE: container_fs_reads_total and container_fs_writes_total (IOPS
+          # counters) are deliberately KEPT — they power the Pod I/O dashboard
+          # (pod-io-overview) which identifies which pod is driving load on a
+          # congested device. Throughput bytes (container_fs_read_bytes_total /
+          # container_fs_write_bytes_total) are still dropped — node-level
+          # throughput is on the Node Disk I/O dashboard.
           - action: drop
             sourceLabels: [__name__]
-            regex: container_blkio_device_usage_total|container_fs_(reads|writes)_(bytes_)?total
+            regex: container_blkio_device_usage_total|container_fs_(read|write)_bytes_total
           # PSI pressure: SIX families x 1,866 containers = 11,196 series.
           # Node-level PSI from node-exporter is the useful signal; per-container
           # PSI is not queried anywhere in this repo.

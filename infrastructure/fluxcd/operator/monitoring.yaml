@@ -1,0 +1,48 @@
+# Headless Service + ServiceMonitor for Flux controller metrics.
+#
+# The Flux Operator creates individual Deployments for each controller
+# (source-controller, kustomize-controller, helm-controller,
+# notification-controller), all exposing metrics on container port 8080.
+# There is no single combined Service, so we create a headless Service that
+# selects all Flux pods via the standard label and a ServiceMonitor in the
+# monitoring namespace that scrapes it.
+#
+# kube-prometheus-stack's default serviceMonitorSelector is
+# matchLabels: { release: kube-prometheus-stack } — the label on the
+# ServiceMonitor ensures it is picked up. On the openstack cluster the
+# selector is allow-by-default (NotIn), so any ServiceMonitor is scraped.
+apiVersion: v1
+kind: Service
+metadata:
+  name: flux-metrics
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: flux
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/part-of: flux
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: flux-controllers
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - flux-system
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: flux
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 60s

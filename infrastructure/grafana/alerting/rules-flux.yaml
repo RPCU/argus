@@ -1,0 +1,393 @@
+# Flux GitOps alert rules: reconciliation failures, source health, stuck resources.
+#
+# These are Grafana-MANAGED alerts (evaluated by Grafana against the Mimir
+# datasource), not Prometheus PrometheusRule CRs. Same rationale as all other
+# rules in this directory: Mimir's ruler is disabled and each cluster's local
+# Alertmanager has no receivers configured, so Grafana unified alerting is the
+# only delivery path.
+#
+# Every expression below was executed against live Mimir before commit.
+#
+# Panel linking: rules carry __dashboardUid__ / __panelId__ annotations
+# (both required, __panelId__ must be a quoted string).
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaAlertRuleGroup
+metadata:
+  name: flux-reconciliations
+  namespace: monitoring
+spec:
+  allowCrossNamespaceImport: true
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana-central"
+  folderRef: alerts
+  interval: 1m
+  rules:
+    # Fires when ANY Flux kind has reconciliation failures.
+    # result="fail" on gotk_reconcile_duration_seconds_count is set by
+    # kustomize-controller / helm-controller when the reconciliation loop
+    # returns an error.
+    - uid: argus-flux-recon-failures
+      title: FluxReconciliationFailures
+      condition: C
+      for: "5m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: critical
+        component: flux
+      annotations:
+        summary: "Flux reconciliation failures on {{ $labels.cluster }}"
+        description: 'Flux controllers in cluster {{ $labels.cluster }} are experiencing reconciliation failures at {{ printf "%.2f" $values.B.Value }}/s for the past 5 minutes.'
+        __dashboardUid__: fluxcd-status
+        __panelId__: "19"
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: sum by (cluster) (rate(gotk_reconcile_duration_seconds_count{cluster=~"$cluster", result="fail"}[5m]))
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: gt
+                  params:
+                    - 0
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    # Fires when a GitRepository or HelmRepository source is not Ready.
+    # gotk_source_condition{type="Ready",status="true"} = 1 when healthy,
+    # 0 when not. lt 1 catches both 0 (explicitly not ready) and NaN
+    # (series absent — source deleted or controller down). Deliberately does
+    # NOT use == 0 because that would yield NoData when the source is absent.
+    - uid: argus-flux-source-unreadable
+      title: FluxSourceUnreadable
+      condition: C
+      for: "10m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: critical
+        component: flux
+      annotations:
+        summary: "Flux source {{ $labels.name }} not ready ({{ $labels.cluster }})"
+        description: "Source {{ $labels.kind }}/{{ $labels.name }} in namespace {{ $labels.namespace }} on cluster {{ $labels.cluster }} has not been Ready for 10m. Flux cannot pull the desired state."
+        __dashboardUid__: fluxcd-status
+        __panelId__: "15"
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: gotk_source_condition{cluster=~"$cluster", kind=~"GitRepository|HelmRepository", type="Ready"}
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: lt
+                  params:
+                    - 1
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    # Fires when a Kustomization is not Ready for 15m.
+    # Kustomizations are the backbone of Flux GitOps — a stuck one means
+    # the desired state is not being applied.
+    - uid: argus-flux-kustomization-stuck
+      title: FluxKustomizationStuck
+      condition: C
+      for: "15m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: warning
+        component: flux
+      annotations:
+        summary: "Kustomization {{ $labels.name }} stuck ({{ $labels.cluster }})"
+        description: "Kustomization {{ $labels.name }} in namespace {{ $labels.namespace }} on cluster {{ $labels.cluster }} has not been Ready for 15m. The desired state is not being applied."
+        __dashboardUid__: fluxcd-status
+        __panelId__: "9"
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 900
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: gotk_reconcile_condition{cluster=~"$cluster", kind="Kustomization", type="Ready"}
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: lt
+                  params:
+                    - 1
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    # Fires when a HelmRelease is not Ready for 10m.
+    # A failed HelmRelease means a Helm chart upgrade/install/rollback
+    # has not completed — often a breaking change in a dependency.
+    - uid: argus-flux-helmrelease-failed
+      title: FluxHelmReleaseFailed
+      condition: C
+      for: "10m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: critical
+        component: flux
+      annotations:
+        summary: "HelmRelease {{ $labels.name }} failed ({{ $labels.cluster }})"
+        description: "HelmRelease {{ $labels.name }} in namespace {{ $labels.namespace }} on cluster {{ $labels.cluster }} has not been Ready for 10m. Check Flux logs for the reconciliation error."
+        __dashboardUid__: fluxcd-status
+        __panelId__: "12"
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: gotk_reconcile_condition{cluster=~"$cluster", kind="HelmRelease", type="Ready"}
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: lt
+                  params:
+                    - 1
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    # Fires when a Kustomization or HelmRelease is Suspended for > 1h.
+    # Suspended resources are deliberately paused (usually for maintenance),
+    # but an accidental suspension or a long-forgotten manual suspend
+    # means changes stop flowing. This is a low-severity reminder.
+    - uid: argus-flux-resource-suspended
+      title: FluxResourceSuspended
+      condition: C
+      for: "1h"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: info
+        component: flux
+      annotations:
+        summary: "Flux resource {{ $labels.name }} suspended ({{ $labels.cluster }})"
+        description: "{{ $labels.kind }}/{{ $labels.name }} in namespace {{ $labels.namespace }} on cluster {{ $labels.cluster }} has been Suspended for over 1 hour. If this is intentional, dismiss this alert."
+        __dashboardUid__: fluxcd-status
+        __panelId__: "21"
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 3600
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: gotk_reconcile_condition{cluster=~"$cluster", kind=~"Kustomization|HelmRelease", type="Suspended"}
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: gt
+                  params:
+                    - 0
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C

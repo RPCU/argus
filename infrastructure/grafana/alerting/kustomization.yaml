@@ -9,3 +9,4 @@ resources:
   - rules-storage.yaml
   - rules-pods.yaml
   - rules-openstack.yaml
+  - rules-diskio.yaml

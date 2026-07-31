@@ -1,0 +1,258 @@
+# Pod I/O monitoring — per-pod/container filesystem IOPS, CPU, and memory.
+#
+# Complements the Node Disk I/O dashboard (node-disk-io-overview) by showing
+# WHICH pods are generating I/O on a congested device. Data comes from
+# cAdvisor's container_fs_reads_total / container_fs_writes_total (IOPS
+# counters, re-enabled in the monitoring base's cAdvisor relabelings).
+#
+# LIMITATION: cAdvisor container_fs_* metrics are mount-point based, NOT
+# device-based. They show total I/O per container across all mounted
+# filesystems — there is no label tying a pod's I/O to a specific block
+# device (e.g. nvme0n1). To identify which process is saturating a
+# specific device, use `iotop` on the node. This dashboard answers "which
+# pods are doing the most I/O overall" — combined with the Node Disk I/O
+# dashboard's per-device view, that is usually sufficient.
+#
+# Init containers and pause containers are excluded. The $namespace filter
+# defaults to All but should be narrowed when investigating a specific node.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: pod-io-overview
+  namespace: monitoring
+spec:
+  allowCrossNamespaceImport: true
+  resyncPeriod: 5m
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana-central
+  folder: "Monitoring"
+  json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "graphTooltip": 1,
+      "schemaVersion": 39,
+      "title": "Pod I/O",
+      "uid": "pod-io-overview",
+      "tags": ["pod", "io", "container", "cAdvisor"],
+      "time": { "from": "now-6h", "to": "now" },
+      "refresh": "1m",
+      "panels": [
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+          "id": 1,
+          "title": "Pod Filesystem IOPS",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "iops",
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 12, "x": 0, "y": 1 },
+          "id": 2,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "sum(rate(container_fs_reads_total{cluster=~\"$cluster\", node=~\"$node\", namespace=~\"$namespace\", container!~\"POD|\"}[5m]))",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Total Pod Read IOPS",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "iops",
+              "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 12, "x": 12, "y": 1 },
+          "id": 3,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "sum(rate(container_fs_writes_total{cluster=~\"$cluster\", node=~\"$node\", namespace=~\"$namespace\", container!~\"POD|\"}[5m]))",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Total Pod Write IOPS",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "iops",
+              "custom": { "fillOpacity": 10, "lineWidth": 2 }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 10, "w": 12, "x": 0, "y": 5 },
+          "id": 4,
+          "options": {
+            "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "topk(20, sum by (cluster, node, namespace, pod) (rate(container_fs_reads_total{cluster=~\"$cluster\", node=~\"$node\", namespace=~\"$namespace\", container!~\"POD|\"}[5m])))",
+              "legendFormat": "{{cluster}} / {{node}} {{namespace}}/{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Top 20 Pods by Read IOPS",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "iops",
+              "custom": { "fillOpacity": 10, "lineWidth": 2 }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 10, "w": 12, "x": 12, "y": 5 },
+          "id": 5,
+          "options": {
+            "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "topk(20, sum by (cluster, node, namespace, pod) (rate(container_fs_writes_total{cluster=~\"$cluster\", node=~\"$node\", namespace=~\"$namespace\", container!~\"POD|\"}[5m])))",
+              "legendFormat": "{{cluster}} / {{node}} {{namespace}}/{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Top 20 Pods by Write IOPS",
+          "type": "timeseries"
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
+          "id": 6,
+          "title": "Resource Usage (correlated)",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": { "fillOpacity": 10, "lineWidth": 2 }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 10, "w": 12, "x": 0, "y": 16 },
+          "id": 7,
+          "options": {
+            "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "topk(20, sum by (cluster, node, namespace, pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", node=~\"$node\", namespace=~\"$namespace\", container!~\"POD|\"}[5m])))",
+              "legendFormat": "{{cluster}} / {{node}} {{namespace}}/{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "title": "CPU Usage by Pod (correlate with I/O producers)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": { "fillOpacity": 10, "lineWidth": 2 }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 10, "w": 12, "x": 12, "y": 16 },
+          "id": 8,
+          "options": {
+            "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "topk(20, sum by (cluster, node, namespace, pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", node=~\"$node\", namespace=~\"$namespace\", container!~\"POD|\"}))",
+              "legendFormat": "{{cluster}} / {{node}} {{namespace}}/{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Memory Usage by Pod (correlate with I/O producers)",
+          "type": "timeseries"
+        }
+      ],
+      "templating": {
+        "list": [
+          {
+            "name": "cluster",
+            "label": "Cluster",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "Mimir" },
+            "query": "label_values(container_fs_reads_total, cluster)",
+            "refresh": 2,
+            "includeAll": true,
+            "multi": true,
+            "current": { "text": "All", "value": "$__all" }
+          },
+          {
+            "name": "node",
+            "label": "Node",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "Mimir" },
+            "query": "label_values(container_fs_reads_total{cluster=~\"$cluster\"}, node)",
+            "refresh": 2,
+            "includeAll": true,
+            "multi": true,
+            "current": { "text": "All", "value": "$__all" }
+          },
+          {
+            "name": "namespace",
+            "label": "Namespace",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "Mimir" },
+            "query": "label_values(container_fs_reads_total{cluster=~\"$cluster\", node=~\"$node\"}, namespace)",
+            "refresh": 2,
+            "includeAll": true,
+            "multi": true,
+            "current": { "text": "All", "value": "$__all" }
+          }
+        ]
+      }
+    }

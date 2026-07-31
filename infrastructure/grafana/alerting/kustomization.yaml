@@ -10,3 +10,4 @@ resources:
   - rules-pods.yaml
   - rules-openstack.yaml
   - rules-diskio.yaml
+  - rules-flux.yaml

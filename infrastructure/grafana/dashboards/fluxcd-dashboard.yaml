@@ -1,4 +1,16 @@
 # GrafanaDashboard — FluxCD GitOps Status Dashboard.
+#
+# Uses kube-state-metrics customResourceState metrics (gotk_resource_info)
+# for Ready/Suspended status of all Flux CRs, plus the native controller
+# metrics (gotk_reconcile_duration_seconds_*, controller_runtime_reconcile_total)
+# for reconciliation timing and error rates.
+#
+# Requires kube-state-metrics customResourceState enabled in the
+# kube-prometheus-stack HelmRelease (infrastructure/monitoring/helmrelease.yaml).
+# See: https://fluxcd.io/flux/monitoring/custom-metrics/
+#
+# Based on the official Flux monitoring example:
+# https://github.com/fluxcd/flux2-monitoring-example
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
@@ -12,641 +24,1125 @@ spec:
   folder: "Monitoring"
   json: |
     {
-      "annotations": { "list": [] },
-      "editable": true,
-      "fiscalYearStartMonth": 0,
-      "graphTooltip": 1,
-      "id": null,
-      "links": [],
-      "liveNow": false,
-      "panels": [
-        {
-          "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
-          "id": 1,
-          "title": "Flux Overview",
-          "type": "row"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "thresholds" },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "red", "value": null },
-                  { "color": "green", "value": 1 }
+          "annotations": {
+                "list": []
+          },
+          "editable": true,
+          "fiscalYearStartMonth": 0,
+          "graphTooltip": 1,
+          "id": null,
+          "links": [],
+          "liveNow": false,
+          "panels": [
+                {
+                      "collapsed": false,
+                      "gridPos": {
+                            "h": 1,
+                            "w": 24,
+                            "x": 0,
+                            "y": 0
+                      },
+                      "id": 1,
+                      "title": "Overview",
+                      "type": "row"
+                },
+                {
+                      "datasource": {
+                            "type": "prometheus",
+                            "uid": "Mimir"
+                      },
+                      "fieldConfig": {
+                            "defaults": {
+                                  "decimals": 0,
+                                  "noValue": "0",
+                                  "thresholds": {
+                                        "mode": "absolute",
+                                        "steps": [
+                                              {
+                                                    "color": "blue",
+                                                    "value": null
+                                              }
+                                        ]
+                                  },
+                                  "unit": "short"
+                            }
+                      },
+                      "gridPos": {
+                            "h": 4,
+                            "w": 4,
+                            "x": 0,
+                            "y": 1
+                      },
+                      "id": 2,
+                      "options": {
+                            "colorMode": "background",
+                            "graphMode": "none",
+                            "justifyMode": "auto",
+                            "reduceOptions": {
+                                  "calcs": [
+                                        "lastNotNull"
+                                  ],
+                                  "fields": "",
+                                  "values": false
+                            },
+                            "textMode": "auto"
+                      },
+                      "targets": [
+                            {
+                                  "datasource": {
+                                        "type": "prometheus",
+                                        "uid": "Mimir"
+                                  },
+                                  "expr": "count(gotk_resource_info{cluster=~\"$cluster\", customresource_kind=~\"Kustomization|HelmRelease\"})",
+                                  "instant": true,
+                                  "legendFormat": "",
+                                  "refId": "A"
+                            }
+                      ],
+                      "title": "Reconcilers",
+                      "type": "stat"
+                },
+                {
+                      "datasource": {
+                            "type": "prometheus",
+                            "uid": "Mimir"
+                      },
+                      "fieldConfig": {
+                            "defaults": {
+                                  "decimals": 0,
+                                  "noValue": "0",
+                                  "thresholds": {
+                                        "mode": "absolute",
+                                        "steps": [
+                                              {
+                                                    "color": "red",
+                                                    "value": null
+                                              }
+                                        ]
+                                  },
+                                  "unit": "short"
+                            }
+                      },
+                      "gridPos": {
+                            "h": 4,
+                            "w": 4,
+                            "x": 4,
+                            "y": 1
+                      },
+                      "id": 3,
+                      "options": {
+                            "colorMode": "background",
+                            "graphMode": "area",
+                            "justifyMode": "auto",
+                            "reduceOptions": {
+                                  "calcs": [
+                                        "lastNotNull"
+                                  ],
+                                  "fields": "",
+                                  "values": false
+                            },
+                            "textMode": "auto"
+                      },
+                      "targets": [
+                            {
+                                  "datasource": {
+                                        "type": "prometheus",
+                                        "uid": "Mimir"
+                                  },
+                                  "expr": "count(gotk_resource_info{cluster=~\"$cluster\", customresource_kind=~\"Kustomization|HelmRelease\", ready=\"False\"})",
+                                  "instant": true,
+                                  "legendFormat": "",
+                                  "refId": "A"
+                            }
+                      ],
+                      "title": "Failing Reconcilers",
+                      "type": "stat"
+                },
+                {
+                      "datasource": {
+                            "type": "prometheus",
+                            "uid": "Mimir"
+                      },
+                      "fieldConfig": {
+                            "defaults": {
+                                  "decimals": 0,
+                                  "noValue": "0",
+                                  "thresholds": {
+                                        "mode": "absolute",
+                                        "steps": [
+                                              {
+                                                    "color": "blue",
+                                                    "value": null
+                                              }
+                                        ]
+                                  },
+                                  "unit": "short"
+                            }
+                      },
+                      "gridPos": {
+                            "h": 4,
+                            "w": 4,
+                            "x": 8,
+                            "y": 1
+                      },
+                      "id": 4,
+                      "options": {
+                            "colorMode": "background",
+                            "graphMode": "none",
+                            "justifyMode": "auto",
+                            "reduceOptions": {
+                                  "calcs": [
+                                        "lastNotNull"
+                                  ],
+                                  "fields": "",
+                                  "values": false
+                            },
+                            "textMode": "auto"
+                      },
+                      "targets": [
+                            {
+                                  "datasource": {
+                                        "type": "prometheus",
+                                        "uid": "Mimir"
+                                  },
+                                  "expr": "count(gotk_resource_info{cluster=~\"$cluster\", customresource_kind=~\"GitRepository|HelmRepository|Bucket|OCIRepository|HelmChart\"})",
+                                  "instant": true,
+                                  "legendFormat": "",
+                                  "refId": "A"
+                            }
+                      ],
+                      "title": "Sources",
+                      "type": "stat"
+                },
+                {
+                      "datasource": {
+                            "type": "prometheus",
+                            "uid": "Mimir"
+                      },
+                      "fieldConfig": {
+                            "defaults": {
+                                  "decimals": 0,
+                                  "noValue": "0",
+                                  "thresholds": {
+                                        "mode": "absolute",
+                                        "steps": [
+                                              {
+                                                    "color": "red",
+                                                    "value": null
+                                              }
+                                        ]
+                                  },
+                                  "unit": "short"
+                            }
+                      },
+                      "gridPos": {
+                            "h": 4,
+                            "w": 4,
+                            "x": 12,
+                            "y": 1
+                      },
+                      "id": 5,
+                      "options": {
+                            "colorMode": "background",
+                            "graphMode": "area",
+                            "justifyMode": "auto",
+                            "reduceOptions": {
+                                  "calcs": [
+                                        "lastNotNull"
+                                  ],
+                                  "fields": "",
+                                  "values": false
+                            },
+                            "textMode": "auto"
+                      },
+                      "targets": [
+                            {
+                                  "datasource": {
+                                        "type": "prometheus",
+                                        "uid": "Mimir"
+                                  },
+                                  "expr": "count(gotk_resource_info{cluster=~\"$cluster\", customresource_kind=~\"GitRepository|HelmRepository|Bucket|OCIRepository|HelmChart\", ready=\"False\"})",
+                                  "instant": true,
+                                  "legendFormat": "",
+                                  "refId": "A"
+                            }
+                      ],
+                      "title": "Failing Sources",
+                      "type": "stat"
+                },
+                {
+                      "datasource": {
+                            "type": "prometheus",
+                            "uid": "Mimir"
+                      },
+                      "fieldConfig": {
+                            "defaults": {
+                                  "decimals": 0,
+                                  "noValue": "0",
+                                  "thresholds": {
+                                        "mode": "absolute",
+                                        "steps": [
+                                              {
+                                                    "color": "blue",
+                                                    "value": null
+                                              }
+                                        ]
+                                  },
+                                  "unit": "short"
+                            }
+                      },
+                      "gridPos": {
+                            "h": 4,
+                            "w": 4,
+                            "x": 16,
+                            "y": 1
+                      },
+                      "id": 6,
+                      "options": {
+                            "colorMode": "background",
+                            "graphMode": "none",
+                            "justifyMode": "auto",
+                            "reduceOptions": {
+                                  "calcs": [
+                                        "lastNotNull"
+                                  ],
+                                  "fields": "",
+                                  "values": false
+                            },
+                            "textMode": "auto"
+                      },
+                      "targets": [
+                            {
+                                  "datasource": {
+                                        "type": "prometheus",
+                                        "uid": "Mimir"
+                                  },
+                                  "expr": "count(gotk_resource_info{cluster=~\"$cluster\", suspended=\"true\"})",
+                                  "instant": true,
+                                  "legendFormat": "",
+                                  "refId": "A"
+                            }
+                      ],
+                      "title": "Suspended",
+                      "type": "stat"
+                },
+                {
+                      "datasource": {
+                            "type": "prometheus",
+                            "uid": "Mimir"
+                      },
+                      "fieldConfig": {
+                            "defaults": {
+                                  "decimals": 0,
+                                  "noValue": "0",
+                                  "thresholds": {
+                                        "mode": "absolute",
+                                        "steps": [
+                                              {
+                                                    "color": "blue",
+                                                    "value": null
+                                              }
+                                        ]
+                                  },
+                                  "unit": "short"
+                            }
+                      },
+                      "gridPos": {
+                            "h": 4,
+                            "w": 4,
+                            "x": 20,
+                            "y": 1
+                      },
+                      "id": 7,
+                      "options": {
+                            "colorMode": "background",
+                            "graphMode": "none",
+                            "justifyMode": "auto",
+                            "reduceOptions": {
+                                  "calcs": [
+                                        "lastNotNull"
+                                  ],
+                                  "fields": "",
+                                  "values": false
+                            },
+                            "textMode": "auto"
+                      },
+                      "targets": [
+                            {
+                                  "datasource": {
+                                        "type": "prometheus",
+                                        "uid": "Mimir"
+                                  },
+                                  "expr": "count(count by (cluster) (gotk_resource_info{cluster=~\"$cluster\"}))",
+                                  "instant": true,
+                                  "legendFormat": "",
+                                  "refId": "A"
+                            }
+                      ],
+                      "title": "Clusters",
+                      "type": "stat"
+                },
+                {
+                      "collapsed": false,
+                      "gridPos": {
+                            "h": 1,
+                            "w": 24,
+                            "x": 0,
+                            "y": 5
+                      },
+                      "id": 8,
+                      "title": "Reconcile Performance",
+                      "type": "row"
+                },
+                {
+                      "datasource": {
+                            "type": "prometheus",
+                            "uid": "Mimir"
+                      },
+                      "fieldConfig": {
+                            "defaults": {
+                                  "thresholds": {
+                                        "mode": "absolute",
+                                        "steps": [
+                                              {
+                                                    "color": "green",
+                                                    "value": null
+                                              },
+                                              {
+                                                    "color": "#EAB839",
+                                                    "value": 1
+                                              },
+                                              {
+                                                    "color": "red",
+                                                    "value": 61
+                                              }
+                                        ]
+                                  },
+                                  "unit": "s"
+                            }
+                      },
+                      "gridPos": {
+                            "h": 4,
+                            "w": 12,
+                            "x": 0,
+                            "y": 6
+                      },
+                      "id": 9,
+                      "options": {
+                            "displayMode": "gradient",
+                            "minVizHeight": 10,
+                            "orientation": "horizontal",
+                            "reduceOptions": {
+                                  "calcs": [
+                                        "mean"
+                                  ],
+                                  "fields": "",
+                                  "values": false
+                            },
+                            "showUnfilled": true
+                      },
+                      "targets": [
+                            {
+                                  "datasource": {
+                                        "type": "prometheus",
+                                        "uid": "Mimir"
+                                  },
+                                  "expr": "sum(rate(gotk_reconcile_duration_seconds_sum{cluster=~\"$cluster\", kind=~\"Kustomization|HelmRelease\"}[5m])) by (kind)\n/\n  sum(rate(gotk_reconcile_duration_seconds_count{cluster=~\"$cluster\", kind=~\"Kustomization|HelmRelease\"}[5m])) by (kind)",
+                                  "legendFormat": "{{kind}}",
+                                  "refId": "A"
+                            }
+                      ],
+                      "title": "Reconciler Avg. Duration",
+                      "type": "bargauge"
+                },
+                {
+                      "datasource": {
+                            "type": "prometheus",
+                            "uid": "Mimir"
+                      },
+                      "fieldConfig": {
+                            "defaults": {
+                                  "thresholds": {
+                                        "mode": "absolute",
+                                        "steps": [
+                                              {
+                                                    "color": "green",
+                                                    "value": null
+                                              },
+                                              {
+                                                    "color": "#EAB839",
+                                                    "value": 1
+                                              },
+                                              {
+                                                    "color": "red",
+                                                    "value": 61
+                                              }
+                                        ]
+                                  },
+                                  "unit": "s"
+                            }
+                      },
+                      "gridPos": {
+                            "h": 4,
+                            "w": 12,
+                            "x": 12,
+                            "y": 6
+                      },
+                      "id": 10,
+                      "options": {
+                            "displayMode": "gradient",
+                            "minVizHeight": 10,
+                            "orientation": "horizontal",
+                            "reduceOptions": {
+                                  "calcs": [
+                                        "mean"
+                                  ],
+                                  "fields": "",
+                                  "values": false
+                            },
+                            "showUnfilled": true
+                      },
+                      "targets": [
+                            {
+                                  "datasource": {
+                                        "type": "prometheus",
+                                        "uid": "Mimir"
+                                  },
+                                  "expr": "sum(rate(gotk_reconcile_duration_seconds_sum{cluster=~\"$cluster\", kind=~\"GitRepository|HelmRepository|Bucket|OCIRepository\"}[5m])) by (kind)\n/\n  sum(rate(gotk_reconcile_duration_seconds_count{cluster=~\"$cluster\", kind=~\"GitRepository|HelmRepository|Bucket|OCIRepository\"}[5m])) by (kind)",
+                                  "legendFormat": "{{kind}}",
+                                  "refId": "A"
+                            }
+                      ],
+                      "title": "Source Avg. Duration",
+                      "type": "bargauge"
+                },
+                {
+                      "collapsed": false,
+                      "gridPos": {
+                            "h": 1,
+                            "w": 24,
+                            "x": 0,
+                            "y": 10
+                      },
+                      "id": 11,
+                      "title": "Status",
+                      "type": "row"
+                },
+                {
+                      "datasource": {
+                            "type": "prometheus",
+                            "uid": "Mimir"
+                      },
+                      "fieldConfig": {
+                            "defaults": {
+                                  "custom": {
+                                        "align": "auto",
+                                        "cellOptions": {
+                                              "type": "auto"
+                                        },
+                                        "filterable": true,
+                                        "inspect": false
+                                  },
+                                  "mappings": [
+                                        {
+                                              "options": {
+                                                    "False": {
+                                                          "color": "red",
+                                                          "index": 1,
+                                                          "text": "Not Ready"
+                                                    },
+                                                    "True": {
+                                                          "color": "blue",
+                                                          "index": 0,
+                                                          "text": "Ready"
+                                                    }
+                                              },
+                                              "type": "value"
+                                        }
+                                  ],
+                                  "thresholds": {
+                                        "mode": "absolute",
+                                        "steps": [
+                                              {
+                                                    "color": "transparent",
+                                                    "value": null
+                                              }
+                                        ]
+                                  }
+                            },
+                            "overrides": [
+                                  {
+                                        "matcher": {
+                                              "id": "byType",
+                                              "options": "string"
+                                        },
+                                        "properties": [
+                                              {
+                                                    "id": "custom.cellOptions",
+                                                    "value": {
+                                                          "mode": "basic",
+                                                          "type": "color-background"
+                                                    }
+                                              }
+                                        ]
+                                  }
+                            ]
+                      },
+                      "gridPos": {
+                            "h": 18,
+                            "w": 12,
+                            "x": 0,
+                            "y": 11
+                      },
+                      "id": 12,
+                      "options": {
+                            "cellHeight": "sm",
+                            "showHeader": true,
+                            "sortBy": [
+                                  {
+                                        "desc": true,
+                                        "displayName": "Status"
+                                  }
+                            ]
+                      },
+                      "targets": [
+                            {
+                                  "datasource": {
+                                        "type": "prometheus",
+                                        "uid": "Mimir"
+                                  },
+                                  "expr": "gotk_resource_info{cluster=~\"$cluster\", customresource_kind=~\"Kustomization|HelmRelease\"}",
+                                  "format": "table",
+                                  "instant": true,
+                                  "legendFormat": "",
+                                  "refId": "A"
+                            }
+                      ],
+                      "title": "Reconciler Readiness",
+                      "transformations": [
+                            {
+                                  "id": "organize",
+                                  "options": {
+                                        "excludeByName": {
+                                              "Time": true,
+                                              "__name__": true,
+                                              "instance": true,
+                                              "job": true,
+                                              "namespace": true,
+                                              "pod": true,
+                                              "service": true,
+                                              "endpoint": true,
+                                              "container": true,
+                                              "customresource_group": true,
+                                              "customresource_version": true,
+                                              "chart_name": true,
+                                              "chart_app_version": true,
+                                              "revision": true,
+                                              "source_name": true,
+                                              "suspended": true
+                                        },
+                                        "renameByName": {
+                                              "cluster": "Cluster",
+                                              "customresource_kind": "Kind",
+                                              "exported_namespace": "Namespace",
+                                              "name": "Name",
+                                              "ready": "Status"
+                                        }
+                                  }
+                            }
+                      ],
+                      "type": "table"
+                },
+                {
+                      "datasource": {
+                            "type": "prometheus",
+                            "uid": "Mimir"
+                      },
+                      "fieldConfig": {
+                            "defaults": {
+                                  "custom": {
+                                        "align": "auto",
+                                        "cellOptions": {
+                                              "type": "auto"
+                                        },
+                                        "filterable": true,
+                                        "inspect": false
+                                  },
+                                  "mappings": [
+                                        {
+                                              "options": {
+                                                    "False": {
+                                                          "color": "red",
+                                                          "index": 1,
+                                                          "text": "Not Ready"
+                                                    },
+                                                    "True": {
+                                                          "color": "blue",
+                                                          "index": 0,
+                                                          "text": "Ready"
+                                                    }
+                                              },
+                                              "type": "value"
+                                        }
+                                  ],
+                                  "thresholds": {
+                                        "mode": "absolute",
+                                        "steps": [
+                                              {
+                                                    "color": "transparent",
+                                                    "value": null
+                                              }
+                                        ]
+                                  }
+                            },
+                            "overrides": [
+                                  {
+                                        "matcher": {
+                                              "id": "byType",
+                                              "options": "string"
+                                        },
+                                        "properties": [
+                                              {
+                                                    "id": "custom.cellOptions",
+                                                    "value": {
+                                                          "mode": "basic",
+                                                          "type": "color-background"
+                                                    }
+                                              }
+                                        ]
+                                  }
+                            ]
+                      },
+                      "gridPos": {
+                            "h": 9,
+                            "w": 12,
+                            "x": 12,
+                            "y": 11
+                      },
+                      "id": 13,
+                      "options": {
+                            "cellHeight": "sm",
+                            "showHeader": true,
+                            "sortBy": [
+                                  {
+                                        "desc": true,
+                                        "displayName": "Status"
+                                  }
+                            ]
+                      },
+                      "targets": [
+                            {
+                                  "datasource": {
+                                        "type": "prometheus",
+                                        "uid": "Mimir"
+                                  },
+                                  "expr": "gotk_resource_info{cluster=~\"$cluster\", customresource_kind=~\"GitRepository|HelmRepository|Bucket|OCIRepository|HelmChart\"}",
+                                  "format": "table",
+                                  "instant": true,
+                                  "legendFormat": "",
+                                  "refId": "A"
+                            }
+                      ],
+                      "title": "Source Readiness",
+                      "transformations": [
+                            {
+                                  "id": "organize",
+                                  "options": {
+                                        "excludeByName": {
+                                              "Time": true,
+                                              "__name__": true,
+                                              "instance": true,
+                                              "job": true,
+                                              "namespace": true,
+                                              "pod": true,
+                                              "service": true,
+                                              "endpoint": true,
+                                              "container": true,
+                                              "customresource_group": true,
+                                              "customresource_version": true,
+                                              "revision": true,
+                                              "suspended": true,
+                                              "url": true
+                                        },
+                                        "renameByName": {
+                                              "cluster": "Cluster",
+                                              "customresource_kind": "Kind",
+                                              "exported_namespace": "Namespace",
+                                              "name": "Name",
+                                              "ready": "Status"
+                                        }
+                                  }
+                            }
+                      ],
+                      "type": "table"
+                },
+                {
+                      "datasource": {
+                            "type": "prometheus",
+                            "uid": "Mimir"
+                      },
+                      "fieldConfig": {
+                            "defaults": {
+                                  "custom": {
+                                        "align": "auto",
+                                        "cellOptions": {
+                                              "type": "auto"
+                                        },
+                                        "filterable": true,
+                                        "inspect": false
+                                  },
+                                  "thresholds": {
+                                        "mode": "absolute",
+                                        "steps": [
+                                              {
+                                                    "color": "transparent",
+                                                    "value": null
+                                              }
+                                        ]
+                                  }
+                            },
+                            "overrides": [
+                                  {
+                                        "matcher": {
+                                              "id": "byType",
+                                              "options": "string"
+                                        },
+                                        "properties": [
+                                              {
+                                                    "id": "custom.cellOptions",
+                                                    "value": {
+                                                          "mode": "basic",
+                                                          "type": "color-background"
+                                                    }
+                                              }
+                                        ]
+                                  }
+                            ]
+                      },
+                      "gridPos": {
+                            "h": 9,
+                            "w": 12,
+                            "x": 12,
+                            "y": 20
+                      },
+                      "id": 14,
+                      "options": {
+                            "cellHeight": "sm",
+                            "showHeader": true,
+                            "sortBy": [
+                                  {
+                                        "desc": true,
+                                        "displayName": "Namespace"
+                                  }
+                            ]
+                      },
+                      "targets": [
+                            {
+                                  "datasource": {
+                                        "type": "prometheus",
+                                        "uid": "Mimir"
+                                  },
+                                  "expr": "gotk_resource_info{cluster=~\"$cluster\", suspended=\"true\"}",
+                                  "format": "table",
+                                  "instant": true,
+                                  "legendFormat": "",
+                                  "refId": "A"
+                            }
+                      ],
+                      "title": "Suspended Objects",
+                      "transformations": [
+                            {
+                                  "id": "organize",
+                                  "options": {
+                                        "excludeByName": {
+                                              "Time": true,
+                                              "Value": true,
+                                              "__name__": true,
+                                              "instance": true,
+                                              "job": true,
+                                              "namespace": true,
+                                              "pod": true,
+                                              "service": true,
+                                              "endpoint": true,
+                                              "container": true,
+                                              "customresource_group": true,
+                                              "customresource_version": true,
+                                              "ready": true,
+                                              "suspended": true,
+                                              "url": true,
+                                              "revision": true
+                                        },
+                                        "renameByName": {
+                                              "cluster": "Cluster",
+                                              "customresource_kind": "Kind",
+                                              "exported_namespace": "Namespace",
+                                              "name": "Name"
+                                        }
+                                  }
+                            }
+                      ],
+                      "type": "table"
+                },
+                {
+                      "collapsed": false,
+                      "gridPos": {
+                            "h": 1,
+                            "w": 24,
+                            "x": 0,
+                            "y": 29
+                      },
+                      "id": 15,
+                      "title": "Timing",
+                      "type": "row"
+                },
+                {
+                      "datasource": {
+                            "type": "prometheus",
+                            "uid": "Mimir"
+                      },
+                      "fieldConfig": {
+                            "defaults": {
+                                  "custom": {
+                                        "drawStyle": "line",
+                                        "lineInterpolation": "smooth",
+                                        "lineWidth": 1,
+                                        "fillOpacity": 10,
+                                        "showPoints": "never",
+                                        "stacking": {
+                                              "mode": "none"
+                                        }
+                                  },
+                                  "unit": "s"
+                            },
+                            "overrides": [
+                                  {
+                                        "matcher": {
+                                              "id": "byValue",
+                                              "options": {
+                                                    "op": "gte",
+                                                    "reducer": "allIsZero",
+                                                    "value": 0
+                                              }
+                                        },
+                                        "properties": [
+                                              {
+                                                    "id": "custom.hideFrom",
+                                                    "value": {
+                                                          "legend": true,
+                                                          "tooltip": true,
+                                                          "viz": false
+                                                    }
+                                              }
+                                        ]
+                                  },
+                                  {
+                                        "matcher": {
+                                              "id": "byValue",
+                                              "options": {
+                                                    "op": "gte",
+                                                    "reducer": "allIsNull",
+                                                    "value": 0
+                                              }
+                                        },
+                                        "properties": [
+                                              {
+                                                    "id": "custom.hideFrom",
+                                                    "value": {
+                                                          "legend": true,
+                                                          "tooltip": true,
+                                                          "viz": false
+                                                    }
+                                              }
+                                        ]
+                                  }
+                            ]
+                      },
+                      "gridPos": {
+                            "h": 8,
+                            "w": 24,
+                            "x": 0,
+                            "y": 30
+                      },
+                      "id": 16,
+                      "options": {
+                            "legend": {
+                                  "calcs": [
+                                        "mean"
+                                  ],
+                                  "displayMode": "table",
+                                  "placement": "right",
+                                  "showLegend": true
+                            },
+                            "tooltip": {
+                                  "mode": "multi",
+                                  "sort": "desc"
+                            }
+                      },
+                      "targets": [
+                            {
+                                  "datasource": {
+                                        "type": "prometheus",
+                                        "uid": "Mimir"
+                                  },
+                                  "expr": "sum(rate(gotk_reconcile_duration_seconds_sum{cluster=~\"$cluster\", kind=~\"Kustomization|HelmRelease\"}[5m])) by (kind, name)\n/\n  sum(rate(gotk_reconcile_duration_seconds_count{cluster=~\"$cluster\", kind=~\"Kustomization|HelmRelease\"}[5m])) by (kind, name)",
+                                  "legendFormat": "{{kind}}/{{name}}",
+                                  "refId": "A"
+                            }
+                      ],
+                      "title": "Reconcile Duration (Reconcilers)",
+                      "type": "timeseries"
+                },
+                {
+                      "datasource": {
+                            "type": "prometheus",
+                            "uid": "Mimir"
+                      },
+                      "fieldConfig": {
+                            "defaults": {
+                                  "custom": {
+                                        "drawStyle": "line",
+                                        "lineInterpolation": "smooth",
+                                        "lineWidth": 1,
+                                        "fillOpacity": 10,
+                                        "showPoints": "never",
+                                        "stacking": {
+                                              "mode": "none"
+                                        }
+                                  },
+                                  "unit": "s"
+                            },
+                            "overrides": [
+                                  {
+                                        "matcher": {
+                                              "id": "byValue",
+                                              "options": {
+                                                    "op": "gte",
+                                                    "reducer": "allIsZero",
+                                                    "value": 0
+                                              }
+                                        },
+                                        "properties": [
+                                              {
+                                                    "id": "custom.hideFrom",
+                                                    "value": {
+                                                          "legend": true,
+                                                          "tooltip": true,
+                                                          "viz": false
+                                                    }
+                                              }
+                                        ]
+                                  },
+                                  {
+                                        "matcher": {
+                                              "id": "byValue",
+                                              "options": {
+                                                    "op": "gte",
+                                                    "reducer": "allIsNull",
+                                                    "value": 0
+                                              }
+                                        },
+                                        "properties": [
+                                              {
+                                                    "id": "custom.hideFrom",
+                                                    "value": {
+                                                          "legend": true,
+                                                          "tooltip": true,
+                                                          "viz": false
+                                                    }
+                                              }
+                                        ]
+                                  }
+                            ]
+                      },
+                      "gridPos": {
+                            "h": 8,
+                            "w": 24,
+                            "x": 0,
+                            "y": 38
+                      },
+                      "id": 17,
+                      "options": {
+                            "legend": {
+                                  "calcs": [
+                                        "mean"
+                                  ],
+                                  "displayMode": "table",
+                                  "placement": "right",
+                                  "showLegend": true
+                            },
+                            "tooltip": {
+                                  "mode": "multi",
+                                  "sort": "desc"
+                            }
+                      },
+                      "targets": [
+                            {
+                                  "datasource": {
+                                        "type": "prometheus",
+                                        "uid": "Mimir"
+                                  },
+                                  "expr": "sum(rate(gotk_reconcile_duration_seconds_sum{cluster=~\"$cluster\", kind=~\"GitRepository|HelmRepository|Bucket|OCIRepository\"}[5m])) by (kind, name)\n/\n  sum(rate(gotk_reconcile_duration_seconds_count{cluster=~\"$cluster\", kind=~\"GitRepository|HelmRepository|Bucket|OCIRepository\"}[5m])) by (kind, name)",
+                                  "legendFormat": "{{kind}}/{{name}}",
+                                  "refId": "A"
+                            }
+                      ],
+                      "title": "Reconcile Duration (Sources)",
+                      "type": "timeseries"
+                }
+          ],
+          "refresh": "30s",
+          "schemaVersion": 38,
+          "style": "dark",
+          "tags": [
+                "infrastructure",
+                "flux",
+                "gitops"
+          ],
+          "templating": {
+                "list": [
+                      {
+                            "allValue": ".*",
+                            "current": {
+                                  "selected": true,
+                                  "text": "All",
+                                  "value": "$__all"
+                            },
+                            "datasource": {
+                                  "type": "prometheus",
+                                  "uid": "Mimir"
+                            },
+                            "definition": "label_values(gotk_resource_info, cluster)",
+                            "includeAll": true,
+                            "label": "Cluster",
+                            "multi": true,
+                            "name": "cluster",
+                            "options": [],
+                            "query": {
+                                  "query": "label_values(gotk_resource_info, cluster)",
+                                  "refId": "StandardVariableQuery"
+                            },
+                            "refresh": 1,
+                            "regex": "",
+                            "skipUrlSync": false,
+                            "sort": 1,
+                            "type": "query"
+                      }
                 ]
-              },
-              "unit": "short"
-            }
           },
-          "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
-          "id": 2,
-          "options": {
-            "colorMode": "background",
-            "graphMode": "none",
-            "justifyMode": "auto",
-            "orientation": "auto",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "textMode": "auto"
+          "time": {
+                "from": "now-1h",
+                "to": "now"
           },
-          "targets": [
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum(gotk_reconcile_condition{cluster=~\"$cluster\", type=\"Ready\", status=\"true\"})",
-              "legendFormat": "Ready",
-              "refId": "A"
-            }
-          ],
-          "title": "Ready",
-          "type": "stat"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "thresholds" },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "green", "value": null },
-                  { "color": "yellow", "value": 1 }
+          "timepicker": {
+                "refresh_intervals": [
+                      "5s",
+                      "10s",
+                      "30s",
+                      "1m",
+                      "5m"
                 ]
-              },
-              "unit": "short"
-            }
           },
-          "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
-          "id": 3,
-          "options": {
-            "colorMode": "background",
-            "graphMode": "none",
-            "justifyMode": "auto",
-            "orientation": "auto",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "textMode": "auto"
-          },
-          "targets": [
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum(gotk_reconcile_condition{cluster=~\"$cluster\", type=\"Suspended\", status=\"true\"})",
-              "legendFormat": "Suspended",
-              "refId": "A"
-            }
-          ],
-          "title": "Suspended",
-          "type": "stat"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "thresholds" },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "green", "value": null },
-                  { "color": "red", "value": 0.01 }
-                ]
-              },
-              "unit": "ops"
-            }
-          },
-          "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
-          "id": 4,
-          "options": {
-            "colorMode": "background",
-            "graphMode": "area",
-            "justifyMode": "auto",
-            "orientation": "auto",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "textMode": "auto"
-          },
-          "targets": [
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum(rate(gotk_reconcile_duration_seconds_count{cluster=~\"$cluster\", result=\"fail\"}[5m]))",
-              "legendFormat": "Failures/s",
-              "refId": "A"
-            }
-          ],
-          "title": "Failed Reconciliations (5m)",
-          "type": "stat"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "thresholds" },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "blue", "value": null }
-                ]
-              },
-              "unit": "short"
-            }
-          },
-          "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
-          "id": 5,
-          "options": {
-            "colorMode": "background",
-            "graphMode": "area",
-            "justifyMode": "auto",
-            "orientation": "auto",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "textMode": "auto"
-          },
-          "targets": [
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum(rate(gotk_reconcile_duration_seconds_count{cluster=~\"$cluster\"}[5m]))",
-              "legendFormat": "Reconciliations/s",
-              "refId": "A"
-            }
-          ],
-          "title": "Total Reconciliations (5m)",
-          "type": "stat"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "thresholds" },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "green", "value": null },
-                  { "color": "red", "value": 0.01 }
-                ]
-              },
-              "unit": "percentunit"
-            }
-          },
-          "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
-          "id": 6,
-          "options": {
-            "colorMode": "background",
-            "graphMode": "area",
-            "justifyMode": "auto",
-            "orientation": "auto",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "textMode": "auto"
-          },
-          "targets": [
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum(rate(gotk_reconcile_duration_seconds_count{cluster=~\"$cluster\", result=\"fail\"}[5m])) / sum(rate(gotk_reconcile_duration_seconds_count{cluster=~\"$cluster\"}[5m])) > 0",
-              "legendFormat": "Error Rate",
-              "refId": "A"
-            }
-          ],
-          "title": "Error Rate",
-          "type": "stat"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "thresholds" },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "green", "value": null }
-                ]
-              },
-              "unit": "short"
-            }
-          },
-          "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
-          "id": 7,
-          "options": {
-            "colorMode": "background",
-            "graphMode": "none",
-            "justifyMode": "auto",
-            "orientation": "auto",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "textMode": "auto"
-          },
-          "targets": [
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "count(count by (cluster) (gotk_reconcile_condition{cluster=~\"$cluster\", type=\"Ready\"}))",
-              "legendFormat": "Clusters",
-              "refId": "A"
-            }
-          ],
-          "title": "Clusters",
-          "type": "stat"
-        },
-        {
-          "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
-          "id": 8,
-          "title": "Kustomizations",
-          "type": "row"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "custom": { "align": "auto", "displayMode": "auto", "inspect": false },
-              "mappings": [
-                { "options": { "false": { "color": "red", "index": 1, "text": "False" }, "true": { "color": "green", "index": 0, "text": "True" } }, "type": "value" }
-              ]
-            },
-            "overrides": [
-              { "matcher": { "id": "byName", "options": "Namespace" }, "properties": [{ "id": "custom.width", "value": 120 }] },
-              { "matcher": { "id": "byName", "options": "Name" }, "properties": [{ "id": "custom.width", "value": 200 }] },
-              { "matcher": { "id": "byName", "options": "Ready" }, "properties": [{ "id": "custom.width", "value": 80 }, { "id": "custom.displayMode", "value": "color-background" }] },
-              { "matcher": { "id": "byName", "options": "Suspended" }, "properties": [{ "id": "custom.width", "value": 80 }, { "id": "custom.displayMode", "value": "color-background" }] }
-            ]
-          },
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
-          "id": 9,
-          "options": { "showHeader": true, "sortBy": [{ "desc": false, "displayName": "Ready" }] },
-          "targets": [
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "gotk_reconcile_condition{cluster=~\"$cluster\", kind=\"Kustomization\", type=\"Ready\"}",
-              "format": "table",
-              "instant": true,
-              "legendFormat": "",
-              "refId": "A"
-            },
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "gotk_reconcile_condition{cluster=~\"$cluster\", kind=\"Kustomization\", type=\"Suspended\"}",
-              "format": "table",
-              "instant": true,
-              "legendFormat": "",
-              "refId": "B"
-            }
-          ],
-          "title": "Kustomization Status",
-          "transformations": [
-            { "id": "seriesToColumns", "options": { "byField": "name" } },
-            { "id": "organize", "options": { "excludeByName": { "Time": true, "Time 1": true, "Time 2": true, "__name__": true, "__name__ 1": true, "__name__ 2": true, "job": true, "job 1": true, "job 2": true, "instance": true, "instance 1": true, "instance 2": true, "kind 1": true, "kind 2": true, "type 1": true, "type 2": true, "Value 1": true, "Value 2": true }, "renameByName": { "cluster": "Cluster", "namespace": "Namespace", "name": "Name", "status": "Ready", "status 1": "Ready", "status 2": "Suspended" } } }
-          ],
-          "type": "table"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "drawStyle": "line",
-                "lineInterpolation": "smooth",
-                "lineWidth": 2,
-                "fillOpacity": 10,
-                "gradientMode": "none",
-                "showPoints": "auto",
-                "pointSize": 5
-              },
-              "unit": "ops"
-            }
-          },
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
-          "id": 10,
-          "options": {
-            "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] },
-            "tooltip": { "mode": "multi" }
-          },
-          "targets": [
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum by (cluster, namespace, name) (rate(gotk_reconcile_duration_seconds_count{cluster=~\"$cluster\", kind=\"Kustomization\"}[5m]))",
-              "legendFormat": "{{cluster}} | {{namespace}}/{{name}}",
-              "refId": "A"
-            }
-          ],
-          "title": "Kustomization Reconcile Rate",
-          "type": "timeseries"
-        },
-        {
-          "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
-          "id": 11,
-          "title": "HelmReleases",
-          "type": "row"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "custom": { "align": "auto", "displayMode": "auto", "inspect": false },
-              "mappings": [
-                { "options": { "false": { "color": "red", "index": 1, "text": "False" }, "true": { "color": "green", "index": 0, "text": "True" } }, "type": "value" }
-              ]
-            },
-            "overrides": [
-              { "matcher": { "id": "byName", "options": "Namespace" }, "properties": [{ "id": "custom.width", "value": 120 }] },
-              { "matcher": { "id": "byName", "options": "Name" }, "properties": [{ "id": "custom.width", "value": 200 }] },
-              { "matcher": { "id": "byName", "options": "Ready" }, "properties": [{ "id": "custom.width", "value": 80 }, { "id": "custom.displayMode", "value": "color-background" }] },
-              { "matcher": { "id": "byName", "options": "Suspended" }, "properties": [{ "id": "custom.width", "value": 80 }, { "id": "custom.displayMode", "value": "color-background" }] }
-            ]
-          },
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
-          "id": 12,
-          "options": { "showHeader": true, "sortBy": [{ "desc": false, "displayName": "Ready" }] },
-          "targets": [
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "gotk_reconcile_condition{cluster=~\"$cluster\", kind=\"HelmRelease\", type=\"Ready\"}",
-              "format": "table",
-              "instant": true,
-              "legendFormat": "",
-              "refId": "A"
-            },
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "gotk_reconcile_condition{cluster=~\"$cluster\", kind=\"HelmRelease\", type=\"Suspended\"}",
-              "format": "table",
-              "instant": true,
-              "legendFormat": "",
-              "refId": "B"
-            }
-          ],
-          "title": "HelmRelease Status",
-          "transformations": [
-            { "id": "seriesToColumns", "options": { "byField": "name" } },
-            { "id": "organize", "options": { "excludeByName": { "Time": true, "Time 1": true, "Time 2": true, "__name__": true, "__name__ 1": true, "__name__ 2": true, "job": true, "job 1": true, "job 2": true, "instance": true, "instance 1": true, "instance 2": true, "kind 1": true, "kind 2": true, "type 1": true, "type 2": true, "Value 1": true, "Value 2": true }, "renameByName": { "cluster": "Cluster", "namespace": "Namespace", "name": "Name", "status": "Ready", "status 1": "Ready", "status 2": "Suspended" } } }
-          ],
-          "type": "table"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "drawStyle": "line",
-                "lineInterpolation": "smooth",
-                "lineWidth": 2,
-                "fillOpacity": 10,
-                "gradientMode": "none",
-                "showPoints": "auto",
-                "pointSize": 5
-              },
-              "unit": "ops"
-            }
-          },
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
-          "id": 13,
-          "options": {
-            "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] },
-            "tooltip": { "mode": "multi" }
-          },
-          "targets": [
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum by (cluster, namespace, name) (rate(gotk_reconcile_duration_seconds_count{cluster=~\"$cluster\", kind=\"HelmRelease\"}[5m]))",
-              "legendFormat": "{{cluster}} | {{namespace}}/{{name}}",
-              "refId": "A"
-            }
-          ],
-          "title": "HelmRelease Reconcile Rate",
-          "type": "timeseries"
-        },
-        {
-          "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
-          "id": 14,
-          "title": "Sources",
-          "type": "row"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "custom": { "align": "auto", "displayMode": "auto", "inspect": false },
-              "mappings": [
-                { "options": { "false": { "color": "red", "index": 1, "text": "False" }, "true": { "color": "green", "index": 0, "text": "True" } }, "type": "value" }
-              ]
-            },
-            "overrides": [
-              { "matcher": { "id": "byName", "options": "Namespace" }, "properties": [{ "id": "custom.width", "value": 120 }] },
-              { "matcher": { "id": "byName", "options": "Name" }, "properties": [{ "id": "custom.width", "value": 200 }] },
-              { "matcher": { "id": "byName", "options": "Ready" }, "properties": [{ "id": "custom.width", "value": 80 }, { "id": "custom.displayMode", "value": "color-background" }] },
-              { "matcher": { "id": "byName", "options": "Revision" }, "properties": [{ "id": "custom.width", "value": 160 }] }
-            ]
-          },
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
-          "id": 15,
-          "options": { "showHeader": true, "sortBy": [{ "desc": false, "displayName": "Ready" }] },
-          "targets": [
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "gotk_source_condition{cluster=~\"$cluster\", kind=\"GitRepository\", type=\"Ready\"}",
-              "format": "table",
-              "instant": true,
-              "legendFormat": "",
-              "refId": "A"
-            },
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "gotk_source_artifact_revision{cluster=~\"$cluster\", kind=\"GitRepository\"}",
-              "format": "table",
-              "instant": true,
-              "legendFormat": "",
-              "refId": "B"
-            }
-          ],
-          "title": "GitRepository Status",
-          "transformations": [
-            { "id": "seriesToColumns", "options": { "byField": "name" } },
-            { "id": "organize", "options": { "excludeByName": { "Time": true, "Time 1": true, "Time 2": true, "__name__": true, "__name__ 1": true, "__name__ 2": true, "job": true, "job 1": true, "job 2": true, "instance": true, "instance 1": true, "instance 2": true, "kind 1": true, "kind 2": true, "type 1": true, "type 2": true }, "renameByName": { "cluster": "Cluster", "namespace": "Namespace", "name": "Name", "status": "Ready", "revision": "Revision" } } }
-          ],
-          "type": "table"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "custom": { "align": "auto", "displayMode": "auto", "inspect": false },
-              "mappings": [
-                { "options": { "false": { "color": "red", "index": 1, "text": "False" }, "true": { "color": "green", "index": 0, "text": "True" } }, "type": "value" }
-              ]
-            },
-            "overrides": [
-              { "matcher": { "id": "byName", "options": "Namespace" }, "properties": [{ "id": "custom.width", "value": 120 }] },
-              { "matcher": { "id": "byName", "options": "Name" }, "properties": [{ "id": "custom.width", "value": 200 }] },
-              { "matcher": { "id": "byName", "options": "Ready" }, "properties": [{ "id": "custom.width", "value": 80 }, { "id": "custom.displayMode", "value": "color-background" }] }
-            ]
-          },
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
-          "id": 16,
-          "options": { "showHeader": true, "sortBy": [{ "desc": false, "displayName": "Ready" }] },
-          "targets": [
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "gotk_source_condition{cluster=~\"$cluster\", kind=\"HelmRepository\", type=\"Ready\"}",
-              "format": "table",
-              "instant": true,
-              "legendFormat": "",
-              "refId": "A"
-            }
-          ],
-          "title": "HelmRepository Status",
-          "transformations": [
-            { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true, "kind": true, "type": true }, "renameByName": { "cluster": "Cluster", "namespace": "Namespace", "name": "Name", "status": "Ready" } } }
-          ],
-          "type": "table"
-        },
-        {
-          "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
-          "id": 17,
-          "title": "Performance",
-          "type": "row"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "drawStyle": "line",
-                "lineInterpolation": "smooth",
-                "lineWidth": 2,
-                "fillOpacity": 10,
-                "gradientMode": "none",
-                "showPoints": "auto",
-                "pointSize": 5
-              },
-              "unit": "s"
-            }
-          },
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
-          "id": 18,
-          "options": {
-            "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] },
-            "tooltip": { "mode": "multi" }
-          },
-          "targets": [
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "histogram_quantile(0.95, sum by (cluster, kind, le) (rate(gotk_reconcile_duration_seconds_bucket{cluster=~\"$cluster\"}[5m])))",
-              "legendFormat": "{{cluster}} | {{kind}}",
-              "refId": "A"
-            }
-          ],
-          "title": "Reconcile Duration P95 by Kind",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "drawStyle": "line",
-                "lineInterpolation": "smooth",
-                "lineWidth": 2,
-                "fillOpacity": 10,
-                "gradientMode": "none",
-                "showPoints": "auto",
-                "pointSize": 5
-              },
-              "unit": "ops"
-            }
-          },
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 },
-          "id": 19,
-          "options": {
-            "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] },
-            "tooltip": { "mode": "multi" }
-          },
-          "targets": [
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum by (cluster, result) (rate(gotk_reconcile_duration_seconds_count{cluster=~\"$cluster\"}[5m]))",
-              "legendFormat": "{{cluster}} | {{result}}",
-              "refId": "A"
-            }
-          ],
-          "title": "Reconcile Success vs Failure Rate",
-          "type": "timeseries"
-        },
-        {
-          "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 41 },
-          "id": 20,
-          "title": "Suspended Resources",
-          "type": "row"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "custom": { "align": "auto", "displayMode": "auto", "inspect": false },
-              "mappings": [
-                { "options": { "true": { "color": "yellow", "index": 0, "text": "Suspended" } }, "type": "value" }
-              ]
-            },
-            "overrides": [
-              { "matcher": { "id": "byName", "options": "Namespace" }, "properties": [{ "id": "custom.width", "value": 120 }] },
-              { "matcher": { "id": "byName", "options": "Name" }, "properties": [{ "id": "custom.width", "value": 200 }] },
-              { "matcher": { "id": "byName", "options": "Kind" }, "properties": [{ "id": "custom.width", "value": 120 }] },
-              { "matcher": { "id": "byName", "options": "Suspended" }, "properties": [{ "id": "custom.width", "value": 100 }, { "id": "custom.displayMode", "value": "color-background" }] }
-            ]
-          },
-          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 42 },
-          "id": 21,
-          "options": { "showHeader": true },
-          "targets": [
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "gotk_reconcile_condition{cluster=~\"$cluster\", type=\"Suspended\", status=\"true\"}",
-              "format": "table",
-              "instant": true,
-              "legendFormat": "",
-              "refId": "A"
-            }
-          ],
-          "title": "Suspended Resources",
-          "transformations": [
-            { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true, "type": true }, "renameByName": { "cluster": "Cluster", "namespace": "Namespace", "name": "Name", "kind": "Kind", "status": "Suspended" } } }
-          ],
-          "type": "table"
-        }
-      ],
-      "refresh": "30s",
-      "schemaVersion": 38,
-      "style": "dark",
-      "tags": ["infrastructure", "flux", "gitops"],
-      "templating": {
-        "list": [
-          {
-            "allValue": ".*",
-            "current": { "selected": true, "text": "All", "value": "$__all" },
-            "datasource": { "type": "prometheus", "uid": "Mimir" },
-            "definition": "label_values(gotk_reconcile_condition, cluster)",
-            "includeAll": true,
-            "label": "Cluster",
-            "multi": true,
-            "name": "cluster",
-            "options": [],
-            "query": {
-              "query": "label_values(gotk_reconcile_condition, cluster)",
-              "refId": "StandardVariableQuery"
-            },
-            "refresh": 1,
-            "regex": "",
-            "skipUrlSync": false,
-            "sort": 1,
-            "type": "query"
-          }
-        ]
-      },
-      "time": { "from": "now-1h", "to": "now" },
-      "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"] },
-      "timezone": "browser",
-      "title": "FluxCD GitOps Status",
-      "uid": "fluxcd-status"
+          "timezone": "browser",
+          "title": "FluxCD GitOps Status",
+          "uid": "fluxcd-status"
     }

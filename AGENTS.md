@@ -368,7 +368,7 @@ internal`) + Service (9180) + ServiceMonitor (60s). The image is
 - `dashboards/palworld-dashboard.yaml` -
 - `dashboards/palworld-dashboard.yaml`
 - `dashboards/palworld-dashboard.yaml` - `GrafanaDashboard` CR (uid `palworld-server`, folder `Gaming`) for the Palworld dedicated server. **Hand-built** (no longer the grafana.com 20421 import) against the metric set of [Banh-Canh/palworld-exporter-go](https://github.com/Banh-Canh/palworld-exporter-go), the `exporter` sidecar in the **atlas** repo (`clusters/production/palworld/deploy.yaml`) — that exporter's `ServiceMonitor` lives in atlas (labeled `release: kube-prometheus-stack`), gets scraped by the Sveltos-pushed Prometheus on the production cluster, and is `remote_write`n to central Mimir here. No app in argus produces these metrics; the dashboard is here only because Grafana is mgmt-only. 37 panels in 6 rows: **Server Health** (`palworld_up`/fps/frame_time/slot usage/uptime/version/Level.sav size), **Performance** (FPS + frame time trends, concurrency vs slots, per-player session lanes), **Container & Storage** (cAdvisor CPU/memory per container + `palworld-data` PVC gauge + 24h restart count — these come from kube-prometheus-stack, NOT the exporter), **Players** (join-by-name table of level/ping/buildings/pals/coords, level bar gauges, ping trend), **Pals & World** (owned/wild pal counts, guilds, unit-type donut, per-player party-vs-base pals, strongest characters), **Saves & Settings** (Level.sav growth + derivative, save-file ages/sizes, `palworld_setting` rates table). Single `$cluster` template variable (`label_values(palworld_up, cluster)`), every query filtered on it. The Pals & World row is empty unless `ENABLE_GAMEDATA_API: "true"` is set on the server (atlas `clusters/production/palworld/cm.yaml`), and the Saves panels need an exporter build newer than `v0.0.1`, whose save collector could not find a nested `Level.sav`. Every PromQL expression was validated against the production Prometheus before being committed.
-- `dashboards/fluxcd-dashboard.yaml` - `GrafanaDashboard` CR for Flux CD GitOps status. 21 panels in 6 rows: **Overview** (Ready count, Suspended count, Failed reconciliations/s, Total reconciliations/s, Error rate, Clusters), **Kustomizations** (status table with Ready/Suspended columns, reconcile rate timeseries), **HelmReleases** (status table, reconcile rate), **Sources** (GitRepository status + revision, HelmRepository status), **Performance** (reconcile duration P95 by kind, success vs failure rate), **Suspended** (all suspended resources table). Single `$cluster` template variable. Every panel verified against live Mimir.
+- `dashboards/fluxcd-dashboard.yaml` - `GrafanaDashboard` CR for Flux CD GitOps status. **Uses kube-state-metrics customResourceState** (`gotk_resource_info`) for Ready/Suspended status tables, plus native controller metrics (`gotk_reconcile_duration_seconds_*`) for timing. Requires KSM `customResourceState.enabled: true` in the kube-prometheus-stack HelmRelease (see "kube-state-metrics customResourceState" in Section 8). 17 panels in 4 rows: **Overview** (Reconcilers count, Failing Reconcilers, Sources count, Failing Sources, Suspended, Clusters), **Reconcile Performance** (reconciler/source avg duration bar gauges), **Status** (Reconciler Readiness table with Ready/Not Ready color coding via `gotk_resource_info{customresource_kind=~"Kustomization|HelmRelease"}`, Source Readiness table, Suspended Objects table), **Timing** (reconcile duration per-resource timeseries for reconcilers and sources). Single `$cluster` template variable.
 - `httproute.yaml` - HTTPRoute `grafana.mgmt.rpcu.lan` pointing to `grafana-service:3000` on mgmt internal Gateway.
 - `kustomization.yaml` - Kustomization manifest
 
@@ -424,13 +424,14 @@ nothing per-cluster to deploy.
   All rules are single-cluster `cluster="openstack"` — these metrics only exist
   where the openstack-exporter is deployed.
 - `rules-flux.yaml` - `GrafanaAlertRuleGroup` `flux-reconciliations`
-  (interval 1m): `FluxReconciliationFailures` (critical, 5m, any kind
-  result="fail" rate > 0), `FluxSourceUnreadable` (critical, 10m, Git/Helm
-  Repository Ready lt 1), `FluxKustomizationStuck` (warning, 15m,
-  Kustomization Ready lt 1), `FluxHelmReleaseFailed` (critical, 10m,
-  HelmRelease Ready lt 1), `FluxResourceSuspended` (info, 1h, Kustomization/
-  HelmRelease Suspended gt 0). All rules linked to the `fluxcd-status`
-  dashboard. Covers every cluster that remote_writes into Mimir.
+  (interval 1m): `FluxReconciliationErrors` (critical, 5m, any kind
+  result="error" rate > 0), `FluxReconciliationTimeouts` (warning, 10m,
+  timeout rate > 0), `FluxControllerHighErrorRate` (critical, 10m,
+  error rate > 50% of total), `FluxResourceStale` (warning, 1h, zero
+  reconciliations in 1h), `FluxResourceNotReady` (critical, 10m,
+  `gotk_resource_info{ready="False"}` — direct KSM signal). All rules
+  linked to the `fluxcd-status` dashboard. Covers every cluster that
+  remote_writes into Mimir.
 - `kustomization.yaml` - Kustomization manifest (namespace monitoring).
 
 Non-obvious things that were verified live and must not be "simplified":
@@ -3056,6 +3057,41 @@ There is also **no `openstack_*` semantic data** (nova hypervisors, VM counts,
 quotas) anywhere — that needs prometheus-openstack-exporter, which is not
 deployed. Do not write dashboard panels against those names.
 
+#### kube-state-metrics customResourceState for Flux CRDs
+
+The official Flux monitoring approach (since Flux v2.1.0 / August 2023) uses
+kube-state-metrics with `customResourceState` to generate `gotk_resource_info`
+metrics for all Flux CRDs. This provides `ready`/`suspended`/`revision` labels
+that enable direct status queries like `gotk_resource_info{ready="False"}` —
+the same information the `kubectl get kustomizations` READY column shows.
+
+The kube-prometheus-stack HelmRelease
+(`infrastructure/monitoring/helmrelease.yaml`) enables this under
+`kubeStateMetrics.customResourceState` with RBAC rules granting KSM
+`list`/`watch` on all Flux CRD groups (`kustomize.toolkit.fluxcd.io`,
+`helm.toolkit.fluxcd.io`, `source.toolkit.fluxcd.io`,
+`notification.toolkit.fluxcd.io`, `image.toolkit.fluxcd.io`). The config
+defines resource mappings for Kustomization, HelmRelease, GitRepository,
+HelmRepository, HelmChart, OCIRepository, and Bucket — each emitting a
+`gotk_resource_info` Info metric with labels including `name`,
+`exported_namespace`, `ready`, `suspended`, `revision`, and kind-specific
+fields (`source_name`, `chart_name`, `url`, etc.).
+
+**Cardinality note**: KSM custom resource state emits one series per Flux CR
+per label combination. With ~200 Flux CRs across mgmt + openstack clusters,
+this adds ~200-400 series — negligible against the existing ~150k head.
+
+**Dashboard and alerts**: `infrastructure/grafana/dashboards/fluxcd-dashboard.yaml`
+uses `gotk_resource_info` for the Status row tables (Reconciler Readiness,
+Source Readiness, Suspended Objects) with Ready/Not Ready color coding.
+`infrastructure/grafana/alerting/rules-flux.yaml` adds
+`FluxResourceNotReady` (critical, `gotk_resource_info{ready="False"}`) as a
+direct KSM-based signal, alongside the existing controller-metric-based rules
+(errors, timeouts, stale resources).
+
+Reference: [Flux custom Prometheus metrics](https://fluxcd.io/flux/monitoring/custom-metrics/),
+[flux2-monitoring-example](https://github.com/fluxcd/flux2-monitoring-example).
+
 #### kube-apiserver CPU is TLS-handshake bound, not request-volume bound
 
 **2026-07-29.** The openstack cluster's three kube-apiservers each burn ~2 cores
@@ -3392,7 +3428,7 @@ All configuration is declarative, version-controlled, and enables auditable infr
 
 ---
 
-**Last Updated**: July 2026 (Added FluxCD monitoring: headless `Service` + `ServiceMonitor` in `infrastructure/fluxcd/operator/monitoring.yaml` scraping all Flux controller pods (port 8080, label `app.kubernetes.io/part-of: flux`), `GrafanaDashboard` CR `fluxcd-status` (21 panels: Overview/Kustomizations/HelmReleases/Sources/Performance/Suspended rows), and `GrafanaAlertRuleGroup` `flux-reconciliations` (5 rules: FluxReconciliationFailures critical 5m, FluxSourceUnreadable critical 10m, FluxKustomizationStuck warning 15m, FluxHelmReleaseFailed critical 10m, FluxResourceSuspended info 1h). Zero Flux metrics existed before — controllers expose `:8080/metrics` by default but nothing scraped them. — Prior: BestEffort starvation fix fleet-wide: added `resources` on all 9 database sub-sections across 7 yaook Deployment CRs (keystone, glance, neutron, nova×4, cinder, octavia, designate main — designate powerdns.database was already fixed 2026-07-26). Every yaook database pod shipped with `resources: {}` → QoS BestEffort → cpu.weight=1 → readiness probe fails under CPU contention → kubelet restarts → intermittent OpenStack control-plane connectivity. Same failure mode as OVN (2026-07-26) and PowerDNS (same date). Resource values: mariadb-galera 200m/512Mi req / 2Gi limit; haproxy 50m/192Mi / 512Mi; service-reload + create-ca-bundle 10m/32Mi / 64Mi. No CPU limits (throttling re-creates the death spiral). Added Section 8 note "All yaook database pods must not be BestEffort". — Prior: Added `infrastructure/openstack-exporter/` — plain manifests deploying `ghcr.io/openstack-exporter/openstack-exporter:1.6.0` (distroless, no shell) on the openstack cluster: ESO `SecretStore` reads `keystone-admin` from ns `yaook` via cross-namespace SA RBAC, renders `clouds.yaml` with `auth_url: https://keystone.yaook.svc:5000/v3` (internal,
+**Last Updated**: July 2026 (Added kube-state-metrics customResourceState for Flux CRDs: enabled `customResourceState.enabled: true` in `infrastructure/monitoring/helmrelease.yaml` under `kubeStateMetrics`, adding RBAC rules for KSM to watch all Flux CRDs (kustomizations, helmreleases, gitrepositories, helmrepositories, helmcharts, ocirepositories, buckets, alerts, providers, receivers, imagerepositories, imagepolicies, imageupdateautomations) and the custom resource state config generating `gotk_resource_info` metrics with `ready`/`suspended`/`revision` labels. Rewrote `infrastructure/grafana/dashboards/fluxcd-dashboard.yaml` from the controller-metrics-only version to use `gotk_resource_info` for status tables (Reconciler Readiness, Source Readiness, Suspended Objects) with Ready/Not Ready color coding, plus the native `gotk_reconcile_duration_seconds_*` for timing. Added `FluxResourceNotReady` alert rule (critical, 10m, `gotk_resource_info{ready="False"}` — direct KSM signal). 17 panels / 4 rows (Overview, Reconcile Performance, Status, Timing) / 5 alert rules. — Prior: Added FluxCD monitoring: headless `Service` + `ServiceMonitor` in `infrastructure/fluxcd/operator/monitoring.yaml` scraping all Flux controller pods (port 8080, label `app.kubernetes.io/part-of: flux`). Zero Flux metrics existed before — controllers expose `:8080/metrics` by default but nothing scraped them. — Prior: BestEffort starvation fix fleet-wide: added `resources` on all 9 database sub-sections across 7 yaook Deployment CRs (keystone, glance, neutron, nova×4, cinder, octavia, designate main — designate powerdns.database was already fixed 2026-07-26). Every yaook database pod shipped with `resources: {}` → QoS BestEffort → cpu.weight=1 → readiness probe fails under CPU contention → kubelet restarts → intermittent OpenStack control-plane connectivity. Same failure mode as OVN (2026-07-26) and PowerDNS (same date). Resource values: mariadb-galera 200m/512Mi req / 2Gi limit; haproxy 50m/192Mi / 512Mi; service-reload + create-ca-bundle 10m/32Mi / 64Mi. No CPU limits (throttling re-creates the death spiral). Added Section 8 note "All yaook database pods must not be BestEffort". — Prior: Added `infrastructure/openstack-exporter/` — plain manifests deploying `ghcr.io/openstack-exporter/openstack-exporter:1.6.0` (distroless, no shell) on the openstack cluster: ESO `SecretStore` reads `keystone-admin` from ns `yaook` via cross-namespace SA RBAC, renders `clouds.yaml` with `auth_url: https://keystone.yaook.svc:5000/v3` (internal,
 `verify: false`), Deployment with `--endpoint-type internal` and a
 ServiceMonitor (interval 60s, no yaook component label → scraped by
 kube-prometheus-stack's allow-by-default `NotIn` selector). The image is

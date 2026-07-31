@@ -164,6 +164,7 @@ spec:
               "unit": "percent",
               "min": 0,
               "max": 100,
+              "decimals": 1,
               "color": { "mode": "thresholds" },
               "thresholds": {
                 "mode": "absolute",
@@ -172,6 +173,15 @@ spec:
                   { "color": "yellow", "value": 70 },
                   { "color": "red", "value": 90 }
                 ]
+              },
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "mode": "gradient",
+                  "type": "gauge"
+                },
+                "filterable": false,
+                "inspect": false
               }
             },
             "overrides": []
@@ -179,21 +189,37 @@ spec:
           "gridPos": { "h": 4, "w": 8, "x": 0, "y": 4 },
           "id": 5,
           "options": {
-            "orientation": "auto",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "showThresholdLabels": false,
-            "showThresholdMarkers": true
+            "cellHeight": "sm",
+            "showHeader": true,
+            "sortBy": [{ "desc": true, "displayName": "Utilization" }]
           },
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
               "expr": "100 * avg by (cluster, node) (rate(node_disk_io_time_seconds_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*\"}[5m]))",
+              "format": "table",
               "instant": true,
+              "legendFormat": "",
               "refId": "A"
             }
           ],
-          "title": "Disk I/O Utilization (avg)",
-          "type": "gauge"
+          "title": "Disk I/O Utilization (avg) by Node",
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true
+                },
+                "renameByName": {
+                  "cluster": "Cluster",
+                  "node": "Node",
+                  "Value": "Utilization"
+                }
+              }
+            }
+          ],
+          "type": "table"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },

@@ -55,7 +55,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum(rate(node_disk_read_bytes_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m]))",
+              "expr": "sum(rate(node_disk_read_bytes_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m]))",
               "instant": true,
               "refId": "A"
             }
@@ -85,7 +85,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum(rate(node_disk_written_bytes_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m]))",
+              "expr": "sum(rate(node_disk_written_bytes_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m]))",
               "instant": true,
               "refId": "A"
             }
@@ -115,7 +115,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum(rate(node_disk_reads_completed_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m]))",
+              "expr": "sum(rate(node_disk_reads_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m]))",
               "instant": true,
               "refId": "A"
             }
@@ -145,7 +145,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum(rate(node_disk_writes_completed_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m]))",
+              "expr": "sum(rate(node_disk_writes_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m]))",
               "instant": true,
               "refId": "A"
             }
@@ -183,7 +183,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "100 * sum(rate(node_disk_io_time_seconds_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m])) / count without (device) (rate(node_disk_io_time_seconds_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m]))",
+              "expr": "100 * sum(rate(node_disk_io_time_seconds_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m])) / count without (device) (rate(node_disk_io_time_seconds_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m]))",
               "instant": true,
               "refId": "A"
             }
@@ -220,7 +220,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum(rate(node_disk_read_time_seconds_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m])) / sum(rate(node_disk_reads_completed_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m])) > 0",
+              "expr": "sum(rate(node_disk_read_time_seconds_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m])) / sum(rate(node_disk_reads_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m])) > 0",
               "instant": true,
               "refId": "A"
             }
@@ -257,7 +257,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum(rate(node_disk_write_time_seconds_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m])) / sum(rate(node_disk_writes_completed_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m])) > 0",
+              "expr": "sum(rate(node_disk_write_time_seconds_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m])) / sum(rate(node_disk_writes_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m])) > 0",
               "instant": true,
               "refId": "A"
             }
@@ -283,8 +283,8 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "rate(node_disk_read_bytes_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m])",
-              "legendFormat": "{{cluster}} / {{instance}} {{device}}",
+              "expr": "rate(node_disk_read_bytes_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m])",
+              "legendFormat": "{{cluster}} / {{node}} {{device}}",
               "refId": "A"
             }
           ],
@@ -309,8 +309,8 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "rate(node_disk_written_bytes_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m])",
-              "legendFormat": "{{cluster}} / {{instance}} {{device}}",
+              "expr": "rate(node_disk_written_bytes_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m])",
+              "legendFormat": "{{cluster}} / {{node}} {{device}}",
               "refId": "A"
             }
           ],
@@ -335,8 +335,8 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "rate(node_disk_reads_completed_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m])",
-              "legendFormat": "{{cluster}} / {{instance}} {{device}}",
+              "expr": "rate(node_disk_reads_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m])",
+              "legendFormat": "{{cluster}} / {{node}} {{device}}",
               "refId": "A"
             }
           ],
@@ -361,8 +361,8 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "rate(node_disk_writes_completed_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m])",
-              "legendFormat": "{{cluster}} / {{instance}} {{device}}",
+              "expr": "rate(node_disk_writes_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m])",
+              "legendFormat": "{{cluster}} / {{node}} {{device}}",
               "refId": "A"
             }
           ],
@@ -388,8 +388,8 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "rate(node_disk_read_time_seconds_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m]) / rate(node_disk_reads_completed_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m]) > 0",
-              "legendFormat": "{{cluster}} / {{instance}} {{device}}",
+              "expr": "rate(node_disk_read_time_seconds_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m]) / rate(node_disk_reads_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m]) > 0",
+              "legendFormat": "{{cluster}} / {{node}} {{device}}",
               "refId": "A"
             }
           ],
@@ -415,8 +415,8 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "rate(node_disk_write_time_seconds_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m]) / rate(node_disk_writes_completed_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m]) > 0",
-              "legendFormat": "{{cluster}} / {{instance}} {{device}}",
+              "expr": "rate(node_disk_write_time_seconds_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m]) / rate(node_disk_writes_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m]) > 0",
+              "legendFormat": "{{cluster}} / {{node}} {{device}}",
               "refId": "A"
             }
           ],
@@ -444,8 +444,8 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "rate(node_disk_io_time_seconds_total{cluster=~\"$cluster\", instance=~\"$node\", device!~\"loop.*|dm-0\"}[5m])",
-              "legendFormat": "{{cluster}} / {{instance}} {{device}}",
+              "expr": "rate(node_disk_io_time_seconds_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*|dm-0\"}[5m])",
+              "legendFormat": "{{cluster}} / {{node}} {{device}}",
               "refId": "A"
             }
           ],
@@ -471,7 +471,7 @@ spec:
             "label": "Node",
             "type": "query",
             "datasource": { "type": "prometheus", "uid": "Mimir" },
-            "query": "label_values(node_disk_read_bytes_total{cluster=~\"$cluster\"}, instance)",
+            "query": "label_values(node_disk_read_bytes_total{cluster=~\"$cluster\"}, node)",
             "refresh": 2,
             "includeAll": true,
             "multi": true,

@@ -55,7 +55,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum(node_filesystem_size_bytes{cluster=~\"$cluster\", instance=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"})",
+              "expr": "sum(node_filesystem_size_bytes{cluster=~\"$cluster\", node=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"})",
               "instant": true,
               "refId": "A"
             }
@@ -86,7 +86,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum(node_filesystem_size_bytes{cluster=~\"$cluster\", instance=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"}) - sum(node_filesystem_avail_bytes{cluster=~\"$cluster\", instance=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"})",
+              "expr": "sum(node_filesystem_size_bytes{cluster=~\"$cluster\", node=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"}) - sum(node_filesystem_avail_bytes{cluster=~\"$cluster\", node=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"})",
               "instant": true,
               "refId": "A"
             }
@@ -117,7 +117,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum(node_filesystem_avail_bytes{cluster=~\"$cluster\", instance=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"})",
+              "expr": "sum(node_filesystem_avail_bytes{cluster=~\"$cluster\", node=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"})",
               "instant": true,
               "refId": "A"
             }
@@ -148,7 +148,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "(1 - sum(node_filesystem_avail_bytes{cluster=~\"$cluster\", instance=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"}) / sum(node_filesystem_size_bytes{cluster=~\"$cluster\", instance=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"})) * 100",
+              "expr": "(1 - sum(node_filesystem_avail_bytes{cluster=~\"$cluster\", node=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"}) / sum(node_filesystem_size_bytes{cluster=~\"$cluster\", node=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"})) * 100",
               "instant": true,
               "refId": "A"
             }
@@ -180,8 +180,8 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "(1 - node_filesystem_avail_bytes{cluster=~\"$cluster\", instance=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"} / node_filesystem_size_bytes{cluster=~\"$cluster\", instance=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"}) * 100",
-              "legendFormat": "{{cluster}} / {{instance}} {{mountpoint}}",
+              "expr": "(1 - node_filesystem_avail_bytes{cluster=~\"$cluster\", node=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"} / node_filesystem_size_bytes{cluster=~\"$cluster\", node=~\"$node\", fstype!~\"tmpfs|overlay|squashfs|ramfs|iso9660|autofs|devtmpfs\", mountpoint!~\"/(run|var/lib/kubelet|boot/efi).*\"}) * 100",
+              "legendFormat": "{{cluster}} / {{node}} {{mountpoint}}",
               "refId": "A"
             }
           ],
@@ -207,7 +207,7 @@ spec:
             "label": "Node",
             "type": "query",
             "datasource": { "type": "prometheus", "uid": "Mimir" },
-            "query": "label_values(node_filesystem_size_bytes{cluster=~\"$cluster\"}, instance)",
+            "query": "label_values(node_filesystem_size_bytes{cluster=~\"$cluster\"}, node)",
             "refresh": 2,
             "includeAll": true,
             "multi": true,

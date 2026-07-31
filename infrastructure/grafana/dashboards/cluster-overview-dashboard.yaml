@@ -205,8 +205,8 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "(100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\", cluster=~\"$cluster\"}[5m])) by (cluster, instance) * 100))",
-              "legendFormat": "{{cluster}} - {{instance}}",
+              "expr": "(100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\", cluster=~\"$cluster\"}[5m])) by (cluster, node) * 100))",
+              "legendFormat": "{{cluster}} - {{node}}",
               "refId": "A"
             }
           ],
@@ -235,7 +235,7 @@ spec:
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
               "expr": "(1 - (node_memory_MemAvailable_bytes{cluster=~\"$cluster\"} / node_memory_MemTotal_bytes{cluster=~\"$cluster\"})) * 100",
-              "legendFormat": "{{cluster}} - {{instance}}",
+              "legendFormat": "{{cluster}} - {{node}}",
               "refId": "A"
             }
           ],

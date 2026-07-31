@@ -1,0 +1,263 @@
+# Disk I/O alert rules: utilization saturation and latency.
+#
+# Grafana-MANAGED alerts (evaluated by Grafana against Mimir), same delivery
+# rationale as rules-node.yaml. Backed by node-exporter's node_disk_* family,
+# all verified present in Mimir and NOT dropped by the monitoring base's
+# cardinality relabeling:
+#   node_disk_io_time_seconds_total       — wall-clock time the device had
+#     I/O requests in flight (fraction = utilization).
+#   node_disk_read_time_seconds_total     — cumulative seconds spent on reads.
+#   node_disk_read_bytes_total            — cumulative bytes read.
+#   node_disk_reads_completed_total       — cumulative read operations.
+#   node_disk_write_time_seconds_total    — cumulative seconds spent on writes.
+#   node_disk_written_bytes_total         — cumulative bytes written.
+#   node_disk_writes_completed_total      — cumulative write operations.
+#
+# Loop devices and device-mapper (dm-0) are excluded to match the dashboard
+# (they carry no real signal on these NixOS hosts). Per-device alerts are used
+# rather than node-level aggregates so the notification names the exact device
+# that is saturated or slow.
+#
+# Thresholds mirror the dashboard gauges: utilization red > 90%, latency red >
+# 50 ms. The dashboard also has yellow (70% / 10 ms) but those are advisory —
+# paging starts at red.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaAlertRuleGroup
+metadata:
+  name: disk-io
+  namespace: monitoring
+spec:
+  allowCrossNamespaceImport: true
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana-central"
+  folderRef: alerts
+  interval: 1m
+  rules:
+    # ---------------------------------------------------------------------
+    # Disk I/O utilization > 90%. Utilization is io_time / elapsed, measured
+    # per device. Fires when any single device sustains > 90% for 10m — i.e.
+    # the device is almost always busy. On the hyperconverged nodes the NVMe
+    # drives back both Ceph OSDs and Nova local qcow2; sustained saturation
+    # there means recovery or VM I/O is competing for the same queue.
+    # ---------------------------------------------------------------------
+    - uid: argus-diskio-util-high
+      title: DiskHighUtilization
+      condition: C
+      for: "10m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: warning
+        component: disk-io
+      annotations:
+        __dashboardUid__: node-disk-io-overview
+        __panelId__: "5"
+        summary: "Disk I/O utilization high on {{ $labels.instance }}:{{ $labels.device }} ({{ $labels.cluster }})"
+        description: 'Device {{ $labels.device }} on {{ $labels.instance }} (cluster {{ $labels.cluster }}) has been >90% utilized for 10m (currently {{ printf "%.1f" $values.B.Value }}%). Check the Disk I/O dashboard for which workload is driving the load.'
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: max by (cluster, instance, device) (100 * rate(node_disk_io_time_seconds_total{device!~"loop.*|dm-0"}[5m]))
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: gt
+                  params:
+                    - 90
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    # ---------------------------------------------------------------------
+    # Read latency > 50 ms. Average time per read operation (read_time /
+    # reads_completed). High read latency on the baremetal nodes means the
+    # NVMe drive's queue is deep — often a sign that Ceph OSD recovery or
+    # Nova qcow2 image cloning is saturating the read path.
+    # ---------------------------------------------------------------------
+    - uid: argus-diskio-read-latency
+      title: DiskHighReadLatency
+      condition: C
+      for: "10m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: warning
+        component: disk-io
+      annotations:
+        __dashboardUid__: node-disk-io-overview
+        __panelId__: "6"
+        summary: "Disk read latency high on {{ $labels.instance }}:{{ $labels.device }} ({{ $labels.cluster }})"
+        description: 'Device {{ $labels.device }} on {{ $labels.instance }} (cluster {{ $labels.cluster }}) has had average read latency >50ms for 10m (currently {{ printf "%.1f" $values.B.Value }}ms). Check the Disk I/O dashboard — sustained high latency degrades Ceph OSD heartbeats and VM disk I/O.'
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: max by (cluster, instance, device) (1000 * rate(node_disk_read_time_seconds_total{device!~"loop.*|dm-0"}[5m]) / rate(node_disk_reads_completed_total{device!~"loop.*|dm-0"}[5m]) > 0)
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: gt
+                  params:
+                    - 50
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    # ---------------------------------------------------------------------
+    # Write latency > 50 ms. Same as read but for the write path. On this
+    # cluster write latency spikes usually coincide with Ceph recovery or
+    # Nova creating a COW clone for a new VM's root disk.
+    # ---------------------------------------------------------------------
+    - uid: argus-diskio-write-latency
+      title: DiskHighWriteLatency
+      condition: C
+      for: "10m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: warning
+        component: disk-io
+      annotations:
+        __dashboardUid__: node-disk-io-overview
+        __panelId__: "7"
+        summary: "Disk write latency high on {{ $labels.instance }}:{{ $labels.device }} ({{ $labels.cluster }})"
+        description: 'Device {{ $labels.device }} on {{ $labels.instance }} (cluster {{ $labels.cluster }}) has had average write latency >50ms for 10m (currently {{ printf "%.1f" $values.B.Value }}ms). Check the Disk I/O dashboard — sustained high write latency stalls Nova disk operations and Ceph recovery.'
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: max by (cluster, instance, device) (1000 * rate(node_disk_write_time_seconds_total{device!~"loop.*|dm-0"}[5m]) / rate(node_disk_writes_completed_total{device!~"loop.*|dm-0"}[5m]) > 0)
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: gt
+                  params:
+                    - 50
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C

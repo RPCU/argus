@@ -36,8 +36,12 @@ spec:
     {{define "discord.message" -}}
     {{- if gt (len .Alerts) 1 -}}
     **{{ len .Alerts }} alerts in this group**
+
     {{ end -}}
-    {{- range .Alerts -}}
+    {{- range $i, $alert := .Alerts -}}
+    {{- if $i }}
+    {{ "" }}
+    {{ end -}}
     {{- if eq .Status "firing" -}}
     > 🔴 **{{ .Annotations.summary }}**
     > {{ .Annotations.description }}
@@ -45,10 +49,10 @@ spec:
     > ✅ **{{ .Annotations.summary }}**
     > {{ .Annotations.description }}
     {{- end -}}
-    {{ end -}}
+    {{- end -}}
     {{- $first := index .Alerts 0 -}}
     {{- if $first.DashboardURL }}
-    {{ "" }}
+
     [📊 **View in Grafana**]({{ $first.DashboardURL }})
     {{- end -}}
     {{- if $first.PanelURL }}

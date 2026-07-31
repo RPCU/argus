@@ -330,6 +330,12 @@ spec:
           memory: 32Mi
         limits:
           memory: 128Mi
+
+    # kube-state-metrics subchart values — note the hyphenated key, not camelCase.
+    # kube-prometheus-stack uses two separate keys: `kubeStateMetrics` (on/off
+    # toggle for the parent chart) and `kube-state-metrics` (actual subchart
+    # values). The customResourceState config MUST go under the hyphenated key.
+    kube-state-metrics:
       # kube-state-metrics custom resource state for Flux CRDs.
       # Generates gotk_resource_info metrics with ready/suspended/status labels
       # for Kustomizations, HelmReleases, GitRepositories, HelmRepositories,

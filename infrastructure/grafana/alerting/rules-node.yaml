@@ -55,8 +55,8 @@ spec:
         severity: warning
         component: node
       annotations:
-        summary: "High CPU on {{ $labels.instance }} ({{ $labels.cluster }})"
-        description: 'CPU usage is {{ printf "%.1f" $values.B.Value }}% on {{ $labels.instance }} in cluster {{ $labels.cluster }}, sustained above 85% for 10m.'
+        summary: "High CPU on {{ $labels.node }} ({{ $labels.cluster }})"
+        description: 'CPU usage is {{ printf "%.1f" $values.B.Value }}% on {{ $labels.node }} in cluster {{ $labels.cluster }}, sustained above 85% for 10m.'
         # -> "CPU Usage (%) per Node" on the cluster overview dashboard.
         __dashboardUid__: cluster-cpu-ram-overview
         __panelId__: "7"
@@ -71,7 +71,7 @@ spec:
               type: prometheus
               uid: Mimir
             editorMode: code
-            expr: 100 - (avg by (cluster, instance) (rate(node_cpu_seconds_total{job="node-exporter",mode="idle"}[5m])) * 100)
+            expr: 100 - (avg by (cluster, node) (rate(node_cpu_seconds_total{job="node-exporter",mode="idle"}[5m])) * 100)
             instant: true
             range: false
             intervalMs: 1000
@@ -126,8 +126,8 @@ spec:
         severity: warning
         component: node
       annotations:
-        summary: "High memory on {{ $labels.instance }} ({{ $labels.cluster }})"
-        description: 'Memory usage is {{ printf "%.1f" $values.B.Value }}% on {{ $labels.instance }} in cluster {{ $labels.cluster }}, sustained above 90% for 10m. Uses MemAvailable, so page cache is not counted as used.'
+        summary: "High memory on {{ $labels.node }} ({{ $labels.cluster }})"
+        description: 'Memory usage is {{ printf "%.1f" $values.B.Value }}% on {{ $labels.node }} in cluster {{ $labels.cluster }}, sustained above 90% for 10m. Uses MemAvailable, so page cache is not counted as used.'
         # -> "RAM Usage (%) per Node" on the cluster overview dashboard.
         __dashboardUid__: cluster-cpu-ram-overview
         __panelId__: "8"
@@ -201,8 +201,8 @@ spec:
         severity: warning
         component: node
       annotations:
-        summary: "Low disk space on {{ $labels.instance }}:{{ $labels.mountpoint }} ({{ $labels.cluster }})"
-        description: 'Filesystem {{ $labels.mountpoint }} on {{ $labels.instance }} in cluster {{ $labels.cluster }} is {{ printf "%.1f" $values.B.Value }}% full, above the 85% threshold for 15m.'
+        summary: "Low disk space on {{ $labels.node }}:{{ $labels.mountpoint }} ({{ $labels.cluster }})"
+        description: 'Filesystem {{ $labels.mountpoint }} on {{ $labels.node }} in cluster {{ $labels.cluster }} is {{ printf "%.1f" $values.B.Value }}% full, above the 85% threshold for 15m.'
         # -> "Filesystem Used % per Mountpoint" on the node filesystem dashboard.
         __dashboardUid__: node-filesystem-overview
         __panelId__: "5"

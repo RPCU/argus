@@ -54,8 +54,8 @@ spec:
       annotations:
         __dashboardUid__: node-disk-io-overview
         __panelId__: "5"
-        summary: "Disk I/O utilization high on {{ $labels.instance }}:{{ $labels.device }} ({{ $labels.cluster }})"
-        description: 'Device {{ $labels.device }} on {{ $labels.instance }} (cluster {{ $labels.cluster }}) has been >90% utilized for 10m (currently {{ printf "%.1f" $values.B.Value }}%). Check the Disk I/O dashboard for which workload is driving the load.'
+        summary: "Disk I/O utilization high on {{ $labels.node }}:{{ $labels.device }} ({{ $labels.cluster }})"
+        description: 'Device {{ $labels.device }} on {{ $labels.node }} (cluster {{ $labels.cluster }}) has been >90% utilized for 10m (currently {{ printf "%.1f" $values.B.Value }}%). Check the Disk I/O dashboard for which workload is driving the load.'
       data:
         - refId: A
           relativeTimeRange:
@@ -67,7 +67,7 @@ spec:
               type: prometheus
               uid: Mimir
             editorMode: code
-            expr: max by (cluster, instance, device) (100 * rate(node_disk_io_time_seconds_total{device!~"loop.*"}[5m]))
+            expr: max by (cluster, node, device) (100 * rate(node_disk_io_time_seconds_total{device!~"loop.*"}[5m]))
             instant: true
             range: false
             intervalMs: 1000
@@ -130,8 +130,8 @@ spec:
       annotations:
         __dashboardUid__: node-disk-io-overview
         __panelId__: "6"
-        summary: "Disk read latency high on {{ $labels.instance }}:{{ $labels.device }} ({{ $labels.cluster }})"
-        description: 'Device {{ $labels.device }} on {{ $labels.instance }} (cluster {{ $labels.cluster }}) has had average read latency >50ms for 10m (currently {{ printf "%.1f" $values.B.Value }}ms). Check the Disk I/O dashboard — sustained high latency degrades Ceph OSD heartbeats and VM disk I/O.'
+        summary: "Disk read latency high on {{ $labels.node }}:{{ $labels.device }} ({{ $labels.cluster }})"
+        description: 'Device {{ $labels.device }} on {{ $labels.node }} (cluster {{ $labels.cluster }}) has had average read latency >50ms for 10m (currently {{ printf "%.1f" $values.B.Value }}ms). Check the Disk I/O dashboard — sustained high latency degrades Ceph OSD heartbeats and VM disk I/O.'
       data:
         - refId: A
           relativeTimeRange:
@@ -143,7 +143,7 @@ spec:
               type: prometheus
               uid: Mimir
             editorMode: code
-            expr: max by (cluster, instance, device) (1000 * rate(node_disk_read_time_seconds_total{device!~"loop.*"}[5m]) / rate(node_disk_reads_completed_total{device!~"loop.*"}[5m]) > 0)
+            expr: max by (cluster, node, device) (1000 * rate(node_disk_read_time_seconds_total{device!~"loop.*"}[5m]) / rate(node_disk_reads_completed_total{device!~"loop.*"}[5m]) > 0)
             instant: true
             range: false
             intervalMs: 1000
@@ -205,8 +205,8 @@ spec:
       annotations:
         __dashboardUid__: node-disk-io-overview
         __panelId__: "7"
-        summary: "Disk write latency high on {{ $labels.instance }}:{{ $labels.device }} ({{ $labels.cluster }})"
-        description: 'Device {{ $labels.device }} on {{ $labels.instance }} (cluster {{ $labels.cluster }}) has had average write latency >50ms for 10m (currently {{ printf "%.1f" $values.B.Value }}ms). Check the Disk I/O dashboard — sustained high write latency stalls Nova disk operations and Ceph recovery.'
+        summary: "Disk write latency high on {{ $labels.node }}:{{ $labels.device }} ({{ $labels.cluster }})"
+        description: 'Device {{ $labels.device }} on {{ $labels.node }} (cluster {{ $labels.cluster }}) has had average write latency >50ms for 10m (currently {{ printf "%.1f" $values.B.Value }}ms). Check the Disk I/O dashboard — sustained high write latency stalls Nova disk operations and Ceph recovery.'
       data:
         - refId: A
           relativeTimeRange:
@@ -218,7 +218,7 @@ spec:
               type: prometheus
               uid: Mimir
             editorMode: code
-            expr: max by (cluster, instance, device) (1000 * rate(node_disk_write_time_seconds_total{device!~"loop.*"}[5m]) / rate(node_disk_writes_completed_total{device!~"loop.*"}[5m]) > 0)
+            expr: max by (cluster, node, device) (1000 * rate(node_disk_write_time_seconds_total{device!~"loop.*"}[5m]) / rate(node_disk_writes_completed_total{device!~"loop.*"}[5m]) > 0)
             instant: true
             range: false
             intervalMs: 1000

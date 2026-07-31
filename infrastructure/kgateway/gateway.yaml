@@ -43,6 +43,8 @@ metadata:
   namespace: kgateway-system
 spec:
   kube:
+    deployment:
+      replicas: 3
     envoyContainer:
       resources:
         limits:

@@ -600,7 +600,7 @@ spec:
                             "showHeader": true,
                             "sortBy": [
                                   {
-                                        "desc": true,
+                                        "desc": false,
                                         "displayName": "Status"
                                   }
                             ]
@@ -725,7 +725,7 @@ spec:
                             "showHeader": true,
                             "sortBy": [
                                   {
-                                        "desc": true,
+                                        "desc": false,
                                         "displayName": "Status"
                                   }
                             ]
@@ -884,12 +884,262 @@ spec:
                       "type": "table"
                 },
                 {
+                      "datasource": {
+                            "type": "prometheus",
+                            "uid": "Mimir"
+                      },
+                      "fieldConfig": {
+                            "defaults": {
+                                  "custom": {
+                                        "align": "auto",
+                                        "cellOptions": {
+                                              "type": "auto"
+                                        },
+                                        "filterable": true,
+                                        "inspect": false
+                                  },
+                                  "mappings": [
+                                        {
+                                              "options": {
+                                                    "False": {
+                                                          "color": "red",
+                                                          "index": 1,
+                                                          "text": "Not Ready"
+                                                    },
+                                                    "True": {
+                                                          "color": "blue",
+                                                          "index": 0,
+                                                          "text": "Ready"
+                                                    }
+                                              },
+                                              "type": "value"
+                                        }
+                                  ],
+                                  "thresholds": {
+                                        "mode": "absolute",
+                                        "steps": [
+                                              {
+                                                    "color": "transparent",
+                                                    "value": null
+                                              }
+                                        ]
+                                  }
+                            },
+                            "overrides": [
+                                  {
+                                        "matcher": {
+                                              "id": "byType",
+                                              "options": "string"
+                                        },
+                                        "properties": [
+                                              {
+                                                    "id": "custom.cellOptions",
+                                                    "value": {
+                                                          "mode": "basic",
+                                                          "type": "color-background"
+                                                    }
+                                              }
+                                        ]
+                                  }
+                            ]
+                      },
+                      "gridPos": {
+                            "h": 8,
+                            "w": 12,
+                            "x": 0,
+                            "y": 29
+                      },
+                      "id": 18,
+                      "options": {
+                            "cellHeight": "sm",
+                            "showHeader": true,
+                            "sortBy": [
+                                  {
+                                        "desc": false,
+                                        "displayName": "Namespace"
+                                  }
+                            ]
+                      },
+                      "targets": [
+                            {
+                                  "datasource": {
+                                        "type": "prometheus",
+                                        "uid": "Mimir"
+                                  },
+                                  "expr": "gotk_resource_info{cluster=~\"$cluster\", customresource_kind=~\"Kustomization|HelmRelease\", ready=\"False\"}",
+                                  "format": "table",
+                                  "instant": true,
+                                  "legendFormat": "",
+                                  "refId": "A"
+                            }
+                      ],
+                      "title": "Failing Reconcilers",
+                      "transformations": [
+                            {
+                                  "id": "organize",
+                                  "options": {
+                                        "excludeByName": {
+                                              "Time": true,
+                                              "Value": true,
+                                              "__name__": true,
+                                              "instance": true,
+                                              "job": true,
+                                              "namespace": true,
+                                              "pod": true,
+                                              "service": true,
+                                              "endpoint": true,
+                                              "container": true,
+                                              "customresource_group": true,
+                                              "customresource_version": true,
+                                              "chart_name": true,
+                                              "chart_app_version": true,
+                                              "revision": true,
+                                              "source_name": true,
+                                              "suspended": true,
+                                              "ready": true
+                                        },
+                                        "renameByName": {
+                                              "cluster": "Cluster",
+                                              "customresource_kind": "Kind",
+                                              "exported_namespace": "Namespace",
+                                              "name": "Name"
+                                        }
+                                  }
+                            }
+                      ],
+                      "type": "table"
+                },
+                {
+                      "datasource": {
+                            "type": "prometheus",
+                            "uid": "Mimir"
+                      },
+                      "fieldConfig": {
+                            "defaults": {
+                                  "custom": {
+                                        "align": "auto",
+                                        "cellOptions": {
+                                              "type": "auto"
+                                        },
+                                        "filterable": true,
+                                        "inspect": false
+                                  },
+                                  "mappings": [
+                                        {
+                                              "options": {
+                                                    "False": {
+                                                          "color": "red",
+                                                          "index": 1,
+                                                          "text": "Not Ready"
+                                                    },
+                                                    "True": {
+                                                          "color": "blue",
+                                                          "index": 0,
+                                                          "text": "Ready"
+                                                    }
+                                              },
+                                              "type": "value"
+                                        }
+                                  ],
+                                  "thresholds": {
+                                        "mode": "absolute",
+                                        "steps": [
+                                              {
+                                                    "color": "transparent",
+                                                    "value": null
+                                              }
+                                        ]
+                                  }
+                            },
+                            "overrides": [
+                                  {
+                                        "matcher": {
+                                              "id": "byType",
+                                              "options": "string"
+                                        },
+                                        "properties": [
+                                              {
+                                                    "id": "custom.cellOptions",
+                                                    "value": {
+                                                          "mode": "basic",
+                                                          "type": "color-background"
+                                                    }
+                                              }
+                                        ]
+                                  }
+                            ]
+                      },
+                      "gridPos": {
+                            "h": 8,
+                            "w": 12,
+                            "x": 12,
+                            "y": 29
+                      },
+                      "id": 19,
+                      "options": {
+                            "cellHeight": "sm",
+                            "showHeader": true,
+                            "sortBy": [
+                                  {
+                                        "desc": false,
+                                        "displayName": "Namespace"
+                                  }
+                            ]
+                      },
+                      "targets": [
+                            {
+                                  "datasource": {
+                                        "type": "prometheus",
+                                        "uid": "Mimir"
+                                  },
+                                  "expr": "gotk_resource_info{cluster=~\"$cluster\", customresource_kind=~\"GitRepository|HelmRepository|Bucket|OCIRepository|HelmChart\", ready=\"False\"}",
+                                  "format": "table",
+                                  "instant": true,
+                                  "legendFormat": "",
+                                  "refId": "A"
+                            }
+                      ],
+                      "title": "Failing Sources",
+                      "transformations": [
+                            {
+                                  "id": "organize",
+                                  "options": {
+                                        "excludeByName": {
+                                              "Time": true,
+                                              "Value": true,
+                                              "__name__": true,
+                                              "instance": true,
+                                              "job": true,
+                                              "namespace": true,
+                                              "pod": true,
+                                              "service": true,
+                                              "endpoint": true,
+                                              "container": true,
+                                              "customresource_group": true,
+                                              "customresource_version": true,
+                                              "revision": true,
+                                              "suspended": true,
+                                              "url": true,
+                                              "ready": true
+                                        },
+                                        "renameByName": {
+                                              "cluster": "Cluster",
+                                              "customresource_kind": "Kind",
+                                              "exported_namespace": "Namespace",
+                                              "name": "Name"
+                                        }
+                                  }
+                            }
+                      ],
+                      "type": "table"
+                },
+                {
                       "collapsed": false,
                       "gridPos": {
                             "h": 1,
                             "w": 24,
                             "x": 0,
-                            "y": 29
+                            "y": 37
                       },
                       "id": 15,
                       "title": "Timing",
@@ -961,7 +1211,7 @@ spec:
                             "h": 8,
                             "w": 24,
                             "x": 0,
-                            "y": 30
+                            "y": 38
                       },
                       "id": 16,
                       "options": {
@@ -1058,7 +1308,7 @@ spec:
                             "h": 8,
                             "w": 24,
                             "x": 0,
-                            "y": 38
+                            "y": 46
                       },
                       "id": 17,
                       "options": {

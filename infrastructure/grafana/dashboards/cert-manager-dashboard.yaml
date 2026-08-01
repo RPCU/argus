@@ -310,9 +310,9 @@ spec:
             },
             "overrides": [
               {
-                "matcher": { "id": "byName", "options": "Expiry" },
+                "matcher": { "id": "byName", "options": "Expires In" },
                 "properties": [
-                  { "id": "unit", "value": "dateTimeFromNow" },
+                  { "id": "unit", "value": "dtdurations" },
                   { "id": "decimals", "value": 0 }
                 ]
               }
@@ -324,7 +324,7 @@ spec:
             "showHeader": true,
             "cellHeight": "sm",
             "footer": { "show": false },
-            "sortBy": [{ "displayName": "Expiry", "desc": false }]
+            "sortBy": [{ "displayName": "Expires In", "desc": false }]
           },
           "title": "All Certificates",
           "type": "table",
@@ -332,7 +332,7 @@ spec:
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
               "editorMode": "code",
-              "expr": "label_join(certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"}, \"issuer\", \" / \", \"issuer_kind\", \"issuer_name\")",
+              "expr": "label_join(certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"}, \"issuer\", \" / \", \"issuer_kind\", \"issuer_name\") - time()",
               "format": "table",
               "instant": true,
               "range": false,
@@ -353,34 +353,21 @@ spec:
                   "job": true,
                   "instance": true,
                   "issuer_kind": true,
-                  "issuer_name": true
+                  "issuer_name": true,
+                  "pod": true,
+                  "prometheus": true,
+                  "prometheus_replica": true,
+                  "service": true,
+                  "issuer_group": true,
+                  "endpoint": true,
+                  "container": true
                 },
                 "renameByName": {
                   "namespace": "Namespace",
                   "name": "Name",
                   "cluster": "Cluster",
                   "issuer": "Issuer",
-                  "Value #A": "Expiry"
-                }
-              }
-            },
-            {
-              "id": "calculateField",
-              "options": {
-                "mode": "binaryOperation",
-                "binaryOperation": { "left": "Expiry", "operator": "*", "right": "1000", "reducer": "last" },
-                "replaceFields": false,
-                "timeField": ""
-              }
-            },
-            {
-              "id": "organize",
-              "options": {
-                "excludeByName": {
-                  "Expiry": true
-                },
-                "renameByName": {
-                  "Expiry * 1000": "Expiry"
+                  "Value #A": "Expires In"
                 }
               }
             }
@@ -389,61 +376,13 @@ spec:
         {
           "collapsed": false,
           "gridPos": { "h": 1, "w": 24, "x": 0, "y": 20 },
-          "id": 20,
-          "title": "Expiry by Issuer",
-          "type": "row"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "fillOpacity": 10,
-                "lineWidth": 2,
-                "pointSize": 5,
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": { "mode": "none" }
-              },
-              "unit": "d",
-              "decimals": 0
-            },
-            "overrides": []
-          },
-          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 21 },
-          "id": 21,
-          "options": {
-            "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
-            "tooltip": { "mode": "multi", "sort": "asc" }
-          },
-          "title": "Days Until Expiry by Certificate",
-          "type": "timeseries",
-          "targets": [
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "editorMode": "code",
-              "expr": "(certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"} - time()) / 86400",
-              "legendFormat": "{{ namespace }}/{{ name }}",
-              "range": true,
-              "instant": false,
-              "refId": "A"
-            }
-          ],
-          "options": {
-            "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "right" },
-            "tooltip": { "mode": "multi", "sort": "asc" }
-          }
-        },
-        {
-          "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 31 },
           "id": 30,
           "title": "Not Ready Certificates",
           "type": "row"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 21 },
           "id": 31,
           "options": {
             "showHeader": true,

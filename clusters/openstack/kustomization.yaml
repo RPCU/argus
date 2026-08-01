@@ -1,4 +1,5 @@
 resources:
+  - coredns-cm.yaml
   - cert-manager.yaml
   - cert-manager-issuer.yaml
   - trust-manager.yaml

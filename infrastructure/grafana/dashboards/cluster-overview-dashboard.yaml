@@ -332,22 +332,26 @@ spec:
           "gridPos": { "h": 10, "w": 12, "x": 0, "y": 24 },
           "id": 13,
           "options": {
-            "orientation": "auto",
+            "displayMode": "gradient",
+            "orientation": "horizontal",
             "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "showThresholdLabels": false,
-            "showThresholdMarkers": true,
-            "sizing": "auto"
+            "showUnfilled": true,
+            "minVizHeight": 17,
+            "minVizWidth": 75,
+            "namePlacement": "auto",
+            "sizing": "auto",
+            "valueMode": "color"
           },
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "topk(15, sum(rate(container_cpu_usage_seconds_total{container!=\"\", pod!=\"\", cluster=~\"$cluster\"}[5m])) by (cluster, namespace, pod) / sum(kube_pod_container_resource_limits{resource=\"cpu\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) by (cluster, namespace, pod) * 100)",
+              "expr": "topk(20, sum(rate(container_cpu_usage_seconds_total{container!=\"\", pod!=\"\", cluster=~\"$cluster\"}[5m])) by (cluster, namespace, pod) / on(cluster, namespace, pod) group_left sum(kube_pod_container_resource_limits{resource=\"cpu\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) by (cluster, namespace, pod) * 100 > 0)",
               "legendFormat": "{{cluster}} | {{namespace}}/{{pod}}",
               "refId": "A"
             }
           ],
           "title": "Pod CPU Usage vs Limit (%)",
-          "type": "gauge"
+          "type": "bargauge"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
@@ -371,22 +375,26 @@ spec:
           "gridPos": { "h": 10, "w": 12, "x": 12, "y": 24 },
           "id": 14,
           "options": {
-            "orientation": "auto",
+            "displayMode": "gradient",
+            "orientation": "horizontal",
             "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-            "showThresholdLabels": false,
-            "showThresholdMarkers": true,
-            "sizing": "auto"
+            "showUnfilled": true,
+            "minVizHeight": 17,
+            "minVizWidth": 75,
+            "namePlacement": "auto",
+            "sizing": "auto",
+            "valueMode": "color"
           },
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "topk(15, sum(container_memory_working_set_bytes{container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) by (cluster, namespace, pod) / sum(kube_pod_container_resource_limits{resource=\"memory\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) by (cluster, namespace, pod) * 100)",
+              "expr": "topk(20, sum(container_memory_working_set_bytes{container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) by (cluster, namespace, pod) / on(cluster, namespace, pod) group_left sum(kube_pod_container_resource_limits{resource=\"memory\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) by (cluster, namespace, pod) * 100 > 0)",
               "legendFormat": "{{cluster}} | {{namespace}}/{{pod}}",
               "refId": "A"
             }
           ],
           "title": "Pod Memory Usage vs Limit (%)",
-          "type": "gauge"
+          "type": "bargauge"
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },

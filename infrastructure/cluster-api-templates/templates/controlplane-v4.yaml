@@ -41,11 +41,6 @@ spec:
             extraArgs:
               - name: kubelet-preferred-address-types
                 value: "InternalIP,Hostname,ExternalIP"
-              # Halve the default watch-cache allocation (100 → 50 slots per
-              # resource). The mgmt cluster has ~690 CRDs with ~10 objects each;
-              # the default 100-slot cache wastes ~1.5 GiB of apiserver heap.
-              - name: watch-cache-sizes
-                value: "default=50"
           controllerManager:
             extraArgs:
               - name: node-monitor-grace-period

@@ -21,8 +21,7 @@ cluster-api-templates/
     ├── controlplane-v2.yaml    # …-control-plane-v2 (kubelet reservations + CM node-monitor timers)
     ├── controlplane-v3.yaml    # …-control-plane-v3 (ECDSA-P256 control-plane certs)
     ├── controlplane-v4.yaml    # …-control-plane-v4 (broken --watch-cache-sizes, superseded)
-    ├── controlplane-v5.yaml    # …-control-plane-v5 (removed broken flag)
-    ├── controlplane-v6.yaml    # …-control-plane-v6 (apiserver memory tuning) — CURRENT
+    ├── controlplane-v5.yaml    # …-control-plane-v5 (removed broken flag) — CURRENT
     ├── bootstrap.yaml          # KubeadmConfigTemplate         openstack-default-worker-v1
     ├── infracluster.yaml       # OpenStackClusterTemplate      openstack-default-cluster-v1
     └── machines.yaml           # OpenStackMachineTemplate x2   openstack-default-{control-plane,worker}-v1
@@ -280,8 +279,11 @@ This keeps the change explicit, auditable, and safely rolled out via GitOps.
   machines).
 - Machine `flavor`/`image` in `machines.yaml` are deliberate `dummy`
   placeholders — they are always overwritten by patches.
-- `controlplane-v6.yaml` (`openstack-default-control-plane-v6`) is the current
-  template. It adds apiserver memory-tuning flags on top of `-v5`:
+- `controlplane-v5.yaml` (`openstack-default-control-plane-v5`) is the current
+  kubeadm template referenced by the ClusterClass.
+- `controlplane-v6.yaml` (`openstack-default-control-plane-v6`) is prepared but
+  **not yet referenced** by the ClusterClass. It adds apiserver memory-tuning
+  flags on top of `-v5`:
   - `--event-ttl=30m` (down from 1h) — events are the highest-churn resource
     in etcd; halving retention reduces both etcd space and apiserver watch-cache
     pressure.
@@ -289,6 +291,10 @@ This keeps the change explicit, auditable, and safely rolled out via GitOps.
     (down from 400/200) — caps concurrent in-flight requests to reduce peak
     memory from serialization/deserialization.
   - `--profiling=false` — removes pprof endpoints (minor memory/CPU savings).
-- The Kamaji ClusterClass currently points at
-  `openstack-kamaji-control-plane-v8`, which carries the same apiserver tuning
-  flags (`--event-ttl`, `--max-requests-inflight`, `--profiling=false`).
+    To activate: bump `clusterclass.yaml` and `clusterclass-v1.yaml` to point at
+    `-v6`, which triggers a control-plane roll (the `KubeadmControlPlaneTemplate`
+    spec is immutable once referenced).
+- The current Kamaji ClusterClass points at
+  `openstack-kamaji-control-plane-v7`. `openstack-kamaji-control-plane-v8` is
+  prepared but **not yet referenced** — it carries the same apiserver tuning
+  flags. Bump `clusterclass-kamaji.yaml` when ready to rotate.

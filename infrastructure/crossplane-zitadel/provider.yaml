@@ -1,8 +1,32 @@
 apiVersion: pkg.crossplane.io/v1
+kind: DeploymentRuntimeConfig
+metadata:
+  name: provider-zitadel
+spec:
+  deploymentTemplate:
+    spec:
+      selector: {}
+      template:
+        spec:
+          containers:
+            # Resource sizing from 72h Mimir history (max/P95): mem ~305/198Mi,
+            # cpu ~38/12m. request ~= P95, mem limit ~= 2x max, CPU request-only
+            # (no CPU limit — see AGENTS.md Section 8 rationale).
+            - name: package-runtime
+              resources:
+                requests:
+                  cpu: 30m
+                  memory: 256Mi
+                limits:
+                  memory: 640Mi
+---
+apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
   name: provider-zitadel
 spec:
   package: xpkg.upbound.io/banhcanh/provider-zitadel:v0.11.0-3.g0f3c6d5
+  runtimeConfigRef:
+    name: provider-zitadel
 ---
 

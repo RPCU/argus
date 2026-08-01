@@ -357,6 +357,18 @@ spec:
     # toggle for the parent chart) and `kube-state-metrics` (actual subchart
     # values). The customResourceState config MUST go under the hyphenated key.
     kube-state-metrics:
+      # KSM pod resources. The parent-chart `kubeStateMetrics.resources` key
+      # above is NOT applied to the pod (it's a toggle namespace) — the actual
+      # container resources MUST be set here under the hyphenated subchart key,
+      # or the pod runs with resources: {} (QoS BestEffort), which is what the
+      # live pod did. Sized from 72h Mimir history (max/P95): mem ~248/175Mi,
+      # cpu ~26/24m. request ~= observed, mem limit ~= 2x max, CPU request-only.
+      resources:
+        requests:
+          cpu: 25m
+          memory: 192Mi
+        limits:
+          memory: 384Mi
       # Flux CRD RBAC: the customResourceState auto-generated rules cover the
       # resource types in config.spec.resources, but some chart versions don't
       # wire them into the ClusterRole correctly. Adding the same rules to the

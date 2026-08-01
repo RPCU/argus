@@ -1,6 +1,29 @@
 apiVersion: pkg.crossplane.io/v1
+kind: DeploymentRuntimeConfig
+metadata:
+  name: provider-random
+spec:
+  deploymentTemplate:
+    spec:
+      selector: {}
+      template:
+        spec:
+          containers:
+            # provider-random is idle/tiny (little to no observed usage); small
+            # floor request + 2x limit, CPU request-only (see AGENTS.md Section 8).
+            - name: package-runtime
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi
+---
+apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
   name: provider-random
 spec:
   package: xpkg.upbound.io/crossplane-contrib/provider-random:v0.3.0
+  runtimeConfigRef:
+    name: provider-random

@@ -1,6 +1,31 @@
 apiVersion: pkg.crossplane.io/v1
+kind: DeploymentRuntimeConfig
+metadata:
+  name: provider-vault
+spec:
+  deploymentTemplate:
+    spec:
+      selector: {}
+      template:
+        spec:
+          containers:
+            # Resource sizing from 72h Mimir history (max/P95): mem ~456/406Mi,
+            # cpu ~51/38m. request ~= P95, mem limit ~= 2x max, CPU request-only
+            # (no CPU limit — throttling controllers hurts reconcile latency, same
+            # convention as the Ceph/OVN/DB daemons in AGENTS.md Section 8).
+            - name: package-runtime
+              resources:
+                requests:
+                  cpu: 40m
+                  memory: 448Mi
+                limits:
+                  memory: 896Mi
+---
+apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
   name: provider-vault
 spec:
   package: xpkg.upbound.io/upbound/provider-vault:v4.0.2
+  runtimeConfigRef:
+    name: provider-vault

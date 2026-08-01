@@ -312,7 +312,7 @@ spec:
               {
                 "matcher": { "id": "byName", "options": "Expires In" },
                 "properties": [
-                  { "id": "unit", "value": "dtdurations" },
+                  { "id": "unit", "value": "s" },
                   { "id": "decimals", "value": 0 }
                 ]
               }

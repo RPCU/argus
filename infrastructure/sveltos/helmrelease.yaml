@@ -31,3 +31,68 @@ spec:
       registerMgmtCluster:
         args:
           - --labels=type=mgmt
+    # Per-controller resources sized from 72h Mimir history on the mgmt cluster
+    # (max/P95 memory + cpu). Policy: memory request ~= P95, memory limit ~= 2x
+    # max, CPU request-only (no CPU limit — throttling controllers hurts
+    # reconcile latency, same convention as the Ceph/OVN/DB daemons in AGENTS.md
+    # Section 8). The chart defaults capped memory at 512Mi, but several
+    # controllers peaked above that (addon-controller 469Mi, access/event 362-369Mi)
+    # and addonController.controller shipped with only a 512Mi request and no
+    # limit / no CPU request. sveltos-agents and driftDetectionManager do NOT
+    # expose a `resources` key in this chart version, so they can't be tuned here.
+    addonController:
+      controller:
+        resources:
+          requests:
+            cpu: 80m
+            memory: 448Mi
+          limits:
+            memory: 1Gi
+    accessManager:
+      manager:
+        resources:
+          requests:
+            cpu: 15m
+            memory: 320Mi
+          limits:
+            memory: 768Mi
+    eventManager:
+      manager:
+        resources:
+          requests:
+            cpu: 15m
+            memory: 320Mi
+          limits:
+            memory: 768Mi
+    classifierManager:
+      manager:
+        resources:
+          requests:
+            cpu: 20m
+            memory: 288Mi
+          limits:
+            memory: 704Mi
+    hcManager:
+      manager:
+        resources:
+          requests:
+            cpu: 15m
+            memory: 256Mi
+          limits:
+            memory: 576Mi
+    shardController:
+      manager:
+        resources:
+          requests:
+            cpu: 15m
+            memory: 224Mi
+          limits:
+            memory: 576Mi
+    scManager:
+      manager:
+        resources:
+          requests:
+            cpu: 15m
+            memory: 128Mi
+          limits:
+            memory: 256Mi

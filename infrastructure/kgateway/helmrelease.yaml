@@ -17,4 +17,14 @@ spec:
         name: kgateway
         namespace: kgateway-system
   values:
-# Add custom values here if needed
+    # kgateway control-plane (controller) container resources. Sized from 72h
+    # Mimir history (max/P95): mem ~168/167Mi, cpu ~14/14m. request ~= observed,
+    # mem limit ~= 2x max, CPU request-only (no CPU limit — see AGENTS.md
+    # Section 8 rationale). The live pod previously ran with resources: {}
+    # (QoS BestEffort).
+    resources:
+      requests:
+        cpu: 20m
+        memory: 192Mi
+      limits:
+        memory: 384Mi

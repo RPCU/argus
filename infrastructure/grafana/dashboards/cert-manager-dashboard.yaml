@@ -1,0 +1,630 @@
+# GrafanaDashboard — cert-manager Certificate Status & Expiry.
+#
+# Displays every cert-manager Certificate's ready status and expiry date,
+# with time-remaining calculations and overview stats.
+#
+# METRIC PROVENANCE — queries use standard cert-manager metrics:
+#   certmanager_certificate_expiration_timestamp_seconds  NotAfter Unix timestamp
+#     labels: namespace, name, issuer_kind, issuer_name, condition, ready
+#   certmanager_certificate_ready_status{condition="True"}  1/0 per certificate
+#     labels: namespace, name, issuer_kind, issuer_name, condition
+#
+# Requires cert-manager Prometheus metrics enabled
+# (infrastructure/cert-manager/values.yaml: prometheus.enabled: true).
+# The cert-manager chart creates a ServiceMonitor on port 9402; the
+# kube-prometheus-stack allow-all selector picks it up automatically.
+#
+# SCOPE: every cluster that remote_writes into Mimir. A `$cluster` template
+# variable lets you filter to a specific cluster.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: cert-manager-status
+  namespace: monitoring
+spec:
+  allowCrossNamespaceImport: true
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana-central
+  folder: "Monitoring"
+  json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "style": "dark",
+      "tags": ["cert-manager", "certificates", "tls"],
+      "time": { "from": "now-6h", "to": "now" },
+      "timezone": "browser",
+      "title": "cert-manager Status",
+      "uid": "cert-manager-status",
+      "version": 1,
+      "templating": {
+        "list": [
+          {
+            "name": "cluster",
+            "label": "Cluster",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "Mimir" },
+            "definition": "label_values(certmanager_certificate_expiration_timestamp_seconds, cluster)",
+            "query": { "query": "label_values(certmanager_certificate_expiration_timestamp_seconds, cluster)", "refId": "StandardVariableQuery" },
+            "includeAll": true,
+            "multi": true,
+            "current": { "selected": true, "text": "All", "value": "$__all" },
+            "refresh": 2,
+            "sort": 1
+          },
+          {
+            "name": "namespace",
+            "label": "Namespace",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "Mimir" },
+            "definition": "label_values(certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\"}, namespace)",
+            "query": { "query": "label_values(certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\"}, namespace)", "refId": "StandardVariableQuery" },
+            "includeAll": true,
+            "multi": true,
+            "current": { "selected": true, "text": "All", "value": "$__all" },
+            "refresh": 2,
+            "sort": 1
+          }
+        ]
+      },
+      "panels": [
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+          "id": 1,
+          "title": "Overview",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "decimals": 0,
+              "noValue": "0",
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+          "id": 2,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "title": "Total Certificates",
+          "type": "stat",
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "editorMode": "code",
+              "expr": "count(certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"})",
+              "legendFormat": "Total",
+              "range": false,
+              "instant": true,
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "decimals": 0,
+              "noValue": "0",
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+          "id": 3,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "title": "Ready",
+          "type": "stat",
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "editorMode": "code",
+              "expr": "count(certmanager_certificate_ready_status{cluster=~\"$cluster\", namespace=~\"$namespace\", condition=\"True\"} == 1)",
+              "legendFormat": "Ready",
+              "range": false,
+              "instant": true,
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "decimals": 0,
+              "noValue": "0",
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }] },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+          "id": 4,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "title": "Not Ready",
+          "type": "stat",
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "editorMode": "code",
+              "expr": "count(certmanager_certificate_ready_status{cluster=~\"$cluster\", namespace=~\"$namespace\", condition=\"True\"} == 0)",
+              "legendFormat": "Not Ready",
+              "range": false,
+              "instant": true,
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "decimals": 0,
+              "noValue": "0",
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "orange", "value": null }] },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+          "id": 5,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "title": "Expiring < 7d",
+          "type": "stat",
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "editorMode": "code",
+              "expr": "count((certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"} - time()) / 86400 < 7)",
+              "legendFormat": "Critical",
+              "range": false,
+              "instant": true,
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "decimals": 0,
+              "noValue": "0",
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "yellow", "value": null }] },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+          "id": 6,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "title": "Expiring < 30d",
+          "type": "stat",
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "editorMode": "code",
+              "expr": "count((certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"} - time()) / 86400 < 30 and (certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"} - time()) / 86400 >= 7)",
+              "legendFormat": "Warning",
+              "range": false,
+              "instant": true,
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "decimals": 0,
+              "noValue": "0",
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "super-light-green", "value": null }] },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+          "id": 7,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "title": "Expiring > 30d",
+          "type": "stat",
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "editorMode": "code",
+              "expr": "count((certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"} - time()) / 86400 >= 30)",
+              "legendFormat": "Healthy",
+              "range": false,
+              "instant": true,
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+          "id": 10,
+          "title": "Certificate Details",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": { "type": "auto" },
+                "inspect": false
+              }
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "Ready" },
+                "properties": [
+                  {
+                    "id": "custom.cellOptions",
+                    "value": { "mode": "basic", "type": "color-background" }
+                  },
+                  {
+                    "id": "mappings",
+                    "value": [
+                      { "options": { "1": { "color": "green", "text": "True" }, "0": { "color": "red", "text": "False" } }, "type": "value" }
+                    ]
+                  },
+                  { "id": "decimals", "value": 0 }
+                ]
+              },
+              {
+                "matcher": { "id": "byName", "options": "Days Left" },
+                "properties": [
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        { "color": "red", "value": null },
+                        { "color": "orange", "value": 7 },
+                        { "color": "yellow", "value": 30 },
+                        { "color": "green", "value": 60 }
+                      ]
+                    }
+                  },
+                  { "id": "custom.cellOptions", "value": { "mode": "basic", "type": "gauge" } },
+                  { "id": "unit", "value": "d" },
+                  { "id": "decimals", "value": 1 }
+                ]
+              },
+              {
+                "matcher": { "id": "byName", "options": "Expiry Date" },
+                "properties": [
+                  { "id": "unit", "value": "dateTimeFromNow" },
+                  { "id": "decimals", "value": 0 }
+                ]
+              }
+            ]
+          },
+          "gridPos": { "h": 14, "w": 24, "x": 0, "y": 6 },
+          "id": 11,
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": { "show": false },
+            "sortBy": [{ "displayName": "Days Left", "desc": false }]
+          },
+          "title": "All Certificates",
+          "type": "table",
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "editorMode": "code",
+              "expr": "certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"}",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "legendFormat": "",
+              "refId": "A"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "editorMode": "code",
+              "expr": "certmanager_certificate_ready_status{cluster=~\"$cluster\", namespace=~\"$namespace\", condition=\"True\"}",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "legendFormat": "",
+              "refId": "B"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "seriesToColumns",
+              "options": { "byField": "name" }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "Time 1": true,
+                  "Time 2": true,
+                  "__name__": true,
+                  "__name__ 1": true,
+                  "__name__ 2": true,
+                  "uid": true,
+                  "uid 1": true,
+                  "uid 2": true,
+                  "condition": true,
+                  "condition 1": true,
+                  "condition 2": true,
+                  "ready": true,
+                  "job": true,
+                  "job 1": true,
+                  "job 2": true,
+                  "instance": true,
+                  "instance 1": true,
+                  "instance 2": true
+                },
+                "renameByName": {
+                  "namespace": "Namespace",
+                  "name": "Certificate",
+                  "issuer_kind": "Issuer Kind",
+                  "issuer_name": "Issuer Name",
+                  "cluster": "Cluster",
+                  "Value #A": "Expiry Date",
+                  "Value #B": "Ready"
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binaryOperation",
+                "binaryOperation": { "left": "Expiry Date", "operator": "-", "right": "now()", "reducer": "last" },
+                "replaceFields": false,
+                "timeField": ""
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "renameByName": { "": "Days Left" }
+              }
+            }
+          ]
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 20 },
+          "id": 20,
+          "title": "Expiry by Issuer",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "fillOpacity": 10,
+                "lineWidth": 2,
+                "pointSize": 5,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": { "mode": "none" }
+              },
+              "unit": "d",
+              "decimals": 0
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 21 },
+          "id": 21,
+          "options": {
+            "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+            "tooltip": { "mode": "multi", "sort": "asc" }
+          },
+          "title": "Days Until Expiry by Certificate",
+          "type": "timeseries",
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "editorMode": "code",
+              "expr": "(certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"} - time()) / 86400",
+              "legendFormat": "{{ namespace }}/{{ name }}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "options": {
+            "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "right" },
+            "tooltip": { "mode": "multi", "sort": "asc" }
+          }
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 31 },
+          "id": 30,
+          "title": "Not Ready Certificates",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": { "type": "auto" },
+                "inspect": false
+              }
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "Ready" },
+                "properties": [
+                  {
+                    "id": "custom.cellOptions",
+                    "value": { "mode": "basic", "type": "color-background" }
+                  },
+                  {
+                    "id": "mappings",
+                    "value": [
+                      { "options": { "0": { "color": "red", "text": "False" } }, "type": "value" }
+                    ]
+                  },
+                  { "id": "decimals", "value": 0 }
+                ]
+              },
+              {
+                "matcher": { "id": "byName", "options": "Days Left" },
+                "properties": [
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        { "color": "red", "value": null },
+                        { "color": "orange", "value": 7 },
+                        { "color": "yellow", "value": 30 },
+                        { "color": "green", "value": 60 }
+                      ]
+                    }
+                  },
+                  { "id": "custom.cellOptions", "value": { "mode": "basic", "type": "gauge" } },
+                  { "id": "unit", "value": "d" },
+                  { "id": "decimals", "value": 1 }
+                ]
+              },
+              {
+                "matcher": { "id": "byName", "options": "Expiry Date" },
+                "properties": [
+                  { "id": "unit", "value": "dateTimeFromNow" },
+                  { "id": "decimals", "value": 0 }
+                ]
+              }
+            ]
+          },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 },
+          "id": 31,
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": { "show": false }
+          },
+          "title": "Certificates Not Ready",
+          "type": "table",
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "editorMode": "code",
+              "expr": "certmanager_certificate_ready_status{cluster=~\"$cluster\", namespace=~\"$namespace\", condition=\"True\"} == 0",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "uid": true,
+                  "condition": true,
+                  "job": true,
+                  "instance": true
+                },
+                "renameByName": {
+                  "namespace": "Namespace",
+                  "name": "Certificate",
+                  "issuer_kind": "Issuer Kind",
+                  "issuer_name": "Issuer Name",
+                  "cluster": "Cluster",
+                  "Value": "Ready"
+                }
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": { "type": "auto" },
+                "inspect": false
+              }
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "Ready" },
+                "properties": [
+                  {
+                    "id": "custom.cellOptions",
+                    "value": { "mode": "basic", "type": "color-background" }
+                  },
+                  {
+                    "id": "mappings",
+                    "value": [
+                      { "options": { "0": { "color": "red", "text": "False" } }, "type": "value" }
+                    ]
+                  },
+                  { "id": "decimals", "value": 0 }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }

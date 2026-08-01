@@ -11,4 +11,5 @@ resources:
   - dashboards/node-disk-io-dashboard.yaml
   - dashboards/pod-io-dashboard.yaml
   - dashboards/fluxcd-dashboard.yaml
+  - dashboards/apiserver-dashboard.yaml
   - httproute.yaml

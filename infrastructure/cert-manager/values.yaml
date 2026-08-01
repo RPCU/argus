@@ -6,3 +6,15 @@ config:
   enableGatewayAPI: true
 prometheus:
   enabled: true
+  # `prometheus.enabled: true` alone only adds prometheus.io/* scrape
+  # annotations to the Deployments — it does NOT create a ServiceMonitor.
+  # kube-prometheus-stack does not honour those pod annotations, so the
+  # ServiceMonitor sub-toggle is REQUIRED for the metrics to be scraped.
+  servicemonitor:
+    enabled: true
+    # The mgmt Prometheus serviceMonitorSelector is
+    # matchLabels: {release: kube-prometheus-stack} (NOT the openstack
+    # cluster's allow-all NotIn selector), so the ServiceMonitor MUST carry
+    # this label or it is silently never scraped on mgmt.
+    labels:
+      release: kube-prometheus-stack

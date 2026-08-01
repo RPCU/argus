@@ -20,6 +20,16 @@ spec:
   template:
     spec:
       dataStoreName: default
+      deployment:
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchLabels:
+                      kamaji.clastix.io/component: deployment
+                  topologyKey: kubernetes.io/hostname
       apiServer:
         extraArgs: []
         resources:

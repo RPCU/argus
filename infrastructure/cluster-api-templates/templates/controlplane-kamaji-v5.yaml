@@ -1,28 +1,21 @@
 # -----------------------------------------------------------------------------
-# Control plane template (KamajiControlPlane) — v4
+# Control plane template (KamajiControlPlane) — v5
 #
-# Same as v3 but adds resource requests and CPU limits for the tenant control
-# plane pods (kube-apiserver, kube-controller-manager, kube-scheduler).
-# Memory limits are deliberately omitted — OOM-killing the apiserver or
-# scheduler is worse than letting them burst. Without explicit resources
-# these pods run BestEffort (cpu.weight=1) and can be starved on busy
-# management nodes shared with Ceph OSDs, OVN, and tenant VMs.
-#
-# Measured tenant apiserver CPU usage: 47-100m at steady state (AGENTS.md,
-# "kube-apiserver CPU is TLS-handshake bound"). The 500m limit provides
-# headroom for TLS handshake bursts and leader-election reconnect storms.
-# controller-manager and scheduler are lighter; CPU limits prevent a
-# runaway loop from starving co-located pods.
+# Same as v4 but removes memory limits from all tenant control plane pods.
+# Memory requests are kept for scheduling admission; CPU limits prevent a
+# runaway from starving co-located pods; but memory limits are omitted
+# because OOM-killing the apiserver or scheduler is worse than letting them
+# burst — same rationale as OVN vswitchd and Ceph daemons.
 #
 # IMMUTABILITY: KamajiControlPlaneTemplate.spec.template.spec is immutable
 # once referenced by a ClusterClass. To change anything here, create a NEW
-# template with a bumped version suffix (e.g. -v5), point the ClusterClass
+# template with a bumped version suffix (e.g. -v6), point the ClusterClass
 # controlPlane.templateRef at it, and let the topology controller reconcile.
 # -----------------------------------------------------------------------------
 apiVersion: controlplane.cluster.x-k8s.io/v1alpha2
 kind: KamajiControlPlaneTemplate
 metadata:
-  name: openstack-kamaji-control-plane-v4
+  name: openstack-kamaji-control-plane-v5
   namespace: mgmt
 spec:
   template:
@@ -36,7 +29,6 @@ spec:
             memory: 256Mi
           limits:
             cpu: 500m
-            memory: 512Mi
       controllerManager:
         resources:
           requests:
@@ -44,7 +36,6 @@ spec:
             memory: 128Mi
           limits:
             cpu: 500m
-            memory: 256Mi
       scheduler:
         resources:
           requests:
@@ -52,7 +43,6 @@ spec:
             memory: 64Mi
           limits:
             cpu: 250m
-            memory: 128Mi
       kubelet:
         preferredAddressTypes:
           - InternalIP

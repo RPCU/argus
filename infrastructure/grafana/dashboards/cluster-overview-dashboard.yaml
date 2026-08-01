@@ -302,6 +302,135 @@ spec:
           ],
           "title": "Top 10 Pods by Memory Working Set (RAM)",
           "type": "bargauge"
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+          "id": 12,
+          "title": "Pod Resource Usage vs Requests & Limits",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "fixed", "fixedColor": "semi-dark-red" },
+              "custom": {
+                "axisLabel": "CPU (cores)",
+                "axisPlacement": "auto",
+                "fillOpacity": 60,
+                "gradientMode": "scheme",
+                "lineWidth": 0,
+                "stacking": { "group": "A", "mode": "normal" }
+              },
+              "unit": "short"
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "Requested (guaranteed)" },
+                "properties": [
+                  { "id": "color", "value": { "mode": "fixed", "fixedColor": "semi-dark-yellow" } },
+                  { "id": "custom.fillOpacity", "value": 60 }
+                ]
+              },
+              {
+                "matcher": { "id": "byName", "options": "Used (actual)" },
+                "properties": [
+                  { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } },
+                  { "id": "custom.fillOpacity", "value": 70 }
+                ]
+              }
+            ]
+          },
+          "gridPos": { "h": 10, "w": 12, "x": 0, "y": 24 },
+          "id": 13,
+          "options": {
+            "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "label_replace(\n  topk(15, sum(rate(container_cpu_usage_seconds_total{container!=\"\", pod!=\"\", cluster=~\"$cluster\"}[5m])) by (cluster, namespace, pod)),\n  \"__name__\", \"Used (actual)\", \"\", \"\"\n)",
+              "legendFormat": "{{cluster}} | {{namespace}}/{{pod}} [Used]",
+              "refId": "A"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "label_replace(\n  topk(15, (\n    sum(kube_pod_container_resource_requests{resource=\"cpu\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) by (cluster, namespace, pod)\n    -\n    sum(rate(container_cpu_usage_seconds_total{container!=\"\", pod!=\"\", cluster=~\"$cluster\"}[5m])) by (cluster, namespace, pod)\n  )),\n  \"__name__\", \"Requested (guaranteed)\", \"\", \"\"\n)",
+              "legendFormat": "{{cluster}} | {{namespace}}/{{pod}} [Requested]",
+              "refId": "B"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "label_replace(\n  topk(15, (\n    sum(kube_pod_container_resource_limits{resource=\"cpu\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) by (cluster, namespace, pod)\n    -\n    sum(kube_pod_container_resource_requests{resource=\"cpu\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) by (cluster, namespace, pod)\n  )),\n  \"__name__\", \"Limit (burstable)\", \"\", \"\"\n)",
+              "legendFormat": "{{cluster}} | {{namespace}}/{{pod}} [Limit]",
+              "refId": "C"
+            }
+          ],
+          "title": "Pod CPU: Usage vs Requests vs Limits (Top 15)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "fixed", "fixedColor": "semi-dark-red" },
+              "custom": {
+                "axisLabel": "Memory",
+                "axisPlacement": "auto",
+                "fillOpacity": 60,
+                "gradientMode": "scheme",
+                "lineWidth": 0,
+                "stacking": { "group": "A", "mode": "normal" }
+              },
+              "unit": "bytes"
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "Requested (guaranteed)" },
+                "properties": [
+                  { "id": "color", "value": { "mode": "fixed", "fixedColor": "semi-dark-yellow" } },
+                  { "id": "custom.fillOpacity", "value": 60 }
+                ]
+              },
+              {
+                "matcher": { "id": "byName", "options": "Used (actual)" },
+                "properties": [
+                  { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } },
+                  { "id": "custom.fillOpacity", "value": 70 }
+                ]
+              }
+            ]
+          },
+          "gridPos": { "h": 10, "w": 12, "x": 12, "y": 24 },
+          "id": 14,
+          "options": {
+            "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "label_replace(\n  topk(15, sum(container_memory_working_set_bytes{container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) by (cluster, namespace, pod)),\n  \"__name__\", \"Used (actual)\", \"\", \"\"\n)",
+              "legendFormat": "{{cluster}} | {{namespace}}/{{pod}} [Used]",
+              "refId": "A"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "label_replace(\n  topk(15, (\n    sum(kube_pod_container_resource_requests{resource=\"memory\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) by (cluster, namespace, pod)\n    -\n    sum(container_memory_working_set_bytes{container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) by (cluster, namespace, pod)\n  )),\n  \"__name__\", \"Requested (guaranteed)\", \"\", \"\"\n)",
+              "legendFormat": "{{cluster}} | {{namespace}}/{{pod}} [Requested]",
+              "refId": "B"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "label_replace(\n  topk(15, (\n    sum(kube_pod_container_resource_limits{resource=\"memory\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) by (cluster, namespace, pod)\n    -\n    sum(kube_pod_container_resource_requests{resource=\"memory\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) by (cluster, namespace, pod)\n  )),\n  \"__name__\", \"Limit (burstable)\", \"\", \"\"\n)",
+              "legendFormat": "{{cluster}} | {{namespace}}/{{pod}} [Limit]",
+              "refId": "C"
+            }
+          ],
+          "title": "Pod Memory: Usage vs Requests vs Limits (Top 15)",
+          "type": "timeseries"
         }
       ],
       "refresh": "30s",

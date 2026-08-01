@@ -17,6 +17,18 @@
 #
 # Every expression below was executed against live Mimir before commit.
 #
+# DO NOT add a `cluster=~"$cluster"` selector to these expressions. Grafana
+# alert rules have NO dashboard template variables — `$cluster` is only
+# substituted in dashboard panels. In an alert query it stays LITERAL, so
+# `cluster=~"$cluster"` matches zero series → every query returns empty → the
+# rule evaluates NoData → with `noDataState: OK` the alert is silently
+# suppressed and NEVER fires. This is exactly the bug that let crossplane-vault
+# / crossplane-zitadel sit Ready=False for hours with no Discord alert. The
+# rules already emit `cluster` as an output label via `by (cluster, ...)`, so
+# per-cluster context is preserved without the selector. (The other rule files
+# in this directory correctly omit `$cluster` — this file was the only one that
+# copied it over from the dashboard queries.)
+#
 # Panel linking: rules carry __dashboardUid__ / __panelId__ annotations
 # (both required, __panelId__ must be a quoted string).
 apiVersion: grafana.integreatly.org/v1beta1
@@ -60,7 +72,7 @@ spec:
               type: prometheus
               uid: Mimir
             editorMode: code
-            expr: sum by (cluster) (rate(controller_runtime_reconcile_total{cluster=~"$cluster", result="error"}[5m]))
+            expr: sum by (cluster) (rate(controller_runtime_reconcile_total{result="error"}[5m]))
             instant: true
             range: false
             intervalMs: 1000
@@ -133,7 +145,7 @@ spec:
               type: prometheus
               uid: Mimir
             editorMode: code
-            expr: sum by (cluster) (rate(controller_runtime_reconcile_timeouts_total{cluster=~"$cluster"}[5m]))
+            expr: sum by (cluster) (rate(controller_runtime_reconcile_timeouts_total[5m]))
             instant: true
             range: false
             intervalMs: 1000
@@ -205,7 +217,7 @@ spec:
               type: prometheus
               uid: Mimir
             editorMode: code
-            expr: sum by (cluster, controller) (rate(controller_runtime_reconcile_total{cluster=~"$cluster", result="error"}[5m])) / sum by (cluster, controller) (rate(controller_runtime_reconcile_total{cluster=~"$cluster"}[5m])) > 0
+            expr: sum by (cluster, controller) (rate(controller_runtime_reconcile_total{result="error"}[5m])) / sum by (cluster, controller) (rate(controller_runtime_reconcile_total[5m])) > 0
             instant: true
             range: false
             intervalMs: 1000
@@ -278,7 +290,7 @@ spec:
               type: prometheus
               uid: Mimir
             editorMode: code
-            expr: increase(gotk_reconcile_duration_seconds_count{cluster=~"$cluster"}[1h]) == 0
+            expr: increase(gotk_reconcile_duration_seconds_count[1h]) == 0
             instant: true
             range: false
             intervalMs: 1000
@@ -351,7 +363,7 @@ spec:
               type: prometheus
               uid: Mimir
             editorMode: code
-            expr: count by (cluster, customresource_kind, exported_namespace, name) (gotk_resource_info{cluster=~"$cluster", ready="False"})
+            expr: count by (cluster, customresource_kind, exported_namespace, name) (gotk_resource_info{ready="False"})
             instant: true
             range: false
             intervalMs: 1000

@@ -24,12 +24,11 @@ spec:
     templateRef:
       apiVersion: controlplane.cluster.x-k8s.io/v1beta2
       kind: KubeadmControlPlaneTemplate
-      name: openstack-default-control-plane-v4
-    # NOTE: the control-plane templateRef was updated from -v1 to -v4 to apply
-    # the watch-cache-sizes fix (halving apiserver watch cache memory from
-    # ~3.9 GiB to ~2.0 GiB on the 8 GiB mgmt nodes). This WILL roll
-    # control-plane machines on the next reconciliation — the -v4 template
-    # adds --watch-cache-sizes=default=50 to the kube-apiserver extraArgs.
+      name: openstack-default-control-plane-v5
+    # NOTE: the control-plane templateRef was updated from -v1 to -v5.
+    # -v1 had ECDSA-P256 (via v3), -v4 added --watch-cache-sizes which crashed
+    # the apiserver (invalid for CRDs), and -v5 removes it. The control-plane
+    # machines will roll on the next reconciliation.
     # `healthCheck` below, by contrast, is a ClusterClass field rather than
     # part of the immutable template, so adding it here is safe and does NOT
     # roll any Machine.

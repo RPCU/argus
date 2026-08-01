@@ -17,7 +17,7 @@ kamaji-etcd:
   clusterDomain: "mgmt.local"
   resources:
     requests:
-      cpu: 200m
+      cpu: 500m
       memory: 256Mi
     limits:
       cpu: "1"

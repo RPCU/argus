@@ -1,0 +1,100 @@
+# -----------------------------------------------------------------------------
+# Control plane template (KubeadmControlPlane) — v4.
+#
+# WHAT CHANGED vs -v3:
+#   1. apiServer.extraArgs: added --watch-cache-sizes=default=50
+#
+# WHY: the mgmt cluster has ~690 CRDs, giving 756 watch cache slots at the
+# Kubernetes default capacity of 100. With only ~7,300 total objects across
+# 748 non-empty resources (avg ~10 per resource), 90% of the cache memory is
+# wasted. The apiserver was using ~3.9 GiB RSS on 8 GiB nodes, pushing
+# control-plane nodes to 90-96% memory usage.
+#
+# Setting default=50 halves the watch cache allocation (756 × 50 slots vs
+# 756 × 100), saving ~1.5-2 GiB of apiserver heap. This is safe because:
+#   - The mgmt cluster has only 7 nodes (not 100)
+#   - Most CRD resources have 0-10 objects (far below 50)
+#   - No resource has more than 3,316 objects (events), which still fits
+#     comfortably in a 50-slot cache (the cache is a ring buffer, not a
+#     full object store — it holds the last 50 revisions, not 50 objects)
+#
+# Everything else is inherited unchanged from -v3.
+#
+# IMMUTABILITY: KubeadmControlPlaneTemplate.spec.template.spec is effectively
+# immutable once referenced by a running ClusterClass. To change anything here,
+# create a NEW template with a bumped version suffix (e.g. -v5), point the
+# ClusterClass controlPlane.templateRef at it, and let the topology controller
+# roll the control-plane machines. Never edit -v4 in place on a live cluster.
+# -----------------------------------------------------------------------------
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+kind: KubeadmControlPlaneTemplate
+metadata:
+  name: openstack-default-control-plane-v4
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      kubeadmConfigSpec:
+        clusterConfiguration:
+          encryptionAlgorithm: ECDSA-P256
+          apiServer:
+            extraArgs:
+              - name: kubelet-preferred-address-types
+                value: "InternalIP,Hostname,ExternalIP"
+              # Halve the default watch-cache allocation (100 → 50 slots per
+              # resource). The mgmt cluster has ~690 CRDs with ~10 objects each;
+              # the default 100-slot cache wastes ~1.5 GiB of apiserver heap.
+              - name: watch-cache-sizes
+                value: "default=50"
+          controllerManager:
+            extraArgs:
+              - name: node-monitor-grace-period
+                value: 40s
+              - name: node-monitor-period
+                value: 5s
+        initConfiguration:
+          skipPhases:
+            - addon/kube-proxy
+          nodeRegistration:
+            kubeletExtraArgs:
+              - name: provider-id
+                value: openstack:///'{{ instance_id }}'
+              - name: kube-reserved
+                value: cpu=200m,memory=768Mi,ephemeral-storage=2Gi
+              - name: system-reserved
+                value: cpu=200m,memory=768Mi,ephemeral-storage=2Gi
+              - name: eviction-hard
+                value: memory.available<500Mi,nodefs.available<10%,imagefs.available<10%,nodefs.inodesFree<5%
+              - name: eviction-soft
+                value: memory.available<1Gi,nodefs.available<15%,imagefs.available<15%
+              - name: eviction-soft-grace-period
+                value: memory.available=2m,nodefs.available=2m,imagefs.available=2m
+              - name: eviction-max-pod-grace-period
+                value: "60"
+              - name: image-gc-high-threshold
+                value: "80"
+              - name: image-gc-low-threshold
+                value: "65"
+            name: "{{ local_hostname }}"
+        joinConfiguration:
+          nodeRegistration:
+            kubeletExtraArgs:
+              - name: provider-id
+                value: openstack:///'{{ instance_id }}'
+              - name: kube-reserved
+                value: cpu=200m,memory=768Mi,ephemeral-storage=2Gi
+              - name: system-reserved
+                value: cpu=200m,memory=768Mi,ephemeral-storage=2Gi
+              - name: eviction-hard
+                value: memory.available<500Mi,nodefs.available<10%,imagefs.available<10%,nodefs.inodesFree<5%
+              - name: eviction-soft
+                value: memory.available<1Gi,nodefs.available<15%,imagefs.available<15%
+              - name: eviction-soft-grace-period
+                value: memory.available=2m,nodefs.available=2m,imagefs.available=2m
+              - name: eviction-max-pod-grace-period
+                value: "60"
+              - name: image-gc-high-threshold
+                value: "80"
+              - name: image-gc-low-threshold
+                value: "65"
+            name: "{{ local_hostname }}"

@@ -14,14 +14,23 @@
 # automatically. kube-prometheus-stack's default serviceMonitorSelector
 # (allow-all) picks it up without extra configuration.
 #
-# Key metric: certmanager_certificate_expiration_timestamp_seconds
-#   - Unix timestamp of the certificate's NotAfter field
-#   - Labels: namespace, name, issuer_kind, issuer_name, condition, ready
+# Key metrics:
+#   certmanager_certificate_expiration_timestamp_seconds
+#     - Unix timestamp of the certificate's NotAfter field
+#     - Labels: namespace, name, issuer_kind, issuer_name, condition, ready
+#   certmanager_certificate_not_before_timestamp_seconds
+#     - Unix timestamp of the certificate's NotBefore (issuance) field
+#     - Labels: namespace, name, issuer_kind, issuer_name, condition, ready
 #
-# Every expression below was validated against the cert-manager metric schema
-# before commit. Exact values (days -> seconds):
-#   7 days  = 604800
-#   30 days = 2592000
+# Expiry rules use PERCENTAGE-OF-LIFETIME thresholds, not fixed day counts.
+# This avoids false alerts on short-lived certs (e.g. 72h duration certs that
+# would fire a 30d warning immediately). The percentage is computed as:
+#   (remaining_seconds / total_lifetime_seconds) * 100
+# where total_lifetime = not_after - not_before.
+#
+# Thresholds:
+#   Critical: <10% of lifetime remaining
+#   Warning:  <20% of lifetime remaining
 #
 # DO NOT add a `cluster=~"$cluster"` selector to these expressions. Grafana
 # alert rules have NO dashboard template variables — see rules-flux.yaml for
@@ -39,10 +48,11 @@ spec:
   folderRef: alerts
   interval: 5m
   rules:
-    # Fires when a certificate is within 7 days of expiry.
-    # certmanager_certificate_expiration_timestamp_seconds is the NotAfter
-    # timestamp; (value - now()) gives remaining seconds. Below 604800 (7d)
-    # is critical — the cert may already be causing client trust failures.
+    # Fires when <10% of the certificate's total lifetime remains.
+    # Uses certmanager_certificate_not_before_timestamp_seconds to compute
+    # the total duration (not_after - not_before), so the threshold scales
+    # with every cert regardless of its configured duration.
+    # Example: 72h cert → fires at ~7.2h remaining; 90d cert → fires at ~9d.
     - uid: argus-cert-expiring-7d
       title: CertManagerCertificateExpiringCritical
       condition: C
@@ -53,8 +63,8 @@ spec:
         severity: critical
         component: cert-manager
       annotations:
-        summary: "Certificate {{ $labels.name }} expiring in <7 days ({{ $labels.cluster }})"
-        description: 'Certificate {{ $labels.namespace }}/{{ $labels.name }} (issuer: {{ $labels.issuer_kind }}/{{ $labels.issuer_name }}) in cluster {{ $labels.cluster }} expires in {{ printf "%.0f" (divf $values.B.Value 86400) }} days. Immediate action required — clients will reject this cert.'
+        summary: "Certificate {{ $labels.name }} expiring — <10% lifetime left ({{ $labels.cluster }})"
+        description: 'Certificate {{ $labels.namespace }}/{{ $labels.name }} (issuer: {{ $labels.issuer_kind }}/{{ $labels.issuer_name }}) in cluster {{ $labels.cluster }} has {{ printf "%.0f" (divf $values.B.Value 86400) }} days remaining (<10% of its lifetime). Immediate action required — clients will reject this cert.'
       data:
         - refId: A
           relativeTimeRange:
@@ -66,12 +76,25 @@ spec:
               type: prometheus
               uid: Mimir
             editorMode: code
-            expr: (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400
+            expr: |
+              label_join(
+                (certmanager_certificate_expiration_timestamp_seconds - time())
+                /
+                (certmanager_certificate_expiration_timestamp_seconds
+                  - certmanager_certificate_not_before_timestamp_seconds)
+                * 100,
+                "join_key", "/", "namespace", "name"
+              )
+              and on(join_key)
+              label_join(
+                (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400,
+                "join_key", "/", "namespace", "name"
+              )
             instant: true
             range: false
             intervalMs: 1000
             maxDataPoints: 43200
-            legendFormat: __auto
+            legendFormat: "{{ namespace }}/{{ name }}"
             refId: A
         - refId: B
           datasourceUid: __expr__
@@ -97,7 +120,7 @@ spec:
               - evaluator:
                   type: lt
                   params:
-                    - 7
+                    - 10
                 operator:
                   type: and
                 query:
@@ -111,11 +134,12 @@ spec:
             maxDataPoints: 43200
             refId: C
 
-    # Fires when a certificate is within 30 days of expiry.
+    # Fires when <20% of the certificate's total lifetime remains.
     # Warning threshold — enough time to investigate and renew before it
     # becomes critical. cert-manager should auto-renew well before this,
     # so a firing rule here usually means the issuer is broken or the
     # Certificate resource is misconfigured.
+    # Example: 72h cert → fires at ~14.4h remaining; 90d cert → fires at ~18d.
     - uid: argus-cert-expiring-30d
       title: CertManagerCertificateExpiringWarning
       condition: C
@@ -126,8 +150,8 @@ spec:
         severity: warning
         component: cert-manager
       annotations:
-        summary: "Certificate {{ $labels.name }} expiring in <30 days ({{ $labels.cluster }})"
-        description: 'Certificate {{ $labels.namespace }}/{{ $labels.name }} (issuer: {{ $labels.issuer_kind }}/{{ $labels.issuer_name }}) in cluster {{ $labels.cluster }} expires in {{ printf "%.0f" (divf $values.B.Value 86400) }} days. Check cert-manager renewal status.'
+        summary: "Certificate {{ $labels.name }} expiring — <20% lifetime left ({{ $labels.cluster }})"
+        description: 'Certificate {{ $labels.namespace }}/{{ $labels.name }} (issuer: {{ $labels.issuer_kind }}/{{ $labels.issuer_name }}) in cluster {{ $labels.cluster }} has {{ printf "%.0f" (divf $values.B.Value 86400) }} days remaining (<20% of its lifetime). Check cert-manager renewal status.'
       data:
         - refId: A
           relativeTimeRange:
@@ -139,12 +163,25 @@ spec:
               type: prometheus
               uid: Mimir
             editorMode: code
-            expr: (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400
+            expr: |
+              label_join(
+                (certmanager_certificate_expiration_timestamp_seconds - time())
+                /
+                (certmanager_certificate_expiration_timestamp_seconds
+                  - certmanager_certificate_not_before_timestamp_seconds)
+                * 100,
+                "join_key", "/", "namespace", "name"
+              )
+              and on(join_key)
+              label_join(
+                (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400,
+                "join_key", "/", "namespace", "name"
+              )
             instant: true
             range: false
             intervalMs: 1000
             maxDataPoints: 43200
-            legendFormat: __auto
+            legendFormat: "{{ namespace }}/{{ name }}"
             refId: A
         - refId: B
           datasourceUid: __expr__
@@ -170,7 +207,7 @@ spec:
               - evaluator:
                   type: lt
                   params:
-                    - 30
+                    - 20
                 operator:
                   type: and
                 query:

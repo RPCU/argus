@@ -207,13 +207,13 @@ spec:
             "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
             "textMode": "auto"
           },
-          "title": "Expiring < 7d",
+          "title": "Expiring <10% lifetime",
           "type": "stat",
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
               "editorMode": "code",
-              "expr": "count((certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"} - time()) / 86400 < 7)",
+              "expr": "count(label_join((certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"} - time()) / (certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"} - certmanager_certificate_not_before_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"}) * 100, \"k\", \"/\", \"namespace\", \"name\") < 10)",
               "legendFormat": "Critical",
               "range": false,
               "instant": true,
@@ -242,13 +242,13 @@ spec:
             "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
             "textMode": "auto"
           },
-          "title": "Expiring < 30d",
+          "title": "Expiring 10-20% lifetime",
           "type": "stat",
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
               "editorMode": "code",
-              "expr": "count((certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"} - time()) / 86400 < 30 and (certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"} - time()) / 86400 >= 7)",
+              "expr": "count(label_join((certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"} - time()) / (certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"} - certmanager_certificate_not_before_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"}) * 100, \"k\", \"/\", \"namespace\", \"name\") < 20 and label_join((certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"} - time()) / (certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"} - certmanager_certificate_not_before_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"}) * 100, \"k\", \"/\", \"namespace\", \"name\") >= 10)",
               "legendFormat": "Warning",
               "range": false,
               "instant": true,
@@ -277,13 +277,13 @@ spec:
             "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
             "textMode": "auto"
           },
-          "title": "Expiring > 30d",
+          "title": "Expiring >20% lifetime",
           "type": "stat",
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
               "editorMode": "code",
-              "expr": "count((certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"} - time()) / 86400 >= 30)",
+              "expr": "count(label_join((certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"} - time()) / (certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"} - certmanager_certificate_not_before_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"}) * 100, \"k\", \"/\", \"namespace\", \"name\") >= 20)",
               "legendFormat": "Healthy",
               "range": false,
               "instant": true,

@@ -1,0 +1,48 @@
+# -----------------------------------------------------------------------------
+# Control plane template (KamajiControlPlane) — v6
+#
+# Same as v5 but adjusts resource requests to match observed usage.
+#
+# Measured 48h peaks: apiserver 503m CPU / 4Gi memory, controller-manager
+# 66m / 298Mi, scheduler 25m / 170Mi. CPU and memory limits are deliberately
+# omitted everywhere — throttling a single-threaded apiserver or scheduler
+# is worse than letting them burst (same rationale as OVN, Ceph, yaook).
+# Memory requests reflect actual working-set usage for correct scheduling.
+# CPU requests ensure the pods win scheduling contests against BestEffort
+# workloads on these busy hyperconverged nodes.
+# -----------------------------------------------------------------------------
+apiVersion: controlplane.cluster.x-k8s.io/v1alpha2
+kind: KamajiControlPlaneTemplate
+metadata:
+  name: openstack-kamaji-control-plane-v6
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      dataStoreName: default
+      apiServer:
+        extraArgs: []
+        resources:
+          requests:
+            cpu: 200m
+            memory: 1Gi
+      controllerManager:
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+      scheduler:
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+      kubelet:
+        preferredAddressTypes:
+          - InternalIP
+          - ExternalIP
+          - Hostname
+      network:
+        serviceType: LoadBalancer
+      addons:
+        coreDNS: {}
+        konnectivity: {}

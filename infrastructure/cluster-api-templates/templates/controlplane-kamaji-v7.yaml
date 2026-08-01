@@ -38,11 +38,7 @@ spec:
                       kamaji.clastix.io/component: deployment
                   topologyKey: kubernetes.io/hostname
       apiServer:
-        extraArgs:
-          # Halve the default watch-cache allocation (100 → 50 slots per
-          # resource). The mgmt cluster has ~690 CRDs with ~10 objects each;
-          # the default 100-slot cache wastes ~1.5 GiB of apiserver heap.
-          - --watch-cache-sizes=default=50
+        extraArgs: []
         resources:
           requests:
             cpu: 200m

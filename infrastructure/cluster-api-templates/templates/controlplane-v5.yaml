@@ -1,26 +1,27 @@
 # -----------------------------------------------------------------------------
-# Control plane template (KubeadmControlPlane) — v4.
+# Control plane template (KubeadmControlPlane) — v5.
 #
-# WHAT CHANGED vs -v3:
-#   1. apiServer.extraArgs: added --watch-cache-sizes=default=50
+# WHAT CHANGED vs -v4:
+#   1. Removed --watch-cache-sizes=default=50 from apiServer.extraArgs.
+#      This flag is NOT effective for CRDs — it only affects built-in resources
+#      (pods, services, etc.). CRD watch cache sizes are hardcoded at 100 slots
+#      per resource and cannot be changed via apiserver flags. The flag caused
+#      the apiserver to crash-loop on startup with "invalid value of watch cache
+#      size: default=50".
 #
-# NOTE: --watch-cache-sizes is NOT effective for CRDs (only built-in resources
-# like pods/services). CRD watch cache sizes are hardcoded and cannot be changed
-# via apiserver flags. This template was superseded by -v5 which removes the
-# ineffective flag. Kept for immutability — the live object cannot be edited.
-#
-# Everything else is inherited unchanged from -v3.
+# v5 is otherwise identical to -v3 (which added ECDSA-P256). The -v4 template
+# is kept for immutability — the live object cannot be edited.
 #
 # IMMUTABILITY: KubeadmControlPlaneTemplate.spec.template.spec is effectively
 # immutable once referenced by a running ClusterClass. To change anything here,
-# create a NEW template with a bumped version suffix (e.g. -v5), point the
+# create a NEW template with a bumped version suffix (e.g. -v6), point the
 # ClusterClass controlPlane.templateRef at it, and let the topology controller
-# roll the control-plane machines. Never edit -v4 in place on a live cluster.
+# roll the control-plane machines. Never edit -v5 in place on a live cluster.
 # -----------------------------------------------------------------------------
 apiVersion: controlplane.cluster.x-k8s.io/v1beta2
 kind: KubeadmControlPlaneTemplate
 metadata:
-  name: openstack-default-control-plane-v4
+  name: openstack-default-control-plane-v5
   namespace: mgmt
 spec:
   template:
@@ -32,8 +33,6 @@ spec:
             extraArgs:
               - name: kubelet-preferred-address-types
                 value: "InternalIP,Hostname,ExternalIP"
-              - name: watch-cache-sizes
-                value: "default=50"
           controllerManager:
             extraArgs:
               - name: node-monitor-grace-period

@@ -57,9 +57,9 @@ spec:
     resources:
       requests:
         cpu: 250m
-        memory: 1Gi
-      limits:
         memory: 2Gi
+      limits:
+        memory: 4Gi
     # Relax the liveness probe (default: period=10s failure=10 ≈ 100s). A
     # kill → restart cycle is EXPENSIVE for NFS (90s grace period, stalled
     # clients, session churn), so tolerate ~6 min of unresponsiveness before

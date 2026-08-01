@@ -1,0 +1,65 @@
+# -----------------------------------------------------------------------------
+# Control plane template (KamajiControlPlane) — v4
+#
+# Same as v3 but adds resource requests/limits for the tenant control plane
+# pods (kube-apiserver, kube-controller-manager, kube-scheduler). Without
+# explicit resources these pods run BestEffort (cpu.weight=1) and can be
+# starved on busy management nodes shared with Ceph OSDs, OVN, and tenant
+# VMs — the same failure pattern as OVN (2026-07-26) and yaook databases
+# (2026-07-30).
+#
+# Measured tenant apiserver CPU usage: 47-100m at steady state (AGENTS.md,
+# "kube-apiserver CPU is TLS-handshake bound"). The 500m limit provides
+# headroom for TLS handshake bursts and leader-election reconnect storms.
+# controller-manager and scheduler are lighter; limits prevent a runaway
+# loop from starving co-located pods.
+#
+# IMMUTABILITY: KamajiControlPlaneTemplate.spec.template.spec is immutable
+# once referenced by a ClusterClass. To change anything here, create a NEW
+# template with a bumped version suffix (e.g. -v5), point the ClusterClass
+# controlPlane.templateRef at it, and let the topology controller reconcile.
+# -----------------------------------------------------------------------------
+apiVersion: controlplane.cluster.x-k8s.io/v1alpha2
+kind: KamajiControlPlaneTemplate
+metadata:
+  name: openstack-kamaji-control-plane-v4
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      dataStoreName: default
+      apiServer:
+        extraArgs: []
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      controllerManager:
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+      scheduler:
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 250m
+            memory: 128Mi
+      kubelet:
+        preferredAddressTypes:
+          - InternalIP
+          - ExternalIP
+          - Hostname
+      network:
+        serviceType: LoadBalancer
+      addons:
+        coreDNS: {}
+        konnectivity: {}

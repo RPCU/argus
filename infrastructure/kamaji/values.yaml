@@ -7,14 +7,21 @@ image:
   tag: 26.7.5-edge
 replicaCount: 3
 resources:
-  limits:
-    cpu: 500m
-    memory: 512Mi
   requests:
-    cpu: 100m
+    cpu: 200m
     memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
 kamaji-etcd:
   clusterDomain: "mgmt.local"
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
   # Spread the 3 etcd members across distinct nodes. Without this, node
   # churn (CAPI remediation) packed 2/3 members onto ONE worker (observed
   # 2026-07-07), so a single node degraded EVERY tenant control plane —

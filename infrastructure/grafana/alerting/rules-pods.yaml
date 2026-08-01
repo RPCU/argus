@@ -1,4 +1,4 @@
-# Pod / workload alert rules: CrashLoopBackOff, not-ready, restart storms.
+# Pod / workload alert rules: CrashLoopBackOff, OOMKilled, not-ready, restart storms.
 #
 # Grafana-MANAGED alerts (evaluated by Grafana against Mimir), same rationale as
 # rules-node.yaml: Mimir's ruler is disabled and every cluster's local
@@ -75,6 +75,84 @@ spec:
               uid: Mimir
             editorMode: code
             expr: max by (cluster, namespace, pod, container) (kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"})
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: gt
+                  params:
+                    - 0
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    # ---------------------------------------------------------------------
+    # OOMKilled — fires when a container's last termination reason was OOM.
+    # kube_pod_container_status_last_terminated_reason persists after restart,
+    # so this catches both currently-OOMKilled containers and those that
+    # recovered but were recently killed. A single OOM kill on a critical pod
+    # (Vault, etcd, OVN) is worth a warning; a repeat will also trip the
+    # PodRestartingFrequently rule below.
+    # ---------------------------------------------------------------------
+    - uid: argus-pod-oomkilled
+      title: PodOOMKilled
+      condition: C
+      for: "0m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: warning
+        component: workload
+      annotations:
+        __dashboardUid__: cluster-cpu-ram-overview
+        __panelId__: "14"
+        summary: "OOMKilled: {{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.cluster }})"
+        description: "Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} on cluster {{ $labels.cluster }} was OOM-killed. Its memory working set exceeded the container limit. Consider raising the memory limit or profiling the container's usage."
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 300
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: max by (cluster, namespace, pod, container) (kube_pod_container_status_last_terminated_reason{reason="OOMKilled"})
             instant: true
             range: false
             intervalMs: 1000

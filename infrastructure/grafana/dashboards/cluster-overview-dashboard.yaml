@@ -345,7 +345,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "topk(20, sum(rate(container_cpu_usage_seconds_total{container!=\"\", pod!=\"\", cluster=~\"$cluster\"}[5m])) by (cluster, namespace, pod) / on(cluster, namespace, pod) group_left sum(kube_pod_container_resource_limits{resource=\"cpu\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) by (cluster, namespace, pod) * 100 > 0)",
+              "expr": "topk(20, sum by (cluster, namespace, pod) (rate(container_cpu_usage_seconds_total{container!=\"\", pod!=\"\", cluster=~\"$cluster\"}[5m]) and on(cluster, namespace, pod, container) kube_pod_container_resource_limits{resource=\"cpu\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) / sum by (cluster, namespace, pod) (kube_pod_container_resource_limits{resource=\"cpu\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) * 100 > 0)",
               "legendFormat": "{{cluster}} | {{namespace}}/{{pod}}",
               "refId": "A"
             }
@@ -388,7 +388,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "topk(20, sum(container_memory_working_set_bytes{container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) by (cluster, namespace, pod) / on(cluster, namespace, pod) group_left sum(kube_pod_container_resource_limits{resource=\"memory\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) by (cluster, namespace, pod) * 100 > 0)",
+              "expr": "topk(20, sum by (cluster, namespace, pod) (container_memory_working_set_bytes{container!=\"\", pod!=\"\", cluster=~\"$cluster\"} and on(cluster, namespace, pod, container) kube_pod_container_resource_limits{resource=\"memory\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) / sum by (cluster, namespace, pod) (kube_pod_container_resource_limits{resource=\"memory\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) * 100 > 0)",
               "legendFormat": "{{cluster}} | {{namespace}}/{{pod}}",
               "refId": "A"
             }
@@ -480,7 +480,7 @@ spec:
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
               "editorMode": "code",
-              "expr": "sum by (cluster, namespace, pod) (rate(container_cpu_usage_seconds_total{container!=\"\", pod!=\"\", cluster=~\"$cluster\"}[5m])) / sum by (cluster, namespace, pod) (kube_pod_container_resource_limits{resource=\"cpu\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) * 100",
+              "expr": "sum by (cluster, namespace, pod) (rate(container_cpu_usage_seconds_total{container!=\"\", pod!=\"\", cluster=~\"$cluster\"}[5m]) and on(cluster, namespace, pod, container) kube_pod_container_resource_limits{resource=\"cpu\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) / sum by (cluster, namespace, pod) (kube_pod_container_resource_limits{resource=\"cpu\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) * 100",
               "format": "table",
               "instant": true,
               "legendFormat": "",
@@ -489,7 +489,7 @@ spec:
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
               "editorMode": "code",
-              "expr": "sum by (cluster, namespace, pod) (container_memory_working_set_bytes{container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) / sum by (cluster, namespace, pod) (kube_pod_container_resource_limits{resource=\"memory\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) * 100",
+              "expr": "sum by (cluster, namespace, pod) (container_memory_working_set_bytes{container!=\"\", pod!=\"\", cluster=~\"$cluster\"} and on(cluster, namespace, pod, container) kube_pod_container_resource_limits{resource=\"memory\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) / sum by (cluster, namespace, pod) (kube_pod_container_resource_limits{resource=\"memory\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) * 100",
               "format": "table",
               "instant": true,
               "legendFormat": "",
@@ -589,7 +589,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum by (cluster, namespace, pod) (rate(container_cpu_usage_seconds_total{container!=\"\", pod!=\"\", cluster=~\"$cluster\"}[5m])) / sum by (cluster, namespace, pod) (kube_pod_container_resource_limits{resource=\"cpu\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) * 100",
+              "expr": "sum by (cluster, namespace, pod) (rate(container_cpu_usage_seconds_total{container!=\"\", pod!=\"\", cluster=~\"$cluster\"}[5m]) and on(cluster, namespace, pod, container) kube_pod_container_resource_limits{resource=\"cpu\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) / sum by (cluster, namespace, pod) (kube_pod_container_resource_limits{resource=\"cpu\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) * 100",
               "legendFormat": "{{cluster}} | {{namespace}}/{{pod}}",
               "refId": "A"
             }
@@ -633,7 +633,7 @@ spec:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "expr": "sum by (cluster, namespace, pod) (container_memory_working_set_bytes{container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) / sum by (cluster, namespace, pod) (kube_pod_container_resource_limits{resource=\"memory\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) * 100",
+              "expr": "sum by (cluster, namespace, pod) (container_memory_working_set_bytes{container!=\"\", pod!=\"\", cluster=~\"$cluster\"} and on(cluster, namespace, pod, container) kube_pod_container_resource_limits{resource=\"memory\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) / sum by (cluster, namespace, pod) (kube_pod_container_resource_limits{resource=\"memory\", container!=\"\", pod!=\"\", cluster=~\"$cluster\"}) * 100",
               "legendFormat": "{{cluster}} | {{namespace}}/{{pod}}",
               "refId": "A"
             }

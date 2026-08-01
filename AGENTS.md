@@ -988,8 +988,7 @@ cilium`** so the CNI is fully installed before Flux — Flux's pods (and the
     `FluxInstance` CRD ships with the operator, so the operator must land first.
 
   The FluxInstance mirrors `infrastructure/fluxcd/instances/flux.yaml` (all four
-  components incl. `notification-controller`, the `--concurrent=4` +
-  `--kube-api-qps=50`/`--kube-api-burst=100` throttle patch, and the **tmpfs
+  components incl. `notification-controller`, the `--concurrent=2` throttle patch, and the **tmpfs
   ephemeral-storage patches** — RAM-backed `emptyDir` `medium: Memory` for
   source-controller `data`/`tmp` and kustomize/helm-controller `temp`, with
   raised memory limits for headroom) with
@@ -1664,7 +1663,7 @@ _fluxcd/operator/_ - Operator installation
 
 _fluxcd/instances/_ - Instance configuration
 
-- `flux.yaml` - FluxInstance CRD (Flux 2.x, kustomize/helm controllers patched to `--concurrent=4` + `--kube-api-qps=50`/`--kube-api-burst=100` to bound etcd load). **All controllers' ephemeral storage is backed by tmpfs** (RAM-backed `emptyDir` with `medium: Memory`) instead of the node disk to avoid heavy disk I/O from Git clones, artifact unpacking, and kustomize/helm build scratch. Per-controller patches (volume names differ upstream): source-controller `data`(/data, sizeLimit 1Gi) + `tmp`(/tmp, 256Mi); kustomize/helm-controller `temp`(/tmp, 512Mi). Because a Memory `emptyDir` counts against the container memory cgroup limit, the memory limits are raised for headroom (source-controller 2Gi, kustomize/helm-controller 1536Mi) — a full tmpfs would otherwise OOM-kill the pod; each `sizeLimit` also caps tmpfs growth so a runaway artifact can't exhaust node RAM.
+- `flux.yaml` - FluxInstance CRD (Flux 2.x, kustomize/helm controllers patched to `--concurrent=2` to bound etcd load). **All controllers' ephemeral storage is backed by tmpfs** (RAM-backed `emptyDir` with `medium: Memory`) instead of the node disk to avoid heavy disk I/O from Git clones, artifact unpacking, and kustomize/helm build scratch. Per-controller patches (volume names differ upstream): source-controller `data`(/data, sizeLimit 1Gi) + `tmp`(/tmp, 256Mi); kustomize/helm-controller `temp`(/tmp, 512Mi). Because a Memory `emptyDir` counts against the container memory cgroup limit, the memory limits are raised for headroom (source-controller 2Gi, kustomize/helm-controller 1536Mi) — a full tmpfs would otherwise OOM-kill the pod; each `sizeLimit` also caps tmpfs growth so a runaway artifact can't exhaust node RAM.
 - `kustomization.yaml` - Manifest collection
 
 ---
@@ -1773,7 +1772,7 @@ _fluxcd/instances/_ - Instance configuration
 - **Git Repository**: <https://github.com/RPCU/argus.git>
 - **Branch**: main
 - **Path**: ./clusters/PLACEHOLDER (cluster-specific override)
-- **Concurrency**: 4 operations per controller (kustomize/helm), throttled with `--kube-api-qps=50`/`--kube-api-burst=100` to bound apiserver/etcd load
+- **Concurrency**: 2 operations per controller (kustomize/helm) to bound apiserver/etcd load
 - **Ephemeral storage**: all controllers use tmpfs (RAM-backed `emptyDir` `medium: Memory`) instead of node disk, to avoid heavy disk I/O (source-controller `data`/`tmp`; kustomize/helm-controller `temp`), with per-volume `sizeLimit`s and raised memory limits for headroom
 - **Interval**: 1 minute
 

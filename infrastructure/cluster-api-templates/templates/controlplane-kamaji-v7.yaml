@@ -1,0 +1,69 @@
+# -----------------------------------------------------------------------------
+# Control plane template (KamajiControlPlane) — v7
+#
+# Same as v6 but adds --watch-cache-sizes=default=50 to the kube-apiserver
+# extraArgs to reduce watch cache memory usage.
+#
+# WHY: the mgmt cluster has ~690 CRDs, giving 756 watch cache slots at the
+# Kubernetes default capacity of 100. With only ~7,300 total objects across
+# 748 non-empty resources (avg ~10 per resource), 90% of the cache memory is
+# wasted. The apiserver was using ~3.9 GiB RSS on 8 GiB nodes, pushing
+# control-plane nodes to 90-96% memory usage.
+#
+# Setting default=50 halves the watch cache allocation (756 × 50 slots vs
+# 756 × 100), saving ~1.5-2 GiB of apiserver heap. This is safe because:
+#   - The mgmt cluster has only 7 nodes (not 100)
+#   - Most CRD resources have 0-10 objects (far below 50)
+#   - No resource has more than 3,316 objects (events), which still fits
+#     comfortably in a 50-slot cache (the cache is a ring buffer, not a
+#     full object store — it holds the last 50 revisions, not 50 objects)
+# -----------------------------------------------------------------------------
+apiVersion: controlplane.cluster.x-k8s.io/v1alpha2
+kind: KamajiControlPlaneTemplate
+metadata:
+  name: openstack-kamaji-control-plane-v7
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      dataStoreName: default
+      deployment:
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchLabels:
+                      kamaji.clastix.io/component: deployment
+                  topologyKey: kubernetes.io/hostname
+      apiServer:
+        extraArgs:
+          # Halve the default watch-cache allocation (100 → 50 slots per
+          # resource). The mgmt cluster has ~690 CRDs with ~10 objects each;
+          # the default 100-slot cache wastes ~1.5 GiB of apiserver heap.
+          - --watch-cache-sizes=default=50
+        resources:
+          requests:
+            cpu: 200m
+            memory: 1Gi
+      controllerManager:
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+      scheduler:
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+      kubelet:
+        preferredAddressTypes:
+          - InternalIP
+          - ExternalIP
+          - Hostname
+      network:
+        serviceType: LoadBalancer
+      addons:
+        coreDNS: {}
+        konnectivity: {}

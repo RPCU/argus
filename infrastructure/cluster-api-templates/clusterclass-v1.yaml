@@ -24,13 +24,15 @@ spec:
     templateRef:
       apiVersion: controlplane.cluster.x-k8s.io/v1beta2
       kind: KubeadmControlPlaneTemplate
-      name: openstack-default-control-plane-v1
-    # NOTE: the control-plane templateRef stays at -v1 on purpose. This legacy
-    # class exists precisely to avoid rolling clusters created from it; the
-    # kubelet-hardening flags live in the -v2 templates used by
-    # `openstack-default`. `healthCheck` below, by contrast, is a ClusterClass
-    # field rather than part of the immutable template, so adding it here is
-    # safe and does NOT roll any Machine.
+      name: openstack-default-control-plane-v4
+    # NOTE: the control-plane templateRef was updated from -v1 to -v4 to apply
+    # the watch-cache-sizes fix (halving apiserver watch cache memory from
+    # ~3.9 GiB to ~2.0 GiB on the 8 GiB mgmt nodes). This WILL roll
+    # control-plane machines on the next reconciliation — the -v4 template
+    # adds --watch-cache-sizes=default=50 to the kube-apiserver extraArgs.
+    # `healthCheck` below, by contrast, is a ClusterClass field rather than
+    # part of the immutable template, so adding it here is safe and does NOT
+    # roll any Machine.
     healthCheck:
       checks:
         nodeStartupTimeoutSeconds: 1200

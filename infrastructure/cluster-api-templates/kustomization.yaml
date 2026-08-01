@@ -7,12 +7,14 @@ resources:
   - templates/controlplane.yaml
   - templates/controlplane-v2.yaml
   - templates/controlplane-v3.yaml
+  - templates/controlplane-v4.yaml
   - templates/controlplane-kamaji.yaml
   - templates/controlplane-kamaji-v2.yaml
   - templates/controlplane-kamaji-v3.yaml
   - templates/controlplane-kamaji-v4.yaml
   - templates/controlplane-kamaji-v5.yaml
   - templates/controlplane-kamaji-v6.yaml
+  - templates/controlplane-kamaji-v7.yaml
   - templates/bootstrap.yaml
   - templates/bootstrap-v2.yaml
   - templates/infracluster.yaml

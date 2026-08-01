@@ -19,7 +19,10 @@ cluster-api-templates/
 └── templates/
     ├── controlplane.yaml       # KubeadmControlPlaneTemplate   openstack-default-control-plane-v1
     ├── controlplane-v2.yaml    # …-control-plane-v2 (kubelet reservations + CM node-monitor timers)
-    ├── controlplane-v3.yaml    # …-control-plane-v3 (ECDSA-P256 control-plane certs) — CURRENT
+    ├── controlplane-v3.yaml    # …-control-plane-v3 (ECDSA-P256 control-plane certs)
+    ├── controlplane-v4.yaml    # …-control-plane-v4 (broken --watch-cache-sizes, superseded)
+    ├── controlplane-v5.yaml    # …-control-plane-v5 (removed broken flag)
+    ├── controlplane-v6.yaml    # …-control-plane-v6 (apiserver memory tuning) — CURRENT
     ├── bootstrap.yaml          # KubeadmConfigTemplate         openstack-default-worker-v1
     ├── infracluster.yaml       # OpenStackClusterTemplate      openstack-default-cluster-v1
     └── machines.yaml           # OpenStackMachineTemplate x2   openstack-default-{control-plane,worker}-v1
@@ -277,17 +280,15 @@ This keeps the change explicit, auditable, and safely rolled out via GitOps.
   machines).
 - Machine `flavor`/`image` in `machines.yaml` are deliberate `dummy`
   placeholders — they are always overwritten by patches.
-- `controlplane-v3.yaml` (`openstack-default-control-plane-v3`) is identical to
-  `-v2` plus `clusterConfiguration.encryptionAlgorithm: ECDSA-P256`, so kubeadm
-  generates ECDSA P-256 control-plane keys/certs instead of the RSA-2048
-  default. Rationale: at low request volume the dominant kube-apiserver CPU cost
-  is the per-connection TLS handshake (asymmetric crypto), and an ECDSA-P256
-  handshake is ~5-10x cheaper server-side than RSA-2048. The ClusterClass
-  `controlPlane.templateRef` points at `-v3`. **It only takes effect on certs
-  generated at `kubeadm init` / cert renewal**, i.e. when the control-plane
-  machines are rolled (which the templateRef bump triggers) — an already-running
-  control plane keeps its RSA certs until its machines are replaced. `-v2` is
-  retained until the rotation is confirmed, then deleted. (The Kamaji
-  ClusterClass is NOT changed: `KamajiControlPlaneTemplate` manages its tenant
-  control-plane cert keys itself and exposes no kubeadm `encryptionAlgorithm`
-  knob, and the Kamaji tenant apiservers are not CPU-stressed.)
+- `controlplane-v6.yaml` (`openstack-default-control-plane-v6`) is the current
+  template. It adds apiserver memory-tuning flags on top of `-v5`:
+  - `--event-ttl=30m` (down from 1h) — events are the highest-churn resource
+    in etcd; halving retention reduces both etcd space and apiserver watch-cache
+    pressure.
+  - `--max-requests-inflight=200` / `--max-mutating-requests-inflight=100`
+    (down from 400/200) — caps concurrent in-flight requests to reduce peak
+    memory from serialization/deserialization.
+  - `--profiling=false` — removes pprof endpoints (minor memory/CPU savings).
+- The Kamaji ClusterClass currently points at
+  `openstack-kamaji-control-plane-v8`, which carries the same apiserver tuning
+  flags (`--event-ttl`, `--max-requests-inflight`, `--profiling=false`).

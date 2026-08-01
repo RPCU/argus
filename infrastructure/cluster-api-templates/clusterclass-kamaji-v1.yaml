@@ -24,7 +24,7 @@ spec:
     templateRef:
       apiVersion: controlplane.cluster.x-k8s.io/v1alpha2
       kind: KamajiControlPlaneTemplate
-      name: openstack-kamaji-control-plane-v7
+      name: openstack-kamaji-control-plane-v8
 
   # ---------------------------------------------------------------------------
   # Cluster infrastructure — -v4 template (includes remoteManagedGroups rules)

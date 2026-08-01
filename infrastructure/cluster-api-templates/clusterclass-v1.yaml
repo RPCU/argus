@@ -24,7 +24,7 @@ spec:
     templateRef:
       apiVersion: controlplane.cluster.x-k8s.io/v1beta2
       kind: KubeadmControlPlaneTemplate
-      name: openstack-default-control-plane-v5
+      name: openstack-default-control-plane-v6
     # NOTE: the control-plane templateRef was updated from -v1 to -v5.
     # -v1 had ECDSA-P256 (via v3), -v4 added --watch-cache-sizes which crashed
     # the apiserver (invalid for CRDs), and -v5 removes it. The control-plane

@@ -21,22 +21,14 @@ spec:
     patches:
       # Tuned down from --concurrent=42 (~10x default) which overloaded etcd:
       # each concurrent reconcile drives server-side-apply diffs (list/get/patch)
-      # against the apiserver/etcd. Reset to the Flux default concurrency (4) and
-      # cap the per-controller apiserver request rate (--kube-api-qps/--kube-api-burst)
-      # to bound etcd load across all clusters.
+      # against the apiserver/etcd. Set to 2 to bound etcd load across all clusters.
       - target:
           kind: Deployment
           name: "(kustomize-controller|helm-controller)"
         patch: |
           - op: add
             path: /spec/template/spec/containers/0/args/-
-            value: --concurrent=4
-          - op: add
-            path: /spec/template/spec/containers/0/args/-
-            value: --kube-api-qps=50
-          - op: add
-            path: /spec/template/spec/containers/0/args/-
-            value: --kube-api-burst=100
+            value: --concurrent=2
       # Back the controllers' ephemeral storage with tmpfs (RAM-backed emptyDir,
       # medium: Memory) instead of the node's disk, to avoid heavy disk I/O from
       # Git clones, artifact unpacking, and kustomize/helm build scratch.

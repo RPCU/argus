@@ -37,14 +37,10 @@ spec:
                   topologyKey: kubernetes.io/hostname
       apiServer:
         extraArgs:
-          - name: event-ttl
-            value: "30m"
-          - name: max-requests-inflight
-            value: "200"
-          - name: max-mutating-requests-inflight
-            value: "100"
-          - name: profiling
-            value: "false"
+          - --event-ttl=30m
+          - --max-requests-inflight=200
+          - --max-mutating-requests-inflight=100
+          - --profiling=false
         resources:
           requests:
             cpu: 200m

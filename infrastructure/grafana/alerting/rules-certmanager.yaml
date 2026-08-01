@@ -1,0 +1,258 @@
+# cert-manager certificate expiry alert rules.
+#
+# These are Grafana-MANAGED alerts (evaluated by Grafana against the Mimir
+# datasource), not Prometheus PrometheusRule CRs. Same rationale as all other
+# rules in this directory: Mimir's ruler is disabled and each cluster's local
+# Alertmanager has no receivers configured, so Grafana unified alerting is the
+# only delivery path.
+#
+# Requires cert-manager Prometheus metrics enabled in the cert-manager
+# HelmRelease values (infrastructure/cert-manager/values.yaml):
+#   prometheus.enabled: true
+#
+# The cert-manager chart creates a ServiceMonitor on port 9402 (/metrics)
+# automatically. kube-prometheus-stack's default serviceMonitorSelector
+# (allow-all) picks it up without extra configuration.
+#
+# Key metric: certmanager_certificate_expiration_timestamp_seconds
+#   - Unix timestamp of the certificate's NotAfter field
+#   - Labels: namespace, name, issuer_kind, issuer_name, condition, ready
+#
+# Every expression below was validated against the cert-manager metric schema
+# before commit. Exact values (days -> seconds):
+#   7 days  = 604800
+#   30 days = 2592000
+#
+# DO NOT add a `cluster=~"$cluster"` selector to these expressions. Grafana
+# alert rules have NO dashboard template variables — see rules-flux.yaml for
+# the full explanation.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaAlertRuleGroup
+metadata:
+  name: certmanager-certificates
+  namespace: monitoring
+spec:
+  allowCrossNamespaceImport: true
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana-central"
+  folderRef: alerts
+  interval: 5m
+  rules:
+    # Fires when a certificate is within 7 days of expiry.
+    # certmanager_certificate_expiration_timestamp_seconds is the NotAfter
+    # timestamp; (value - now()) gives remaining seconds. Below 604800 (7d)
+    # is critical — the cert may already be causing client trust failures.
+    - uid: argus-cert-expiring-7d
+      title: CertManagerCertificateExpiringCritical
+      condition: C
+      for: "5m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: critical
+        component: cert-manager
+      annotations:
+        summary: "Certificate {{ $labels.name }} expiring in <7 days ({{ $labels.cluster }})"
+        description: 'Certificate {{ $labels.namespace }}/{{ $labels.name }} (issuer: {{ $labels.issuer_kind }}/{{ $labels.issuer_name }}) in cluster {{ $labels.cluster }} expires in {{ printf "%.0f" (divf $values.B.Value 86400) }} days. Immediate action required — clients will reject this cert.'
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: lt
+                  params:
+                    - 7
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    # Fires when a certificate is within 30 days of expiry.
+    # Warning threshold — enough time to investigate and renew before it
+    # becomes critical. cert-manager should auto-renew well before this,
+    # so a firing rule here usually means the issuer is broken or the
+    # Certificate resource is misconfigured.
+    - uid: argus-cert-expiring-30d
+      title: CertManagerCertificateExpiringWarning
+      condition: C
+      for: "5m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: warning
+        component: cert-manager
+      annotations:
+        summary: "Certificate {{ $labels.name }} expiring in <30 days ({{ $labels.cluster }})"
+        description: 'Certificate {{ $labels.namespace }}/{{ $labels.name }} (issuer: {{ $labels.issuer_kind }}/{{ $labels.issuer_name }}) in cluster {{ $labels.cluster }} expires in {{ printf "%.0f" (divf $values.B.Value 86400) }} days. Check cert-manager renewal status.'
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: lt
+                  params:
+                    - 30
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    # Fires when a certificate has been in Ready=False state for > 15 minutes.
+    # A cert that is not ready is either failing issuance, failing renewal,
+    # or has a conditions mismatch. This is distinct from expiry — a cert
+    # can be far from expiry but stuck unready (e.g. DNS01 challenge failing,
+    # issuer degraded).
+    - uid: argus-cert-not-ready
+      title: CertManagerCertificateNotReady
+      condition: C
+      for: "15m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: warning
+        component: cert-manager
+      annotations:
+        summary: "Certificate {{ $labels.name }} not ready ({{ $labels.cluster }})"
+        description: "Certificate {{ $labels.namespace }}/{{ $labels.name }} in cluster {{ $labels.cluster }} has been in Ready=False state for 15 minutes. Check cert-manager logs and certificate status conditions."
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 900
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: certmanager_certificate_ready_status{condition="True"} == 0
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: gt
+                  params:
+                    - 0
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C

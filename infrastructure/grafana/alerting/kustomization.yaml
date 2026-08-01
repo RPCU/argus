@@ -11,3 +11,4 @@ resources:
   - rules-openstack.yaml
   - rules-diskio.yaml
   - rules-flux.yaml
+  - rules-certmanager.yaml

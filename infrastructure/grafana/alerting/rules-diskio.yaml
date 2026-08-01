@@ -45,7 +45,7 @@ spec:
     - uid: argus-diskio-util-high
       title: DiskHighUtilization
       condition: C
-      for: "10m"
+      for: "30m"
       noDataState: OK
       execErrState: Error
       labels:
@@ -55,7 +55,7 @@ spec:
         __dashboardUid__: node-disk-io-overview
         __panelId__: "5"
         summary: "Disk I/O utilization high on {{ $labels.node }}:{{ $labels.device }} ({{ $labels.cluster }})"
-        description: 'Device {{ $labels.device }} on {{ $labels.node }} (cluster {{ $labels.cluster }}) has been >90% utilized for 10m (currently {{ printf "%.1f" $values.B.Value }}%). Check the Disk I/O dashboard for which workload is driving the load.'
+        description: 'Device {{ $labels.device }} on {{ $labels.node }} (cluster {{ $labels.cluster }}) has been >90% utilized for 30m (currently {{ printf "%.1f" $values.B.Value }}%). Check the Disk I/O dashboard for which workload is driving the load.'
       data:
         - refId: A
           relativeTimeRange:
@@ -121,7 +121,7 @@ spec:
     - uid: argus-diskio-read-latency
       title: DiskHighReadLatency
       condition: C
-      for: "10m"
+      for: "30m"
       noDataState: OK
       execErrState: Error
       labels:
@@ -131,7 +131,7 @@ spec:
         __dashboardUid__: node-disk-io-overview
         __panelId__: "6"
         summary: "Disk read latency high on {{ $labels.node }}:{{ $labels.device }} ({{ $labels.cluster }})"
-        description: 'Device {{ $labels.device }} on {{ $labels.node }} (cluster {{ $labels.cluster }}) has had average read latency >50ms for 10m (currently {{ printf "%.1f" $values.B.Value }}ms). Check the Disk I/O dashboard — sustained high latency degrades Ceph OSD heartbeats and VM disk I/O.'
+        description: 'Device {{ $labels.device }} on {{ $labels.node }} (cluster {{ $labels.cluster }}) has had average read latency >50ms for 30m (currently {{ printf "%.1f" $values.B.Value }}ms). Check the Disk I/O dashboard — sustained high latency degrades Ceph OSD heartbeats and VM disk I/O.'
       data:
         - refId: A
           relativeTimeRange:
@@ -196,7 +196,7 @@ spec:
     - uid: argus-diskio-write-latency
       title: DiskHighWriteLatency
       condition: C
-      for: "10m"
+      for: "30m"
       noDataState: OK
       execErrState: Error
       labels:
@@ -206,7 +206,7 @@ spec:
         __dashboardUid__: node-disk-io-overview
         __panelId__: "7"
         summary: "Disk write latency high on {{ $labels.node }}:{{ $labels.device }} ({{ $labels.cluster }})"
-        description: 'Device {{ $labels.device }} on {{ $labels.node }} (cluster {{ $labels.cluster }}) has had average write latency >50ms for 10m (currently {{ printf "%.1f" $values.B.Value }}ms). Check the Disk I/O dashboard — sustained high write latency stalls Nova disk operations and Ceph recovery.'
+        description: 'Device {{ $labels.device }} on {{ $labels.node }} (cluster {{ $labels.cluster }}) has had average write latency >50ms for 30m (currently {{ printf "%.1f" $values.B.Value }}ms). Check the Disk I/O dashboard — sustained high write latency stalls Nova disk operations and Ceph recovery.'
       data:
         - refId: A
           relativeTimeRange:

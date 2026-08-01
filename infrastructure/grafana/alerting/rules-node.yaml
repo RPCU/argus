@@ -48,7 +48,7 @@ spec:
     - uid: argus-node-cpu-high
       title: NodeCPUHigh
       condition: C
-      for: "10m"
+      for: "1h"
       noDataState: OK
       execErrState: Error
       labels:
@@ -56,7 +56,7 @@ spec:
         component: node
       annotations:
         summary: "High CPU on {{ $labels.node }} ({{ $labels.cluster }})"
-        description: 'CPU usage is {{ printf "%.1f" $values.B.Value }}% on {{ $labels.node }} in cluster {{ $labels.cluster }}, sustained above 85% for 10m.'
+        description: 'CPU usage is {{ printf "%.1f" $values.B.Value }}% on {{ $labels.node }} in cluster {{ $labels.cluster }}, sustained above 85% for 1h.'
         # -> "CPU Usage (%) per Node" on the cluster overview dashboard.
         __dashboardUid__: cluster-cpu-ram-overview
         __panelId__: "7"
@@ -119,7 +119,7 @@ spec:
     - uid: argus-node-memory-high
       title: NodeMemoryHigh
       condition: C
-      for: "10m"
+      for: "1h"
       noDataState: OK
       execErrState: Error
       labels:
@@ -127,7 +127,7 @@ spec:
         component: node
       annotations:
         summary: "High memory on {{ $labels.node }} ({{ $labels.cluster }})"
-        description: 'Memory usage is {{ printf "%.1f" $values.B.Value }}% on {{ $labels.node }} in cluster {{ $labels.cluster }}, sustained above 90% for 10m. Uses MemAvailable, so page cache is not counted as used.'
+        description: 'Memory usage is {{ printf "%.1f" $values.B.Value }}% on {{ $labels.node }} in cluster {{ $labels.cluster }}, sustained above 90% for 1h. Uses MemAvailable, so page cache is not counted as used.'
         # -> "RAM Usage (%) per Node" on the cluster overview dashboard.
         __dashboardUid__: cluster-cpu-ram-overview
         __panelId__: "8"

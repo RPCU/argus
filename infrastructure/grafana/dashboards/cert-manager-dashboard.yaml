@@ -310,43 +310,7 @@ spec:
             },
             "overrides": [
               {
-                "matcher": { "id": "byName", "options": "Ready" },
-                "properties": [
-                  {
-                    "id": "custom.cellOptions",
-                    "value": { "mode": "basic", "type": "color-background" }
-                  },
-                  {
-                    "id": "mappings",
-                    "value": [
-                      { "options": { "1": { "color": "green", "text": "True" }, "0": { "color": "red", "text": "False" } }, "type": "value" }
-                    ]
-                  },
-                  { "id": "decimals", "value": 0 }
-                ]
-              },
-              {
-                "matcher": { "id": "byName", "options": "Days Left" },
-                "properties": [
-                  {
-                    "id": "thresholds",
-                    "value": {
-                      "mode": "absolute",
-                      "steps": [
-                        { "color": "red", "value": null },
-                        { "color": "orange", "value": 7 },
-                        { "color": "yellow", "value": 30 },
-                        { "color": "green", "value": 60 }
-                      ]
-                    }
-                  },
-                  { "id": "custom.cellOptions", "value": { "mode": "basic", "type": "gauge" } },
-                  { "id": "unit", "value": "d" },
-                  { "id": "decimals", "value": 1 }
-                ]
-              },
-              {
-                "matcher": { "id": "byName", "options": "Expiry Date" },
+                "matcher": { "id": "byName", "options": "Expiry" },
                 "properties": [
                   { "id": "unit", "value": "dateTimeFromNow" },
                   { "id": "decimals", "value": 0 }
@@ -360,7 +324,7 @@ spec:
             "showHeader": true,
             "cellHeight": "sm",
             "footer": { "show": false },
-            "sortBy": [{ "displayName": "Days Left", "desc": false }]
+            "sortBy": [{ "displayName": "Expiry", "desc": false }]
           },
           "title": "All Certificates",
           "type": "table",
@@ -368,61 +332,35 @@ spec:
             {
               "datasource": { "type": "prometheus", "uid": "Mimir" },
               "editorMode": "code",
-              "expr": "certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"}",
+              "expr": "label_join(certmanager_certificate_expiration_timestamp_seconds{cluster=~\"$cluster\", namespace=~\"$namespace\"}, \"issuer\", \" / \", \"issuer_kind\", \"issuer_name\")",
               "format": "table",
               "instant": true,
               "range": false,
               "legendFormat": "",
               "refId": "A"
-            },
-            {
-              "datasource": { "type": "prometheus", "uid": "Mimir" },
-              "editorMode": "code",
-              "expr": "certmanager_certificate_ready_status{cluster=~\"$cluster\", namespace=~\"$namespace\", condition=\"True\"}",
-              "format": "table",
-              "instant": true,
-              "range": false,
-              "legendFormat": "",
-              "refId": "B"
             }
           ],
           "transformations": [
-            {
-              "id": "seriesToColumns",
-              "options": { "byField": "name" }
-            },
             {
               "id": "organize",
               "options": {
                 "excludeByName": {
                   "Time": true,
-                  "Time 1": true,
-                  "Time 2": true,
                   "__name__": true,
-                  "__name__ 1": true,
-                  "__name__ 2": true,
                   "uid": true,
-                  "uid 1": true,
-                  "uid 2": true,
                   "condition": true,
-                  "condition 1": true,
-                  "condition 2": true,
                   "ready": true,
                   "job": true,
-                  "job 1": true,
-                  "job 2": true,
                   "instance": true,
-                  "instance 1": true,
-                  "instance 2": true
+                  "issuer_kind": true,
+                  "issuer_name": true
                 },
                 "renameByName": {
                   "namespace": "Namespace",
-                  "name": "Certificate",
-                  "issuer_kind": "Issuer Kind",
-                  "issuer_name": "Issuer Name",
+                  "name": "Name",
                   "cluster": "Cluster",
-                  "Value #A": "Expiry Date",
-                  "Value #B": "Ready"
+                  "issuer": "Issuer",
+                  "Value #A": "Expiry"
                 }
               }
             },
@@ -430,7 +368,7 @@ spec:
               "id": "calculateField",
               "options": {
                 "mode": "binaryOperation",
-                "binaryOperation": { "left": "Expiry Date", "operator": "-", "right": "now()", "reducer": "last" },
+                "binaryOperation": { "left": "Expiry", "operator": "*", "right": "1000", "reducer": "last" },
                 "replaceFields": false,
                 "timeField": ""
               }
@@ -438,7 +376,12 @@ spec:
             {
               "id": "organize",
               "options": {
-                "renameByName": { "": "Days Left" }
+                "excludeByName": {
+                  "Expiry": true
+                },
+                "renameByName": {
+                  "Expiry * 1000": "Expiry"
+                }
               }
             }
           ]
@@ -500,60 +443,6 @@ spec:
         },
         {
           "datasource": { "type": "prometheus", "uid": "Mimir" },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "align": "auto",
-                "cellOptions": { "type": "auto" },
-                "inspect": false
-              }
-            },
-            "overrides": [
-              {
-                "matcher": { "id": "byName", "options": "Ready" },
-                "properties": [
-                  {
-                    "id": "custom.cellOptions",
-                    "value": { "mode": "basic", "type": "color-background" }
-                  },
-                  {
-                    "id": "mappings",
-                    "value": [
-                      { "options": { "0": { "color": "red", "text": "False" } }, "type": "value" }
-                    ]
-                  },
-                  { "id": "decimals", "value": 0 }
-                ]
-              },
-              {
-                "matcher": { "id": "byName", "options": "Days Left" },
-                "properties": [
-                  {
-                    "id": "thresholds",
-                    "value": {
-                      "mode": "absolute",
-                      "steps": [
-                        { "color": "red", "value": null },
-                        { "color": "orange", "value": 7 },
-                        { "color": "yellow", "value": 30 },
-                        { "color": "green", "value": 60 }
-                      ]
-                    }
-                  },
-                  { "id": "custom.cellOptions", "value": { "mode": "basic", "type": "gauge" } },
-                  { "id": "unit", "value": "d" },
-                  { "id": "decimals", "value": 1 }
-                ]
-              },
-              {
-                "matcher": { "id": "byName", "options": "Expiry Date" },
-                "properties": [
-                  { "id": "unit", "value": "dateTimeFromNow" },
-                  { "id": "decimals", "value": 0 }
-                ]
-              }
-            ]
-          },
           "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 },
           "id": 31,
           "options": {

@@ -461,4 +461,4 @@ stringData:
       name: rpcu-bundle
       namespace: kgateway-system
     data:
-      ca.crt: {{ index (getResource "rootRpcuCA").data "ca.crt" }}
+      ca.crt: {{ index (getResource "rootRpcuCA").data "ca.crt" | b64dec }}

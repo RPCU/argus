@@ -1441,7 +1441,7 @@ spec:
                 "uid": "Mimir"
               },
               "editorMode": "code",
-              "expr": "projectsveltos_reconcile_consecutive_failures{profile_name!=\"\"}",
+              "expr": "projectsveltos_reconcile_consecutive_failures{profile_name!=\"\"} and on(cluster_namespace, cluster_name) projectsveltos_cluster_connectivity_status == 0",
               "legendFormat": "{{profile_name}} - {{feature}}",
               "range": true,
               "refId": "A"

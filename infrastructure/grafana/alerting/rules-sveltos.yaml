@@ -118,13 +118,13 @@ spec:
         component: sveltos
       annotations:
         summary: "Sveltos add-on {{ $labels.profile_name }} failing ({{ $labels.cluster_name }})"
-        description: "ClusterProfile {{ $labels.profile_name }} feature {{ $labels.feature }} on cluster {{ $labels.cluster_namespace }}/{{ $labels.cluster_name }} has experienced consecutive reconciliation failures within the last 30 minutes (current value: {{ $values.B.Value }})."
+        description: "ClusterProfile {{ $labels.profile_name }} feature {{ $labels.feature }} on cluster {{ $labels.cluster_namespace }}/{{ $labels.cluster_name }} has {{ $values.B.Value }} consecutive reconciliation failures. The metric resets to 0 on success, so a non-zero value means failures are ongoing."
         __dashboardUid__: sveltos-status
         __panelId__: "16"
       data:
         - refId: A
           relativeTimeRange:
-            from: 1800
+            from: 600
             to: 0
           datasourceUid: Mimir
           model:
@@ -132,7 +132,7 @@ spec:
               type: prometheus
               uid: Mimir
             editorMode: code
-            expr: max_over_time(projectsveltos_reconcile_consecutive_failures{profile_name!=""}[30m])
+            expr: projectsveltos_reconcile_consecutive_failures{profile_name!=""} and on(cluster_namespace, cluster_name) projectsveltos_cluster_connectivity_status == 0
             instant: true
             range: false
             intervalMs: 1000

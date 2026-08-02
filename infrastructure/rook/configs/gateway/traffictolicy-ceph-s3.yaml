@@ -8,8 +8,5 @@ spec:
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
       name: httproute-ceph-s3
-    - group: gateway.networking.k8s.io
-      kind: HTTPRoute
-      name: httproute-ceph-s3-external
   timeouts:
     streamIdle: 600s

@@ -1,3 +1,4 @@
 resources:
   - internal-issuer.yaml
   - wildcard-cert.yaml
+  - root-rpcu.yaml

@@ -1,2 +1,4 @@
 resources:
   - httproute-ceph.yaml
+  - httproute-ceph-s3-external.yaml
+  - traffictolicy-ceph-s3.yaml

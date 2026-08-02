@@ -8,6 +8,7 @@ spec:
     - group: gateway.networking.k8s.io
       kind: Gateway
       name: https
+  idleTimeout: "3600s"
   upgradeConfig:
     enabledUpgrades:
       - "websocket"

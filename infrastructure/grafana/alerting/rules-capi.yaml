@@ -1,0 +1,324 @@
+# Cluster API (CAPI) alert rules: cluster health and machine health.
+#
+# These are Grafana-MANAGED alerts (evaluated by Grafana against the Mimir
+# datasource), same as all other rules in this directory.
+#
+# Uses kube-state-metrics customResourceState metrics (capi_cluster_info,
+# capi_machine_info, etc.) for cluster/machine phase and readiness.
+#
+# Requires kube-state-metrics customResourceState enabled for CAPI CRDs
+# in the kube-prometheus-stack HelmRelease (infrastructure/monitoring/helmrelease.yaml).
+#
+# Every expression below was executed against live Mimir before commit.
+#
+# DO NOT add a `cluster=~"$cluster"` selector to these expressions. Grafana
+# alert rules have NO dashboard template variables — `$cluster` is only
+# substituted in dashboard panels. In an alert query it stays LITERAL, so
+# `cluster=~"$cluster"` matches zero series → every query returns empty → the
+# rule evaluates NoData → with `noDataState: OK` the alert is silently
+# suppressed and NEVER fires.
+#
+# Panel linking: rules carry __dashboardUid__ / __panelId__ annotations
+# (both required, __panelId__ must be a quoted string).
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaAlertRuleGroup
+metadata:
+  name: capi-health
+  namespace: monitoring
+spec:
+  allowCrossNamespaceImport: true
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana-central"
+  folderRef: alerts
+  interval: 1m
+  rules:
+    # Fires when a CAPI Cluster is in Failed phase.
+    # capi_cluster_info{phase="Failed"} indicates the cluster has hit a
+    # terminal error during provisioning or operation.
+    - uid: argus-capi-cluster-failed
+      title: CAPIClusterFailed
+      condition: C
+      for: "1h"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: critical
+        component: capi
+      annotations:
+        summary: "CAPI cluster {{ $labels.name }} is in Failed phase ({{ $labels.cluster }})"
+        description: "CAPI Cluster {{ $labels.name }} in namespace {{ $labels.exported_namespace }} on cluster {{ $labels.cluster }} has been in Failed phase for 1 hour. Check CAPI controller logs and cluster events."
+        __dashboardUid__: capi-status
+        __panelId__: "19"
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: count by (cluster, name, exported_namespace) (capi_cluster_info{phase="Failed"})
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: gt
+                  params:
+                    - 0
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    # Fires when a CAPI Cluster is not ready for > 10 minutes.
+    # ready="False" on capi_cluster_info means the Ready condition is False.
+    - uid: argus-capi-cluster-not-ready
+      title: CAPIClusterNotReady
+      condition: C
+      for: "1h"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: critical
+        component: capi
+      annotations:
+        summary: "CAPI cluster {{ $labels.name }} not ready ({{ $labels.cluster }})"
+        description: "CAPI Cluster {{ $labels.name }} in namespace {{ $labels.exported_namespace }} on cluster {{ $labels.cluster }} has been in Ready=False state for 1 hour."
+        __dashboardUid__: capi-status
+        __panelId__: "19"
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: count by (cluster, name, exported_namespace) (capi_cluster_info{ready="False"})
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: gt
+                  params:
+                    - 0
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    # Fires when a CAPI Machine is in Failed phase.
+    # capi_machine_info{phase="Failed"} indicates the machine has hit a
+    # terminal error (infra provisioning failure, bootstrap failure, etc.).
+    - uid: argus-capi-machine-failed
+      title: CAPIMachineFailed
+      condition: C
+      for: "1h"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: critical
+        component: capi
+      annotations:
+        summary: "CAPI machine {{ $labels.name }} is in Failed phase ({{ $labels.cluster }})"
+        description: "CAPI Machine {{ $labels.name }} in namespace {{ $labels.exported_namespace }} on cluster {{ $labels.cluster }} has been in Failed phase for 1 hour. This may indicate an infrastructure provisioning failure."
+        __dashboardUid__: capi-status
+        __panelId__: "20"
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: count by (cluster, name, exported_namespace) (capi_machine_info{phase="Failed"})
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: gt
+                  params:
+                    - 0
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    # Fires when a MachineDeployment has fewer ready replicas than desired.
+    # This indicates workers are degraded (machine failures, unreachable nodes).
+    - uid: argus-capi-md-degraded
+      title: CAPIMachineDeploymentDegraded
+      condition: C
+      for: "1h"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: warning
+        component: capi
+      annotations:
+        summary: "CAPI MachineDeployment {{ $labels.name }} degraded ({{ $labels.cluster }})"
+        description: "MachineDeployment {{ $labels.name }} in namespace {{ $labels.exported_namespace }} on cluster {{ $labels.cluster }} has {{ $labels.readyReplicas }}/{{ $labels.replicas }} ready replicas for 1 hour."
+        __dashboardUid__: capi-status
+        __panelId__: "21"
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: count by (cluster, name, exported_namespace, readyReplicas, replicas) (capi_machinedeployment_info{readyReplicas < replicas})
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: gt
+                  params:
+                    - 0
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C

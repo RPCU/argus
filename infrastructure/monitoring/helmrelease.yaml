@@ -397,6 +397,25 @@ spec:
               - imagepolicies
               - imageupdateautomations
             verbs: ["list", "watch"]
+          - apiGroups:
+              - cluster.x-k8s.io
+            resources:
+              - clusters
+              - machines
+              - machinedeployments
+              - machinesets
+            verbs: ["list", "watch"]
+          - apiGroups:
+              - controlplane.cluster.x-k8s.io
+            resources:
+              - kubeadmcontrolplanes
+            verbs: ["list", "watch"]
+          - apiGroups:
+              - infrastructure.cluster.x-k8s.io
+            resources:
+              - openstackclusters
+              - openstackmachines
+            verbs: ["list", "watch"]
       # kube-state-metrics custom resource state for Flux CRDs.
       # Generates gotk_resource_info metrics with ready/suspended/status labels
       # for Kustomizations, HelmReleases, GitRepositories, HelmRepositories,
@@ -539,6 +558,149 @@ spec:
                       ready: [status, conditions, "[type=Ready]", status]
                       suspended: [spec, suspend]
                       revision: [status, artifact, revision]
+              # --- Cluster API (CAPI) CRD metrics ---
+              # Generates capi_cluster_info, capi_machine_info, etc. for
+              # dashboards and alerts on cluster/machine health and phase.
+              - groupVersionKind:
+                  group: cluster.x-k8s.io
+                  version: v1beta1
+                  kind: Cluster
+                metricNamePrefix: capi
+                metrics:
+                  - name: "cluster_info"
+                    help: "The current state of a CAPI Cluster resource."
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          name: [metadata, name]
+                    labelsFromPath:
+                      exported_namespace: [metadata, namespace]
+                      phase: [status, phase]
+                      ready: [status, conditions, "[type=Ready]", status]
+                      controlPlaneReady:
+                        [status, conditions, "[type=ControlPlaneReady]", status]
+                      infrastructureReady:
+                        [
+                          status,
+                          conditions,
+                          "[type=InfrastructureReady]",
+                          status,
+                        ]
+              - groupVersionKind:
+                  group: cluster.x-k8s.io
+                  version: v1beta1
+                  kind: Machine
+                metricNamePrefix: capi
+                metrics:
+                  - name: "machine_info"
+                    help: "The current state of a CAPI Machine resource."
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          name: [metadata, name]
+                    labelsFromPath:
+                      exported_namespace: [metadata, namespace]
+                      phase: [status, phase]
+                      ready: [status, conditions, "[type=Ready]", status]
+                      providerID: [spec, providerID]
+              - groupVersionKind:
+                  group: cluster.x-k8s.io
+                  version: v1beta1
+                  kind: MachineDeployment
+                metricNamePrefix: capi
+                metrics:
+                  - name: "machinedeployment_info"
+                    help: "The current state of a CAPI MachineDeployment resource."
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          name: [metadata, name]
+                    labelsFromPath:
+                      exported_namespace: [metadata, namespace]
+                      replicas: [status, replicas]
+                      readyReplicas: [status, readyReplicas]
+                      updatedReplicas: [status, updatedReplicas]
+                      availableReplicas: [status, availableReplicas]
+                      unavailableReplicas: [status, unavailableReplicas]
+              - groupVersionKind:
+                  group: cluster.x-k8s.io
+                  version: v1beta1
+                  kind: MachineSet
+                metricNamePrefix: capi
+                metrics:
+                  - name: "machineset_info"
+                    help: "The current state of a CAPI MachineSet resource."
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          name: [metadata, name]
+                    labelsFromPath:
+                      exported_namespace: [metadata, namespace]
+                      replicas: [status, replicas]
+                      readyReplicas: [status, readyReplicas]
+              - groupVersionKind:
+                  group: controlplane.cluster.x-k8s.io
+                  version: v1beta1
+                  kind: KubeadmControlPlane
+                metricNamePrefix: capi
+                metrics:
+                  - name: "kubeadmcontrolplane_info"
+                    help: "The current state of a KubeadmControlPlane resource."
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          name: [metadata, name]
+                    labelsFromPath:
+                      exported_namespace: [metadata, namespace]
+                      replicas: [status, replicas]
+                      readyReplicas: [status, readyReplicas]
+                      updatedReplicas: [status, updatedReplicas]
+                      ready: [status, conditions, "[type=Ready]", status]
+              - groupVersionKind:
+                  group: infrastructure.cluster.x-k8s.io
+                  version: v1beta1
+                  kind: OpenStackCluster
+                metricNamePrefix: capi
+                metrics:
+                  - name: "openstackcluster_info"
+                    help: "The current state of an OpenStackCluster resource."
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          name: [metadata, name]
+                    labelsFromPath:
+                      exported_namespace: [metadata, namespace]
+                      ready: [status, conditions, "[type=Ready]", status]
+                      infrastructureReady:
+                        [
+                          status,
+                          conditions,
+                          "[type=InfrastructureReady]",
+                          status,
+                        ]
+              - groupVersionKind:
+                  group: infrastructure.cluster.x-k8s.io
+                  version: v1beta1
+                  kind: OpenStackMachine
+                metricNamePrefix: capi
+                metrics:
+                  - name: "openstackmachine_info"
+                    help: "The current state of an OpenStackMachine resource."
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          name: [metadata, name]
+                    labelsFromPath:
+                      exported_namespace: [metadata, namespace]
+                      phase: [status, phase]
+                      ready: [status, conditions, "[type=Ready]", status]
 
     # --- Prometheus Operator ---
     prometheusOperator:

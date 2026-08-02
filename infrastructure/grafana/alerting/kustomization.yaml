@@ -13,3 +13,4 @@ resources:
   - rules-flux.yaml
   - rules-certmanager.yaml
   - rules-sveltos.yaml
+  - rules-capi.yaml

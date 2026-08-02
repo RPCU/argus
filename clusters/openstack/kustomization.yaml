@@ -12,6 +12,8 @@ resources:
   - flux-operator.yaml
   - rook.yaml
   - monitoring.yaml
+  - blackbox.yaml
+  - blackbox-probes.yaml
   - openstack-exporter.yaml
   - golinky.yaml
   - yaook-operator.yaml

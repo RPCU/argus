@@ -15,4 +15,5 @@ resources:
   - dashboards/apiserver-dashboard.yaml
   - dashboards/sveltos-dashboard.yaml
   - dashboards/capi-dashboard.yaml
+  - dashboards/blackbox-dashboard.yaml
   - httproute.yaml

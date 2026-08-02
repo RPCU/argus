@@ -14,3 +14,4 @@ resources:
   - rules-certmanager.yaml
   - rules-sveltos.yaml
   - rules-capi.yaml
+  - rules-blackbox.yaml

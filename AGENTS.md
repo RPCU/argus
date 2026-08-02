@@ -138,8 +138,18 @@ Each component below is a directory with the usual `helmrepo.yaml` /
 unless noted. Only non-obvious specifics are listed.
 
 - **cert-manager/** (v1.19.2) — `values.yaml`: `prometheus.enabled: true` +
-  `prometheus.servicemonitor.enabled: true` + `labels: {release: kube-prometheus-stack}`
-  (see "cert-manager monitoring" in §8 — enabled alone does NOT make a ServiceMonitor).
+  `prometheus.servicemonitor.enabled: FALSE` (default OFF) + `labels: {release:
+kube-prometheus-stack}`. The SM is **monitoring-gated**: this shared base is
+  pushed to mgmt, openstack AND opt-in workload clusters (many WITHOUT
+  kube-prometheus-stack), so enabling the SM in the base would hard-fail the
+  HelmRelease on `no matches for kind "ServiceMonitor"`. It is re-enabled via an
+  inline HelmRelease `values` patch (Helm merges over the ConfigMap, keeping the
+  `release:` label) ONLY where the CRD exists: `clusters/mgmt/cert-manager.yaml` +
+  `clusters/openstack/cert-manager.yaml` patches, and — for workload clusters —
+  the `cert-manager` Sveltos profile's `cert-manager-install` ConfigMap (now
+  `projectsveltos.io/template`) which appends the patch only when the Cluster
+  carries `sveltos.argus.rpcu.io/monitoring: enabled` (see §8 "monitoring-gated
+  ServiceMonitors"). Enabled alone still does NOT make a ServiceMonitor.
 - **trust-manager/** (v0.18.0) — `setup/` (chart) + `configs/bundle.yaml` (RPCU root CA).
 - **cilium/** (v1.18.6) — `ciliumloadbalancerippool.yaml` (10.0.0.240-253),
   `ciliuml2announcementpolicy.yaml`, `values.yaml`.
@@ -476,8 +486,17 @@ operator).`capo-variables` is created **manually** (README). ORC is a hard
   `vault.mgmt.rpcu.lan`. Every pod starts **sealed** (unseal manually). Also
   hosts PKI intermediate `pki-int` (chained under `root-mgmt`) — CSR signed once
   by hand (README).
-- **fluxcd/operator/** — Flux operator v0.40.0 + `monitoring.yaml` (headless
-  `flux-metrics` Service + `flux-controllers` ServiceMonitor, port 8080).
+- **fluxcd/operator/** — Flux operator v0.40.0 ONLY (no ServiceMonitor). This
+  base is pushed to EVERY workload cluster by the mandatory `flux-instance`
+  spine, so it must NOT carry a ServiceMonitor (CRD absent on monitoring-less
+  clusters → `no matches for kind "ServiceMonitor"`).
+- **fluxcd/monitoring/** — the split-out headless `flux-metrics` Service +
+  `flux-controllers` ServiceMonitor (port 8080, label `release:
+kube-prometheus-stack`, SM in ns `monitoring`). Deployed ONLY where the
+  Prometheus Operator CRDs exist: `clusters/{mgmt,openstack}/flux-operator.yaml`
+  each add a `flux-metrics` Kustomization (`dependsOn: monitoring`), and the
+  `monitoring` Sveltos profile pushes this path to opt-in workload clusters (see
+  §8 "monitoring-gated ServiceMonitors").
   **fluxcd/instances/flux.yaml** — FluxInstance (kustomize/helm `--concurrent=2`;
   all controllers tmpfs `emptyDir medium: Memory` with sizeLimits + raised mem
   limits: source-controller `data` 1Gi/`tmp` 256Mi @ 2Gi; kustomize/helm `temp`
@@ -804,10 +823,33 @@ hyperconverged nodes → probe timeouts → restart loops.
   `kube-state-metrics.rbac.extraRules` (the nested `customResourceState.rbac` is
   silently ignored by some chart versions). Powers the fluxcd dashboard +
   `FluxResourceNotReady`.
+- **monitoring-gated ServiceMonitors** (Aug 2026): `ServiceMonitor` is a
+  Prometheus Operator CRD shipped ONLY by the `monitoring` add-on
+  (kube-prometheus-stack). Any base that emits a SM and is delivered to workload
+  clusters WITHOUT monitoring hard-fails the apply on `no matches for kind
+"ServiceMonitor"`. Rule: **a base must NEVER emit a SM unconditionally if it
+  reaches monitoring-less clusters.** Two offenders were fixed:
+  - **flux SM**: split out of `infrastructure/fluxcd/operator` (pushed to EVERY
+    workload cluster by the mandatory `flux-instance` spine) into
+    `infrastructure/fluxcd/monitoring`. Delivered only where the CRD exists:
+    mgmt/openstack `flux-operator.yaml` add a `flux-metrics` Kustomization
+    (`dependsOn: monitoring`); the `monitoring` Sveltos profile pushes a
+    `flux-metrics` Flux Kustomization to opt-in workload clusters.
+  - **cert-manager SM**: base `values.yaml` now defaults
+    `prometheus.servicemonitor.enabled: false`; re-enabled by an inline
+    HelmRelease `values` patch (Helm merges over the ConfigMap → keeps the
+    `release:` label) on mgmt + openstack `cert-manager.yaml`, and — for workload
+    clusters — a templated (`projectsveltos.io/template`) `cert-manager-install`
+    ConfigMap in the `cert-manager` Sveltos profile that appends the patch
+    `{{- if eq (index .Cluster.metadata.labels "sveltos.argus.rpcu.io/monitoring") "enabled" }}`.
+    No dependsOn on monitoring from cert-manager (Flux just retries until the CRD
+    lands); avoids a cross-profile HelmRelease-ownership conflict.
 - **cert-manager monitoring** (Aug 2026): `prometheus.enabled: true` alone only
   adds scrape annotations (NOT honoured). Need `prometheus.servicemonitor.enabled: true`
   - `labels: {release: kube-prometheus-stack}` (mgmt selector; harmless on
-    openstack). Metrics: `certmanager_certificate_expiration_timestamp_seconds`,
+    openstack), but the SM is DEFAULT-OFF in the shared base and re-enabled per
+    monitoring-capable cluster (see "monitoring-gated ServiceMonitors" above).
+    Metrics: `certmanager_certificate_expiration_timestamp_seconds`,
     `_not_before_timestamp_seconds` (for %-lifetime), `_ready_status`. Expiry alerts
     use %-of-lifetime (10%/20%), not fixed days (avoids false alerts on 72h certs).
 - **kube-apiserver CPU is TLS-handshake bound, not request volume** (openstack).
@@ -861,14 +903,19 @@ env; pre-commit quality gates; 1-minute Git sync.
 
 ---
 
-**Last Updated**: August 2026 — Condensed AGENTS.md for lower token consumption
-(no facts dropped: all versions, paths, DO-NOT rules, and §8 symptom→fix
-knowledge preserved; verbose narrative, the per-file `helm*/kustomization.yaml`
-boilerplate, and the long change-history paragraph were removed). Most recent
-substantive change: cert-manager expiry alerts switched to percentage-of-lifetime
-thresholds (<10% critical, <20% warning) via
-`certmanager_certificate_not_before_timestamp_seconds` (`rules-certmanager.yaml`,
-`cert-manager-dashboard.yaml`). Prior notable work:
+**Last Updated**: August 2026 — Made Sveltos add-on ServiceMonitors
+**monitoring-gated** so they only deploy where the Prometheus Operator CRDs
+exist: split the flux SM out of `infrastructure/fluxcd/operator` into
+`infrastructure/fluxcd/monitoring` (mgmt/openstack `flux-operator.yaml` add a
+`flux-metrics` Kustomization `dependsOn: monitoring`; the `monitoring` Sveltos
+profile pushes it to opt-in workload clusters), and defaulted the cert-manager
+base `prometheus.servicemonitor.enabled: false`, re-enabled via HelmRelease
+`values` patches on mgmt/openstack + a templated `cert-manager-install` ConfigMap
+gated on the `sveltos.argus.rpcu.io/monitoring` Cluster label (see §8
+"monitoring-gated ServiceMonitors"). Prior substantive change: cert-manager
+expiry alerts switched to percentage-of-lifetime thresholds (<10% critical, <20%
+warning) via `certmanager_certificate_not_before_timestamp_seconds`
+(`rules-certmanager.yaml`, `cert-manager-dashboard.yaml`). Prior notable work:
 `rules-node.yaml` `for` 10m→1h on `NodeCPUHigh`/`NodeMemoryHigh`; cert-manager
 metrics enablement; the Grafana-`$cluster` alert bug fix + Crossplane
 `DeploymentRuntimeConfig` `v1beta1` fix; mgmt workload resource sizing; KSM

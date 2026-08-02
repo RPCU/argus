@@ -1,0 +1,9 @@
+# Flux controller metrics Service + ServiceMonitor.
+#
+# Deployed SEPARATELY from ./infrastructure/fluxcd/operator because the
+# ServiceMonitor CRD (monitoring.coreos.com) only exists on clusters running the
+# `monitoring` add-on (kube-prometheus-stack). See monitoring.yaml for the full
+# rationale. No `namespace:` override here — the Service lives in flux-system and
+# the ServiceMonitor in monitoring (both set explicitly on the resources).
+resources:
+  - monitoring.yaml

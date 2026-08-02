@@ -50,6 +50,15 @@ spec:
     - name: monitoring-flux-kustomization
       namespace: projectsveltos
       kind: ConfigMap
+    # Flux controller metrics Service + ServiceMonitor. This is delivered by the
+    # monitoring profile (NOT the mandatory flux-instance spine) because the
+    # ServiceMonitor kind is a Prometheus Operator CRD that only exists once
+    # kube-prometheus-stack is installed by THIS profile. Workload clusters
+    # without the monitoring add-on never receive it, so their flux-instance
+    # apply can't fail on a missing ServiceMonitor CRD.
+    - name: monitoring-flux-metrics
+      namespace: projectsveltos
+      kind: ConfigMap
 ---
 # Push the monitoring namespace + root-mgmt CA bundle to the workload cluster.
 # The CA is needed by Prometheus to verify the mgmt Gateway's TLS cert when
@@ -127,3 +136,32 @@ data:
           target:
             kind: HelmRelease
             name: kube-prometheus-stack
+---
+# Flux Kustomization pushed to the workload cluster installing the Flux
+# controller metrics Service + ServiceMonitor (./infrastructure/fluxcd/monitoring).
+# Deployed HERE (monitoring profile) rather than by the flux-instance spine
+# because the ServiceMonitor CRD only exists once kube-prometheus-stack is
+# installed by this same profile. dependsOn is implicit: this profile's own
+# monitoring-flux-kustomization installs kube-prometheus-stack (which provides
+# the CRD); the Flux Kustomization retries until the CRD is present.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: monitoring-flux-metrics
+  namespace: projectsveltos
+data:
+  flux-metrics.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: flux-metrics
+      namespace: flux-system
+    spec:
+      interval: 10m
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/fluxcd/monitoring
+      prune: true
+      timeout: 5m

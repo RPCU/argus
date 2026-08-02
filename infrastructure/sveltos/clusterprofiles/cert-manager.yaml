@@ -292,6 +292,10 @@ spec:
   # the chain the mgmt Vault presents (leaf -> pki-int -> root-mgmt), and it
   # connects to https://vault.mgmt.rpcu.lan (TLS-terminated at the kgateway
   # `https` Gateway with the rpcu-lan-wildcard-tls cert chained to root-mgmt).
+  #
+  # Also read root-rpcu (the openstack cluster's self-signed CA) so we can push
+  # the rpcu-bundle ConfigMap to kgateway-system — needed by the BackendTLSPolicy
+  # validating TLS from s3.rpcu.vpn (Ceph RGW).
   templateResourceRefs:
     - resource:
         apiVersion: v1
@@ -299,6 +303,12 @@ spec:
         name: root-mgmt
         namespace: cert-manager
       identifier: rootMgmtCA
+    - resource:
+        apiVersion: v1
+        kind: Secret
+        name: root-rpcu
+        namespace: cert-manager
+      identifier: rootRpcuCA
   policyRefs:
     - kind: ConfigMap
       name: cert-manager-install
@@ -442,3 +452,13 @@ stringData:
               # match it (or that apiserver given `--api-audiences` including this).
               audiences:
                 - https://kubernetes.default.svc.cluster.local
+    ---
+    # root-rpcu CA bundle in kgateway-system — required by the BackendTLSPolicy
+    # validating TLS from s3.rpcu.vpn (Ceph RGW on the openstack cluster).
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: rpcu-bundle
+      namespace: kgateway-system
+    data:
+      ca.crt: {{ index (getResource "rootRpcuCA").data "ca.crt" }}

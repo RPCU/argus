@@ -11,6 +11,20 @@
 # matchLabels: { release: kube-prometheus-stack } — the label on the
 # ServiceMonitor ensures it is picked up. On the openstack cluster the
 # selector is allow-by-default (NotIn), so any ServiceMonitor is scraped.
+#
+# WHY THIS LIVES IN ITS OWN PATH (split out of ./infrastructure/fluxcd/operator):
+# The ServiceMonitor kind is a CRD owned by the Prometheus Operator, which ships
+# ONLY with the kube-prometheus-stack (the `monitoring` add-on). The Flux
+# operator base is pushed to EVERY workload cluster by the mandatory
+# `flux-instance` spine (infrastructure/sveltos/clusterprofiles/flux.yaml), most
+# of which do NOT run kube-prometheus-stack. Shipping the ServiceMonitor there
+# would hard-fail the apply with `no matches for kind "ServiceMonitor"`.
+#
+# So this Service + ServiceMonitor is deployed ONLY where the CRD exists:
+#   - mgmt      (clusters/mgmt/flux-operator.yaml, via ../monitoring)
+#   - openstack (clusters/openstack/flux-operator.yaml, via ../monitoring)
+#   - workload clusters that OPT INTO monitoring (the `monitoring` Sveltos
+#     ClusterProfile pushes this path once kube-prometheus-stack is present).
 apiVersion: v1
 kind: Service
 metadata:

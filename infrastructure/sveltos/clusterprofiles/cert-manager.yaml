@@ -319,11 +319,22 @@ spec:
 ---
 # Flux Kustomization CR (pushed to the workload cluster) installing the argus
 # cert-manager base. Same pattern as the vault-auth ESO install.
+#
+# TEMPLATED (projectsveltos.io/template): the cert-manager ServiceMonitor is
+# re-enabled ONLY on clusters that also opted into the `monitoring` add-on
+# (kube-prometheus-stack, which ships the ServiceMonitor CRD). The shared base
+# (infrastructure/cert-manager/values.yaml) defaults servicemonitor.enabled to
+# false; here we append an inline HelmRelease `values` patch turning it back on
+# when the Cluster carries `sveltos.argus.rpcu.io/monitoring: enabled`. On a
+# monitoring-less cluster the patch is omitted, so the cert-manager HelmRelease
+# never tries to create a ServiceMonitor against a missing CRD.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: cert-manager-install
   namespace: projectsveltos
+  annotations:
+    projectsveltos.io/template: "true"
 data:
   cert-manager.yaml: |
     apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -339,6 +350,27 @@ data:
         namespace: flux-system
       path: ./infrastructure/cert-manager
       prune: true
+      {{- if eq (index .Cluster.metadata.labels "sveltos.argus.rpcu.io/monitoring") "enabled" }}
+      # Cluster has the monitoring add-on → the ServiceMonitor CRD exists.
+      # Re-enable the cert-manager ServiceMonitor (Helm merges this inline
+      # `values` over the base cert-manager-values ConfigMap; the base's
+      # `release: kube-prometheus-stack` label is preserved).
+      patches:
+        - patch: |
+            apiVersion: helm.toolkit.fluxcd.io/v2
+            kind: HelmRelease
+            metadata:
+              name: cert-manager
+              namespace: cert-manager
+            spec:
+              values:
+                prometheus:
+                  servicemonitor:
+                    enabled: true
+          target:
+            kind: HelmRelease
+            name: cert-manager
+      {{- end }}
 ---
 # The vault-auth ServiceAccount (+ bound token + system:auth-delegator), the
 # root-mgmt CA bundle, and the vault-issuer ClusterIssuer, applied on the workload

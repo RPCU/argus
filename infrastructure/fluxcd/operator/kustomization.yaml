@@ -1,6 +1,10 @@
+# NOTE: the Flux controller metrics Service + ServiceMonitor are NOT here.
+# They live in ../monitoring because the ServiceMonitor CRD only exists on
+# clusters running kube-prometheus-stack (the `monitoring` add-on), whereas this
+# operator base is pushed to EVERY workload cluster by the mandatory
+# `flux-instance` spine. See ../monitoring/monitoring.yaml.
 namespace: flux-system
 resources:
   - namespace.yaml
   - helmrepo.yaml
   - helmrelease.yaml
-  - monitoring.yaml

@@ -11,10 +11,26 @@ prometheus:
   # kube-prometheus-stack does not honour those pod annotations, so the
   # ServiceMonitor sub-toggle is REQUIRED for the metrics to be scraped.
   servicemonitor:
-    enabled: true
+    # DEFAULT OFF. The ServiceMonitor kind is a Prometheus Operator CRD that
+    # only exists on clusters running kube-prometheus-stack (the `monitoring`
+    # add-on). This SHARED base is installed on mgmt, openstack, AND opt-in
+    # workload clusters via the cert-manager Sveltos ClusterProfile — many of
+    # which do NOT run monitoring. Enabling the ServiceMonitor here would
+    # hard-fail the HelmRelease on those clusters with
+    # `no matches for kind "ServiceMonitor"`.
+    #
+    # It is re-enabled (via an inline HelmRelease `values` patch, which Helm
+    # merges over this ConfigMap) ONLY where the CRD exists:
+    #   - mgmt      : clusters/mgmt/cert-manager.yaml
+    #   - openstack : clusters/openstack/cert-manager.yaml
+    #   - workload clusters with monitoring: gated on the
+    #     `sveltos.argus.rpcu.io/monitoring` Cluster label in the cert-manager
+    #     Sveltos ClusterProfile (infrastructure/sveltos/clusterprofiles/cert-manager.yaml).
+    enabled: false
     # The mgmt Prometheus serviceMonitorSelector is
     # matchLabels: {release: kube-prometheus-stack} (NOT the openstack
     # cluster's allow-all NotIn selector), so the ServiceMonitor MUST carry
-    # this label or it is silently never scraped on mgmt.
+    # this label or it is silently never scraped on mgmt. (Harmless while the
+    # ServiceMonitor is disabled; the re-enable patches keep it.)
     labels:
       release: kube-prometheus-stack

@@ -13,3 +13,23 @@ spec:
   prune: true
   wait: true
   timeout: 5m
+  patches:
+    # Re-enable the cert-manager ServiceMonitor. The shared base defaults it OFF
+    # (the ServiceMonitor CRD is absent on monitoring-less clusters); openstack
+    # runs the prometheus-operator CRDs, so turn it back on here. Helm merges
+    # this inline `values` over the base cert-manager-values ConfigMap, so the
+    # `release: kube-prometheus-stack` label from the base is preserved.
+    - patch: |
+        apiVersion: helm.toolkit.fluxcd.io/v2
+        kind: HelmRelease
+        metadata:
+          name: cert-manager
+          namespace: cert-manager
+        spec:
+          values:
+            prometheus:
+              servicemonitor:
+                enabled: true
+      target:
+        kind: HelmRelease
+        name: cert-manager

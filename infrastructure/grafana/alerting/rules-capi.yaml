@@ -278,7 +278,7 @@ spec:
               type: prometheus
               uid: Mimir
             editorMode: code
-            expr: count by (cluster, name, exported_namespace, readyReplicas, replicas) (capi_machinedeployment_info{readyReplicas < replicas})
+            expr: count by (cluster, name, exported_namespace, readyReplicas, replicas) (capi_machinedeployment_info{readyReplicas} and on(cluster, name, exported_namespace) (capi_machinedeployment_info{readyReplicas} < capi_machinedeployment_info{replicas}))
             instant: true
             range: false
             intervalMs: 1000

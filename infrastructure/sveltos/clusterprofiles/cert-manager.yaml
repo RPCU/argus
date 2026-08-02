@@ -455,10 +455,14 @@ stringData:
     ---
     # root-rpcu CA bundle in kgateway-system — required by the BackendTLSPolicy
     # validating TLS from s3.rpcu.vpn (Ceph RGW on the openstack cluster).
+    # Uses a Secret (not ConfigMap) because the rendered PEM cert is multi-line
+    # and would break YAML inside a templated string; Secrets store base64 in
+    # .data which keeps the value single-line.
     apiVersion: v1
-    kind: ConfigMap
+    kind: Secret
     metadata:
       name: rpcu-bundle
       namespace: kgateway-system
+    type: Opaque
     data:
-      ca.crt: {{ index (getResource "rootRpcuCA").data "ca.crt" | b64dec }}
+      ca.crt: {{ index (getResource "rootRpcuCA").data "ca.crt" }}

@@ -14,5 +14,4 @@ resources:
   - dashboards/cert-manager-dashboard.yaml
   - dashboards/apiserver-dashboard.yaml
   - dashboards/sveltos-dashboard.yaml
-  - dashboards/blackbox-dashboard.yaml
   - httproute.yaml

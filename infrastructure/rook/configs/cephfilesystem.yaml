@@ -36,11 +36,18 @@ spec:
       deviceClass: nvme
       parameters:
         pg_autoscale_mode: "on"
-        # Dominant pool (~70% of raw capacity). target_size_ratio keeps the
-        # autoscaler from collapsing pg_num too low on a 3-OSD replica-2
-        # cluster. Must stay in sync with rdb-pool (also 0.8); the autoscaler
-        # normalizes both to EFFECTIVE RATIO 0.5. See AGENTS.md Section 8.
-        target_size_ratio: "0.8"
+        # Dominant pool (~70% of raw capacity, 746 GiB vs rdb-pool's 119 GiB).
+        # `bulk` tells the autoscaler this pool holds most of the cluster's data
+        # so it provisions PGs near the per-OSD budget up front (→ pg_num 128 on
+        # this 3-OSD replica-2 cluster) instead of scaling up from the minimum.
+        #
+        # DO NOT use target_size_ratio here: setting it on both dominant pools
+        # (this + rdb-pool) made the ratios sum to 1.6 > 1.0, so Ceph normalized
+        # BOTH back down to the raw-usage ratio (~0.5) — a no-op that left this
+        # pool stuck at the collapsed pg_num 32 the fix was meant to prevent.
+        # `bulk` sizes from PG budget, not from a ratio, so it can't cancel out.
+        # See AGENTS.md Section 8.
+        bulk: "true"
   # Do not delete the pools if the CephFilesystem CR is removed — protects data.
   preserveFilesystemOnDelete: true
   # MDS daemons. activeCount: 1 with a standby-replay hot standby for failover.

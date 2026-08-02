@@ -1,0 +1,329 @@
+# Sveltos alert rules: cluster connectivity, add-on reconciliation failures,
+# connection failures, and configuration drift.
+#
+# These are Grafana-MANAGED alerts (evaluated by Grafana against the Mimir
+# datasource), not Prometheus PrometheusRule CRs. Same rationale as all other
+# rules in this directory: Mimir's ruler is disabled and each cluster's local
+# Alertmanager has no receivers configured, so Grafana unified alerting is the
+# only delivery path.
+#
+# Every expression below was verified against live Mimir before commit.
+#
+# DO NOT add a `cluster=~"$cluster"` selector to these expressions. Grafana
+# alert rules have NO dashboard template variables — `$cluster` is only
+# substituted in dashboard panels. In an alert query it stays LITERAL, so
+# `cluster=~"$cluster"` matches zero series → every query returns empty → the
+# rule evaluates NoData → with `noDataState: OK` the alert is silently
+# suppressed and NEVER fires. The rules already emit cluster context as output
+# labels via `by (cluster, ...)`, so per-cluster context is preserved without
+# the selector.
+#
+# Panel linking: rules carry __dashboardUid__ / __panelId__ annotations
+# (both required, __panelId__ must be a quoted string).
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaAlertRuleGroup
+metadata:
+  name: sveltos-health
+  namespace: monitoring
+spec:
+  allowCrossNamespaceImport: true
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana-central"
+  folderRef: alerts
+  interval: 1m
+  rules:
+    # Fires when a registered cluster is disconnected (connectivity status == 1).
+    # projectsveltos_cluster_connectivity_status is 0 for healthy, 1 for
+    # disconnected. Any non-zero value means Sveltos cannot reach the cluster's
+    # API server.
+    - uid: argus-sveltos-cluster-disconnected
+      title: SveltosClusterDisconnected
+      condition: C
+      for: "20m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: critical
+        component: sveltos
+      annotations:
+        summary: "Sveltos cluster {{ $labels.cluster_name }} disconnected"
+        description: "SveltosCluster {{ $labels.cluster_namespace }}/{{ $labels.cluster_name }} has been disconnected for 20 minutes. Add-on deployments to this cluster will fail."
+        __dashboardUid__: sveltos-status
+        __panelId__: "1"
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: projectsveltos_cluster_connectivity_status == 1
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: "{{cluster_namespace}}/{{cluster_name}}"
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: gt
+                  params:
+                    - 0
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    # Fires when an add-on (ClusterProfile/Profile) has consecutive reconcile
+    # failures. projectsveltos_reconcile_consecutive_failures resets to 0 on the
+    # next success, so a non-zero rising value means something is stuck failing
+    # RIGHT NOW, not just historically.
+    - uid: argus-sveltos-addon-consecutive-failures
+      title: SveltosAddonConsecutiveFailures
+      condition: C
+      for: "30m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: critical
+        component: sveltos
+      annotations:
+        summary: "Sveltos add-on {{ $labels.profile_name }} failing ({{ $labels.cluster_name }})"
+        description: "ClusterProfile {{ $labels.profile_name }} feature {{ $labels.feature }} on cluster {{ $labels.cluster_namespace }}/{{ $labels.cluster_name }} has {{ $values.B.Value }} consecutive reconciliation failures for the past 30 minutes."
+        __dashboardUid__: sveltos-status
+        __panelId__: "16"
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: projectsveltos_reconcile_consecutive_failures{profile_name!=""}
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: "{{profile_name}} - {{feature}} - {{cluster_name}}"
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: gt
+                  params:
+                    - 0
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    # Fires when a cluster has connection failures tracked by sveltoscluster-
+    # manager. projectsveltos_connection_failures mirrors
+    # SveltosCluster.status.connectionFailures and resets to 0 on the next
+    # successful check.
+    - uid: argus-sveltos-connection-failures
+      title: SveltosConnectionFailures
+      condition: C
+      for: "20m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: warning
+        component: sveltos
+      annotations:
+        summary: "Sveltos connection failures for {{ $labels.cluster_name }}"
+        description: "SveltosCluster {{ $labels.cluster_namespace }}/{{ $labels.cluster_name }} has {{ $values.B.Value }} consecutive connection failures for 20 minutes. Cluster may be unreachable."
+        __dashboardUid__: sveltos-status
+        __panelId__: "22"
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: projectsveltos_connection_failures > 0
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: "{{cluster_namespace}}/{{cluster_name}}"
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: gt
+                  params:
+                    - 0
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    # Fires when configuration drifts are detected across clusters.
+    # projectsveltos_total_drifts is cumulative; any increase means Sveltos
+    # detected a resource that drifted from its desired state.
+    - uid: argus-sveltos-configuration-drift
+      title: SveltosConfigurationDrift
+      condition: C
+      for: "30m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: warning
+        component: sveltos
+      annotations:
+        summary: "Sveltos configuration drift detected ({{ $labels.cluster_name }})"
+        description: 'Cluster {{ $labels.cluster_namespace }}/{{ $labels.cluster_name }} feature {{ $labels.feature }} has configuration drift at {{ printf "%.2f" $values.B.Value }}/s for the past 30 minutes.'
+        __dashboardUid__: sveltos-status
+        __panelId__: "12"
+      data:
+        - refId: A
+          relativeTimeRange:
+            from: 900
+            to: 0
+          datasourceUid: Mimir
+          model:
+            datasource:
+              type: prometheus
+              uid: Mimir
+            editorMode: code
+            expr: sum by (cluster_namespace, cluster_name, feature) (rate(projectsveltos_total_drifts[5m]))
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: "{{cluster_name}} - {{feature}}"
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator:
+                  type: gt
+                  params:
+                    - 0
+                operator:
+                  type: and
+                query:
+                  params:
+                    - C
+                reducer:
+                  type: last
+                  params: []
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C

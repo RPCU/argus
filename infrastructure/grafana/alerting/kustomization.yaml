@@ -12,3 +12,4 @@ resources:
   - rules-diskio.yaml
   - rules-flux.yaml
   - rules-certmanager.yaml
+  - rules-sveltos.yaml

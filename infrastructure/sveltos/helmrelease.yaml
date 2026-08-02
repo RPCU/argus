@@ -25,6 +25,12 @@ spec:
     # manages the mgmt cluster + CAPI children from here.
     agent:
       managementCluster: true
+    # Expose Prometheus metrics from all controllers. The chart creates
+    # ServiceMonitors in projectsveltos; postRenderers below patches them
+    # with `release: kube-prometheus-stack` so kube-prometheus-stack's
+    # default ServiceMonitorSelector picks them up.
+    prometheus:
+      enabled: true
     # Label the auto-registered management cluster so ClusterProfiles can
     # target it with clusterSelector: type=mgmt.
     registerMgmtClusterJob:
@@ -96,3 +102,17 @@ spec:
             memory: 128Mi
           limits:
             memory: 256Mi
+  # Patch chart-created ServiceMonitors to add the label kube-prometheus-stack
+  # uses as its default serviceMonitorSelector.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              group: monitoring.coreos.com
+              version: v1
+              kind: ServiceMonitor
+              namespace: projectsveltos
+            patch: |
+              - op: add
+                path: /metadata/labels/release
+                value: kube-prometheus-stack

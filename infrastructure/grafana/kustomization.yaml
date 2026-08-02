@@ -13,4 +13,5 @@ resources:
   - dashboards/fluxcd-dashboard.yaml
   - dashboards/cert-manager-dashboard.yaml
   - dashboards/apiserver-dashboard.yaml
+  - dashboards/sveltos-dashboard.yaml
   - httproute.yaml

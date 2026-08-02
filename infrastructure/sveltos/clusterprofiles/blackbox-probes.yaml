@@ -108,6 +108,9 @@ data:
               ports:
                 - name: http
                   containerPort: 9115
+              volumeMounts:
+                - name: config
+                  mountPath: /etc/blackbox_exporter
               resources:
                 requests:
                   cpu: 50m

@@ -35,6 +35,8 @@ resources:
   - kamaji.yaml
   - fluxcd/
   - monitoring.yaml
+  - blackbox.yaml
+  - blackbox-probes.yaml
   - mimir.yaml
   - grafana-operator.yaml
   - grafana.yaml

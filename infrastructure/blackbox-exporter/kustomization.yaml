@@ -1,0 +1,5 @@
+namespace: monitoring
+resources:
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml

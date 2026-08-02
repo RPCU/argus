@@ -1,0 +1,229 @@
+# Blackbox probing for workload clusters with monitoring enabled.
+#
+# Deploys blackbox-exporter + Probe CRs on each matching workload cluster.
+# Probe metrics are scraped by the local Prometheus and remote_written to Mimir,
+# so the Grafana dashboard can show p95/p99 latency and availability for every
+# probed URL across all clusters.
+#
+# Enabled automatically on any cluster that has monitoring enabled — no separate
+# opt-in label needed. If monitoring is on, blackbox probes follow.
+#
+# dependsOn:
+#   - flux-instance: ensures the workload cluster has Flux running
+#   - monitoring: ensures kube-prometheus-stack (and therefore Prometheus) exists
+#     so Probe CRs are discovered and scraped
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: blackbox-probes
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  dependsOn:
+    - flux-instance
+    - monitoring
+  clusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/monitoring: enabled
+  policyRefs:
+    # Generic blackbox-exporter (Deployment + Service + ConfigMap).
+    # No templating needed — identical on every cluster.
+    - name: blackbox-exporter
+      namespace: projectsveltos
+      kind: ConfigMap
+    # Templated Probe CRs — rendered per cluster with Go templates.
+    # Probe names include the cluster name for uniqueness.
+    - name: blackbox-probes
+      namespace: projectsveltos
+      kind: ConfigMap
+---
+# Blackbox-exporter components pushed to every workload cluster.
+# Contains: Deployment (1 replica, 50m/64Mi), ClusterIP Service (port 9115),
+# and the blackbox exporter module config (http_2xx with TLS skip-verify).
+#
+# Sveltos renders this as raw manifests and applies them to the workload cluster.
+# No template annotation — content is identical everywhere.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blackbox-exporter
+  namespace: projectsveltos
+data:
+  blackbox-exporter.yaml: |
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: blackbox-exporter-config
+      namespace: monitoring
+    data:
+      blackbox.yaml: |
+        modules:
+          http_2xx:
+            prober: http
+            timeout: 10s
+            http:
+              valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+              valid_status_codes: [200, 301, 302, 401]
+              method: GET
+              follow_redirects: true
+              preferred_ip_protocol: ip4
+              tls_config:
+                insecure_skip_verify: true
+          http_post_2xx:
+            prober: http
+            timeout: 10s
+            http:
+              valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+              valid_status_codes: [200, 201, 204]
+              method: POST
+              preferred_ip_protocol: ip4
+              tls_config:
+                insecure_skip_verify: true
+    ---
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: blackbox-exporter
+      namespace: monitoring
+      labels:
+        app.kubernetes.io/name: blackbox-exporter
+        app.kubernetes.io/component: exporter
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: blackbox-exporter
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: blackbox-exporter
+            app.kubernetes.io/component: exporter
+        spec:
+          containers:
+            - name: blackbox-exporter
+              image: prom/blackbox-exporter:v0.25.0
+              args:
+                - --config.file=/etc/blackbox_exporter/blackbox.yaml
+              ports:
+                - name: http
+                  containerPort: 9115
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  memory: 128Mi
+              readinessProbe:
+                httpGet:
+                  path: /-/healthy
+                  port: http
+                initialDelaySeconds: 5
+                periodSeconds: 10
+              livenessProbe:
+                httpGet:
+                  path: /-/healthy
+                  port: http
+                initialDelaySeconds: 5
+                periodSeconds: 30
+          volumes:
+            - name: config
+              configMap:
+                name: blackbox-exporter-config
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            fsGroup: 65534
+    ---
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: blackbox-exporter
+      namespace: monitoring
+      labels:
+        app.kubernetes.io/name: blackbox-exporter
+        app.kubernetes.io/component: exporter
+    spec:
+      selector:
+        app.kubernetes.io/name: blackbox-exporter
+      ports:
+        - name: http
+          port: 9115
+          targetPort: http
+          protocol: TCP
+---
+# Templated Probe CRs — one Probe per probed endpoint.
+#
+# Sveltos renders Go templates in this ConfigMap per target workload cluster.
+# The cluster name is injected via {{ .Cluster.metadata.name }} so Probe CR
+# names are unique across clusters.
+#
+# DEFAULT PROBES: these are the baseline probes every workload cluster gets.
+# To add cluster-specific endpoints, create an additional ConfigMap with
+# projectsveltos.io/template: "true" and reference it in the ClusterProfile's
+# policyRefs (see the extra-probes pattern below).
+#
+# Prometheus auto-discovers Probe CRs in the monitoring namespace (no
+# probeSelector configured in kube-prometheus-stack). Probe metrics are
+# remote_written to Mimir with the cluster external label, powering the
+# Grafana blackbox dashboard.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blackbox-probes
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/template: "true"
+data:
+  probes.yaml: |
+    apiVersion: monitoring.coreos.com/v1
+    kind: Probe
+    metadata:
+      name: blackbox-{{ .Cluster.metadata.name }}-api
+      namespace: monitoring
+      labels:
+        app.kubernetes.io/part-of: blackbox-exporter
+        cluster: {{ .Cluster.metadata.name }}
+    spec:
+      module: http_2xx
+      interval: 60s
+      jobLabel: blackbox
+      targets:
+        staticConfig:
+          values:
+            - https://kubernetes.default.svc:443/version
+    ---
+    apiVersion: monitoring.coreos.com/v1
+    kind: Probe
+    metadata:
+      name: blackbox-{{ .Cluster.metadata.name }}-prometheus
+      namespace: monitoring
+      labels:
+        app.kubernetes.io/part-of: blackbox-exporter
+        cluster: {{ .Cluster.metadata.name }}
+    spec:
+      module: http_2xx
+      interval: 60s
+      jobLabel: blackbox
+      targets:
+        staticConfig:
+          values:
+            - http://prometheus-kube-prometheus-prometheus.monitoring.svc:9090/-/healthy
+    ---
+    apiVersion: monitoring.coreos.com/v1
+    kind: Probe
+    metadata:
+      name: blackbox-{{ .Cluster.metadata.name }}-gateway
+      namespace: monitoring
+      labels:
+        app.kubernetes.io/part-of: blackbox-exporter
+        cluster: {{ .Cluster.metadata.name }}
+    spec:
+      module: http_2xx
+      interval: 60s
+      jobLabel: blackbox
+      targets:
+        staticConfig:
+          values:
+            - https://{{ .Cluster.metadata.name }}.rpcu.lan

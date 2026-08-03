@@ -11,7 +11,7 @@ metadata:
   name: grafana
   namespace: flux-system
 spec:
-  interval: 10m0s
+  interval: 30m0s
   sourceRef:
     kind: GitRepository
     name: flux-system

@@ -4,7 +4,7 @@ metadata:
   name: rook-setup
   namespace: flux-system
 spec:
-  interval: 5m0s
+  interval: 30m0s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -20,7 +20,7 @@ metadata:
   name: rook-ceph-csi
   namespace: flux-system
 spec:
-  interval: 5m0s
+  interval: 30m0s
   dependsOn:
     - name: rook-setup
   sourceRef:
@@ -38,7 +38,7 @@ metadata:
   name: rook-configs
   namespace: flux-system
 spec:
-  interval: 5m0s
+  interval: 30m0s
   dependsOn:
     - name: rook-setup
     - name: rook-ceph-csi

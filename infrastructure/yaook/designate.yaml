@@ -80,7 +80,6 @@ spec:
           cpu: 250m
           memory: 1G
         limits:
-          cpu: 1000m
           memory: 1G
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     storageSize: 8Gi

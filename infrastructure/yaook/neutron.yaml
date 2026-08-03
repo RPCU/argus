@@ -78,7 +78,6 @@ spec:
           memory: 1G
           cpu: 250m
         limits:
-          cpu: 1000m
           memory: 2G
   memcached:
     connections: 1024

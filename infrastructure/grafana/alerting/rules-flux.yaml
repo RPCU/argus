@@ -338,10 +338,18 @@ spec:
     # Fires when a Flux resource reports Ready=False via kube-state-metrics.
     # This is a direct signal from the Flux CR status conditions, not a proxy
     # based on reconcile error rates. Requires KSM customResourceState enabled.
+    # NOTE: `for` is 1h5m (not 10m) deliberately. All HelmRepository sources
+    # poll upstream at 1h (external/API load reduction). When a Renovate PR bumps
+    # a HelmRelease chart version and is merged, the new version is not present in
+    # the HelmRepository index cache until the next 1h refresh, so the HelmChart
+    # (and its HelmRelease) legitimately sits Ready=False for up to ~1h. A 10m
+    # window would ring this critical alert on every such merge. 1h5m gives the
+    # source refresh (worst-case 1h) time to land before alerting. Tradeoff: a
+    # genuinely-stuck Ready=False resource now takes 65m to alert instead of 10m.
     - uid: argus-flux-not-ready
       title: FluxResourceNotReady
       condition: C
-      for: "10m"
+      for: "1h5m"
       noDataState: OK
       execErrState: Error
       labels:
@@ -349,7 +357,7 @@ spec:
         component: flux
       annotations:
         summary: "Flux {{ $labels.customresource_kind }}/{{ $labels.name }} not ready ({{ $labels.cluster }})"
-        description: "{{ $labels.customresource_kind }}/{{ $labels.name }} in namespace {{ $labels.exported_namespace }} on cluster {{ $labels.cluster }} has been in Ready=False state for 10 minutes."
+        description: "{{ $labels.customresource_kind }}/{{ $labels.name }} in namespace {{ $labels.exported_namespace }} on cluster {{ $labels.cluster }} has been in Ready=False state for over 1 hour."
         __dashboardUid__: fluxcd-status
         __panelId__: "12"
       data:

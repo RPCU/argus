@@ -4,7 +4,7 @@ metadata:
   name: trust-manager-setup
   namespace: flux-system
 spec:
-  interval: 10m0s
+  interval: 30m0s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -20,7 +20,7 @@ metadata:
   name: trust-manager-configs
   namespace: flux-system
 spec:
-  interval: 10m0s
+  interval: 30m0s
   dependsOn:
     - name: trust-manager-setup
   sourceRef:

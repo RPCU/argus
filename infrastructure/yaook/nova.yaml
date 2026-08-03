@@ -301,6 +301,11 @@ spec:
             cpu: 250m
             memory: 1G
           limits:
+            # Yaook maps this into rabbitmq.conf default_worker_pool_size /
+            # schedulers_online (NOT a CFS throttle). Without it RabbitMQ sizes
+            # its Erlang scheduler pool to the node's core count (12) → ~1.0
+            # core idle. Pin to 1 core: right-sizes the worker pool.
+            cpu: 1000m
             memory: 2G
       scheduleRuleWhenUnsatisfiable: ScheduleAnyway
       storageSize: 8Gi

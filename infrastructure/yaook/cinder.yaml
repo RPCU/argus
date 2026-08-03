@@ -114,6 +114,11 @@ spec:
           cpu: 250m
           memory: 1G
         limits:
+          # Yaook maps this into rabbitmq.conf default_worker_pool_size /
+          # schedulers_online (NOT a CFS throttle). Without it RabbitMQ sizes
+          # its Erlang scheduler pool to the node's core count (12). Cinder is
+          # the lightest bus (~0.46 core), pin the worker pool tighter.
+          cpu: 500m
           memory: 2G
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     storageSize: 8Gi

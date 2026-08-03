@@ -491,6 +491,89 @@ spec:
           ],
           "title": "All Pods: Memory Usage vs Limit Over Time",
           "type": "timeseries"
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 55 },
+          "id": 19,
+          "title": "Pod Absolute Resource Usage Over Time",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": {
+                "axisLabel": "CPU cores",
+                "axisPlacement": "auto",
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineInterpolation": "smooth",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "showPoints": "never",
+                "spanNulls": false
+              },
+              "mappings": [],
+              "min": 0,
+              "unit": "short"
+            }
+          },
+          "gridPos": { "h": 10, "w": 12, "x": 0, "y": 56 },
+          "id": 20,
+          "options": {
+            "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"], "sortBy": "Last", "sortDesc": true },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "topk(20, sum by (cluster, namespace, pod) (rate(container_cpu_usage_seconds_total{container!=\"\", pod!=\"\", cluster=~\"$cluster\"}[5m])))",
+              "legendFormat": "{{cluster}} | {{namespace}}/{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Top 20 Pods: CPU Usage (Cores) Over Time",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": {
+                "axisLabel": "Memory",
+                "axisPlacement": "auto",
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineInterpolation": "smooth",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "showPoints": "never",
+                "spanNulls": false
+              },
+              "mappings": [],
+              "min": 0,
+              "unit": "bytes"
+            }
+          },
+          "gridPos": { "h": 10, "w": 12, "x": 12, "y": 56 },
+          "id": 21,
+          "options": {
+            "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"], "sortBy": "Last", "sortDesc": true },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "topk(20, sum by (cluster, namespace, pod) (container_memory_working_set_bytes{container!=\"\", pod!=\"\", cluster=~\"$cluster\"}))",
+              "legendFormat": "{{cluster}} | {{namespace}}/{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Top 20 Pods: Memory Working Set (RAM) Over Time",
+          "type": "timeseries"
         }
       ],
       "refresh": "30s",

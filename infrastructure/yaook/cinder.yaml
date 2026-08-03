@@ -11,7 +11,7 @@ spec:
       ingressClassName: nginx
       port: 443
     publishEndpoint: true
-    replicas: 3
+    replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     resources:
       cinder-api:
@@ -35,17 +35,8 @@ spec:
         keyringReference: rook-ceph-client-cinder
         keyringUsername: cinder
       volume:
-        # STAGE 2 (final): active-active cluster with 3 replicas.
-        # PREREQUISITE: Stage 1 must have completed first — verify the
-        # cinder-volume pod logs showed volume migration messages, OR
-        # manually migrated volumes via:
-        #   yaookctl shell cinder api
-        #   cinder-manage volume update_host --current <old> --new <new>
-        #   cinder-manage volume update_service
-        # Then clean up the orphaned single-host service entry via:
-        #   cinder-manage service list / remove
         cluster: true
-        replicas: 3
+        replicas: 1
         scheduleRuleWhenUnsatisfiable: ScheduleAnyway
         resources:
           cinder-volume:
@@ -58,11 +49,11 @@ spec:
     DEFAULT:
       debug: false
       image_volume_cache_enabled: True
-      osapi_volume_workers: 4
+      osapi_volume_workers: 2
     database:
       connection_recycle_time: 280
-      max_pool_size: 20
-      max_overflow: 30
+      max_pool_size: 10
+      max_overflow: 15
   database:
     backup:
       mysqldump: false
@@ -132,7 +123,7 @@ spec:
   region:
     name: hetzner
   scheduler:
-    replicas: 3
+    replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     resources:
       cinder-scheduler:

@@ -1,0 +1,14 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: capi-janitor-openstack
+  labels:
+    app.kubernetes.io/name: capi-janitor-openstack
+subjects:
+  - kind: ServiceAccount
+    namespace: capi-janitor-system
+    name: capi-janitor-openstack
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: capi-janitor-openstack

@@ -23,7 +23,12 @@ secret:
   name: cloud-config
   filename: cloud.conf
 
-# Tag volumes with this cluster identifier in Cinder metadata.
+# Cluster identifier appended to Cinder volume metadata as
+# `cinder.csi.openstack.org/cluster=<clusterID>`. The janitor reads this from the
+# `cluster.x-k8s.io/cluster-name` label on the OpenStackCluster and matches it
+# against these tagged volumes — so this value MUST equal the cluster name.
+# On workload clusters the Sveltos profile overrides this via a templated
+# ConfigMap (`{{ .Cluster.metadata.name }}`).
 clusterID: "mgmt"
 
 # Create a default StorageClass (cinder-delete) with volume expansion enabled.

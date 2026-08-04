@@ -1,0 +1,20 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: capi-janitor
+  namespace: flux-system
+spec:
+  interval: 30m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  path: ./infrastructure/capi-janitor
+  prune: true
+  wait: true
+  timeout: 5m
+  # The janitor watches the CAPO `OpenStackCluster` CRD, so it can only start
+  # once the infrastructure provider has installed it. cluster-api-providers
+  # brings up CAPO (which registers infrastructure.cluster.x-k8s.io CRDs).
+  dependsOn:
+    - name: cluster-api-providers

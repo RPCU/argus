@@ -6,7 +6,10 @@
 #     (list/watch for the controller-runtime cache) and, when the
 #     credential-policy annotation says so, delete the appcred secret once it is
 #     the last finalizer
-#   - events create: emit CleanupSucceeded / CleanupFailed
+#   - events create/patch/update: emit CleanupSucceeded / CleanupFailed. The
+#     controller-runtime EventRecorder aggregates repeated events, so it also
+#     PATCHes/UPDATEs the existing Event (Count/LastTimestamp) — `create` alone
+#     yields "cannot patch resource events".
 #   - namespaces list/watch + customresourcedefinitions get/list/watch: controller
 #     bootstrap (waits for the OpenStackCluster CRD and caches namespaces)
 apiVersion: rbac.authorization.k8s.io/v1
@@ -30,6 +33,8 @@ rules:
       - events
     verbs:
       - create
+      - patch
+      - update
   - apiGroups:
       - ""
     resources:

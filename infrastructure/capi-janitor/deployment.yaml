@@ -56,6 +56,14 @@ spec:
             # Retry delay (seconds) after a failed cleanup attempt.
             - name: CAPI_JANITOR_RETRY_DEFAULT_DELAY
               value: "60"
+            # Trust the RPCU root CA (`root-rpcu`) that signs the Keystone gateway
+            # cert at https://keystone.rpcu.vpn. Go's crypto/x509 honours
+            # SSL_CERT_FILE for the system cert pool, which the janitor seeds from
+            # (x509.SystemCertPool()) — so pointing it at the mounted bundle makes
+            # OpenStack authentication verify successfully. Without it every
+            # cleanup fails with `x509: certificate signed by unknown authority`.
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/rpcu/ca-certificates.crt
           livenessProbe:
             httpGet:
               path: /healthz
@@ -82,6 +90,12 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: rpcu-ca
+              mountPath: /etc/ssl/rpcu
+              readOnly: true
       volumes:
+        - name: rpcu-ca
+          configMap:
+            name: capi-janitor-ca-bundle
         - name: tmp
           emptyDir: {}

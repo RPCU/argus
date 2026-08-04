@@ -8,6 +8,7 @@ metadata:
   labels:
     type: workload
     sveltos.argus.rpcu.io/csi-driver-nfs: enabled
+    sveltos.argus.rpcu.io/dragonfly: enabled
     sveltos.argus.rpcu.io/external-dns: enabled
     sveltos.argus.rpcu.io/gateway-api: enabled
     sveltos.argus.rpcu.io/cert-manager: enabled

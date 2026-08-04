@@ -1,0 +1,57 @@
+# dragonfly-operator for OPT-IN workload clusters — installs the DragonflyDB
+# operator (Redis-compatible, dragonflydb.io/v1alpha1 Dragonfly CRD) so apps on
+# the workload cluster can provision their own Dragonfly instances (e.g. atlas
+# production uses one as the zot registry's Redis remoteCache).
+#
+# Delivered as a Flux takeover (same pattern as csi-driver-nfs / external-dns /
+# gateway-api): ONE thing is pushed — a Flux Kustomization CR pointing at the
+# SAME base mgmt uses, ./infrastructure/dragonfly (the upstream operator
+# manifest, which creates the dragonfly-operator-system namespace + CRDs +
+# controller). No per-cluster values, no secrets, no Vault/ESO involvement. The
+# actual Dragonfly INSTANCE is an app-level resource owned by the consuming repo
+# (e.g. atlas), NOT this add-on.
+#
+# Gated by the opt-in label sveltos.argus.rpcu.io/dragonfly: enabled.
+#
+# dependsOn flux-instance: the pushed Flux Kustomization CR is reconciled by the
+# kustomize controller, which only exists once Flux is installed.
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: dragonfly
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  dependsOn:
+    - flux-instance
+  clusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/dragonfly: enabled
+  policyRefs:
+    - name: dragonfly-flux-kustomization
+      namespace: projectsveltos
+      kind: ConfigMap
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dragonfly-flux-kustomization
+  namespace: projectsveltos
+data:
+  dragonfly-flux-kustomization.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: dragonfly-operator
+      namespace: flux-system
+    spec:
+      interval: 10m
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/dragonfly
+      prune: true
+      wait: true
+      timeout: 5m

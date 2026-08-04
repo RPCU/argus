@@ -294,8 +294,9 @@ spec:
   # `https` Gateway with the rpcu-lan-wildcard-tls cert chained to root-mgmt).
   #
   # Also read root-rpcu (the openstack cluster's self-signed CA) so we can push
-  # the rpcu-bundle ConfigMap to kgateway-system — needed by the BackendTLSPolicy
-  # validating TLS from s3.rpcu.vpn (Ceph RGW).
+  # the rpcu-bundle Secret to kgateway-system (BackendTLSPolicy for s3.rpcu.vpn)
+  # AND to cert-manager namespace (trust-manager Bundle source for cross-namespace
+  # CA distribution — trust-manager can only read from its own trust namespace).
   templateResourceRefs:
     - resource:
         apiVersion: v1
@@ -495,6 +496,20 @@ stringData:
     metadata:
       name: rpcu-bundle
       namespace: kgateway-system
+    type: Opaque
+    data:
+      ca.crt: {{ index (getResource "rootRpcuCA").data "ca.crt" }}
+    ---
+    # root-rpcu CA bundle in cert-manager namespace — trust-manager Bundle sources
+    # can only read from the trust namespace (where trust-manager is installed).
+    # This copy is the source for the trust-manager Bundle that distributes the CA
+    # to all namespaces as a ConfigMap (consumed by zot and any future pods that
+    # need to trust *.rpcu.vpn internal TLS).
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: rpcu-bundle
+      namespace: cert-manager
     type: Opaque
     data:
       ca.crt: {{ index (getResource "rootRpcuCA").data "ca.crt" }}

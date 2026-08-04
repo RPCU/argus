@@ -11,5 +11,6 @@ resources:
   - servicemonitor.yaml
   - storageclassrdb.yaml
   - storageclasscephfs.yaml
+  - zot-bucket.yaml
   - toolbox-deployment.yaml
   - gateway/

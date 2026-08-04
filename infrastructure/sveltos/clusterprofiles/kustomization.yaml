@@ -6,9 +6,11 @@ resources:
   - openstack-ccm.yaml
   - openstack-cinder-csi.yaml
   - csi-driver-nfs.yaml
+  - dragonfly.yaml
   - capi-management.yaml
   - vault-auth.yaml
   - cert-manager.yaml
+  - trust-manager.yaml
   - external-dns.yaml
   - gateway-api-crds.yaml
   - gateway-api.yaml

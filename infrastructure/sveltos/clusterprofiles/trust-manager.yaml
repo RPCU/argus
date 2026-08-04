@@ -1,0 +1,100 @@
+# trust-manager for OPT-IN workload clusters — installs the trust-manager
+# controller (cert-manager sub-project, trust.cert-manager.io/v1alpha1 Bundle CRD)
+# and pushes a Bundle CR that distributes the root-rpcu CA (*.rpcu.vpn internal TLS)
+# to every namespace as a ConfigMap named "rpcu-bundle".
+#
+# WHY: pods that need to trust internal TLS endpoints (e.g. zot → s3.rpcu.vpn)
+# mount the trust-manager-generated ConfigMap and set SSL_CERT_FILE. Without
+# trust-manager, each consumer would need its own copy of the CA Secret.
+#
+# PREREQUISITES:
+#   - cert-manager must be installed first (this profile dependsOn cert-manager).
+#     The cert-manager profile pushes the rpcu-bundle Secret to BOTH kgateway-system
+#     (for BackendTLSPolicy) AND cert-manager namespace (trust-manager source —
+#     Bundle sources can only read from the trust namespace).
+#
+# DEPENDENCY CHAIN: flux-instance → cert-manager → trust-manager → (app consumers)
+#
+# Gated by the same label as cert-manager (sveltos.argus.rpcu.io/cert-manager:
+# enabled) — trust-manager is a cert-manager sub-project and always deployed
+# alongside it.
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: trust-manager
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  dependsOn:
+    - flux-instance
+    - cert-manager
+  clusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/cert-manager: enabled
+  policyRefs:
+    - name: trust-manager-install
+      namespace: projectsveltos
+      kind: ConfigMap
+    - name: trust-manager-bundle
+      namespace: projectsveltos
+      kind: ConfigMap
+---
+# Flux Kustomization CR (pushed to the workload cluster) installing the argus
+# trust-manager base. The base includes the HelmRepository + HelmRelease
+# (infrastructure/trust-manager/setup). Namespace is cert-manager (same as
+# trust-manager's trust namespace). wait: true ensures the CRD is established
+# before the Bundle CR is pushed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trust-manager-install
+  namespace: projectsveltos
+data:
+  trust-manager.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: trust-manager
+      namespace: cert-manager
+    spec:
+      interval: 10m
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/trust-manager/setup
+      prune: true
+      wait: true
+      timeout: 5m
+---
+# Bundle CR: distributes the root-rpcu CA (read from the rpcu-bundle Secret in
+# cert-manager namespace, pushed by the cert-manager profile) to ALL namespaces as
+# a ConfigMap named "rpcu-bundle" with key "ca.crt".
+#
+# No namespaceSelector = sync to all namespaces (including future ones).
+# Both ConfigMap and Secret targets are created; ConfigMap is the primary consumer
+# (pods mount ConfigMaps; Secrets are there for consumers that prefer them).
+#
+# The Bundle name ("rpcu-bundle") becomes the ConfigMap/Secret name in each namespace.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trust-manager-bundle
+  namespace: projectsveltos
+data:
+  rpcu-bundle.yaml: |
+    apiVersion: trust.cert-manager.io/v1alpha1
+    kind: Bundle
+    metadata:
+      name: rpcu-bundle
+    spec:
+      sources:
+        - secret:
+            name: rpcu-bundle
+            key: "ca.crt"
+      target:
+        configMap:
+          key: "ca.crt"
+        secret:
+          key: "ca.crt"

@@ -384,6 +384,13 @@ kube-prometheus-stack}`. The SM is **monitoring-gated**: this shared base is
     `.../ceph-csi-cephfs`) — RWX from openstack `rpcu-fs`. Pushes cluster-values
     ConfigMap (remote FSID + mons) + Flux Kustomization; key seeded in Vault
     per cluster out of band.
+  - `dragonfly.yaml` (`dependsOn: flux-instance`, label `.../dragonfly`) —
+    installs the DragonflyDB operator (Redis-compatible; `dragonflydb.io/v1alpha1
+Dragonfly` CRD) via a Flux takeover of the SAME base mgmt uses,
+    `./infrastructure/dragonfly`. ONE thing pushed (Flux Kustomization CR); no
+    per-cluster values/secrets. The Dragonfly INSTANCE is app-owned by the
+    consuming repo (e.g. atlas production's zot registry uses one as its Redis
+    remoteCache), NOT this add-on. Default OFF.
   - `gateway-api-crds.yaml` (`dependsOn: flux-instance`, ALL workload clusters,
     no opt-in) — Gateway API CRDs (cert-manager gateway-shim needs them).
   - `gateway-api.yaml` (label `.../gateway-api`) — TWO profiles: `gateway-api`
@@ -903,7 +910,17 @@ env; pre-commit quality gates; 1-minute Git sync.
 
 ---
 
-**Last Updated**: August 2026 — Made Sveltos add-on ServiceMonitors
+**Last Updated**: August 2026 — Added a **dragonfly** Sveltos add-on
+(`infrastructure/sveltos/clusterprofiles/dragonfly.yaml`, registered in that
+dir's `kustomization.yaml`): a Flux-takeover ClusterProfile gated by
+`sveltos.argus.rpcu.io/dragonfly: enabled` that installs the DragonflyDB operator
+(Redis-compatible) on opt-in workload clusters via the SAME base mgmt uses
+(`./infrastructure/dragonfly`); the Dragonfly INSTANCE stays app-owned (atlas
+production's zot registry consumes one as its Redis remoteCache). Added the
+matching chihiro toggle (`clusters/mgmt/apps/chihiro/cm.yaml`: `dragonfly`
+boolean, default OFF, injects the label) and pre-enabled it on the production
+Cluster CR (`clusters/mgmt/clusters/production.yaml`). Prior substantive change:
+Made Sveltos add-on ServiceMonitors
 **monitoring-gated** so they only deploy where the Prometheus Operator CRDs
 exist: split the flux SM out of `infrastructure/fluxcd/operator` into
 `infrastructure/fluxcd/monitoring` (mgmt/openstack `flux-operator.yaml` add a

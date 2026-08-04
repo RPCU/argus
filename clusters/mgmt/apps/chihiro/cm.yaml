@@ -95,6 +95,7 @@ data:
             sveltos.argus.rpcu.io/external-dns: {{ chihiro.externalDns }}
             sveltos.argus.rpcu.io/gateway-api: {{ chihiro.gatewayApi }}
             sveltos.argus.rpcu.io/csi-driver-nfs: {{ chihiro.csiDriverNfs }}
+            sveltos.argus.rpcu.io/dragonfly: {{ chihiro.dragonfly }}
             sveltos.argus.rpcu.io/monitoring: {{ chihiro.monitoring }}
             type: workload
         spec:
@@ -285,6 +286,15 @@ data:
           false_value: disabled
           editable: true
           path: "metadata.labels.'sveltos.argus.rpcu.io/csi-driver-nfs'"
+        dragonfly:
+          label: "Dragonfly (Redis)"
+          description: "Enable the DragonflyDB (Redis-compatible) operator via Sveltos so workload apps can provision Dragonfly instances"
+          type: boolean
+          default: false
+          true_value: enabled
+          false_value: disabled
+          editable: true
+          path: "metadata.labels.'sveltos.argus.rpcu.io/dragonfly'"
         monitoring:
           label: "Monitoring"
           description: "Enable kube-prometheus-stack via Sveltos, remote_writing metrics to the central Mimir on mgmt (https://mimir.mgmt.rpcu.lan)"

@@ -1,0 +1,25 @@
+# S3 bucket for zot registry (production cluster). Uses Rook-Ceph's
+# ObjectBucketClaim provisioner to create the bucket on the rpcu-store
+# ObjectStore. The OBC creates a dedicated RGW user scoped to this bucket;
+# its credentials are stored in a Secret (zot-bucket, rook-ceph ns) and must
+# be copied to Vault secrets-production/zot/s3 (access-key / secret-key) so
+# the production cluster's ExternalSecret can inject them into zot.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ceph-bucket
+provisioner: rook-ceph.ceph.rook.io/bucket
+parameters:
+  objectStoreName: rpcu-store
+  objectStoreNamespace: rook-ceph
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+---
+apiVersion: objectbucket.io/v1alpha1
+kind: ObjectBucketClaim
+metadata:
+  name: zot-bucket
+  namespace: rook-ceph
+spec:
+  storageClassName: ceph-bucket
+  bucketName: zot

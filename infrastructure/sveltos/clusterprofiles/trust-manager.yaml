@@ -1,11 +1,13 @@
 # trust-manager for OPT-IN workload clusters — installs the trust-manager
 # controller (cert-manager sub-project, trust.cert-manager.io/v1alpha1 Bundle CRD)
-# and pushes a Bundle CR that distributes the root-rpcu CA (*.rpcu.vpn internal TLS)
-# to every namespace as a ConfigMap named "rpcu-bundle".
+# and pushes a Bundle CR that distributes the root-rpcu CA (*.rpcu.vpn) and
+# root-mgmt CA (*.rpcu.lan / Vault PKI chain) to every namespace as a ConfigMap
+# named "rpcu-ca-trust".
 #
-# WHY: pods that need to trust internal TLS endpoints (e.g. zot → s3.rpcu.vpn)
-# mount the trust-manager-generated ConfigMap and set SSL_CERT_FILE. Without
-# trust-manager, each consumer would need its own copy of the CA Secret.
+# WHY: pods that need to trust internal TLS endpoints (e.g. zot → s3.rpcu.vpn,
+# any service → *.rpcu.lan) mount the trust-manager-generated ConfigMap and set
+# SSL_CERT_FILE. Without trust-manager, each consumer would need its own copy of
+# the CA Secrets.
 #
 # PREREQUISITES:
 #   - cert-manager must be installed first (this profile dependsOn cert-manager).
@@ -68,30 +70,34 @@ data:
       wait: true
       timeout: 5m
 ---
-# Bundle CR: distributes the root-rpcu CA (read from the rpcu-bundle Secret in
-# cert-manager namespace, pushed by the cert-manager profile) to ALL namespaces as
-# a ConfigMap named "rpcu-bundle" with key "ca.crt".
+# Bundle CR: distributes the root-rpcu CA (*.rpcu.vpn) and root-mgmt CA
+# (*.rpcu.lan / Vault PKI chain) to ALL namespaces as a ConfigMap named
+# "rpcu-ca-trust" with key "ca.crt".
+#
+# Both CAs are sourced from Secrets in cert-manager namespace (pushed by the
+# cert-manager profile). The Bundle name MUST differ from source names.
 #
 # No namespaceSelector = sync to all namespaces (including future ones).
 # Both ConfigMap and Secret targets are created; ConfigMap is the primary consumer
 # (pods mount ConfigMaps; Secrets are there for consumers that prefer them).
-#
-# The Bundle name ("rpcu-bundle") becomes the ConfigMap/Secret name in each namespace.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: trust-manager-bundle
   namespace: projectsveltos
 data:
-  rpcu-bundle.yaml: |
+  rpcu-ca-trust.yaml: |
     apiVersion: trust.cert-manager.io/v1alpha1
     kind: Bundle
     metadata:
-      name: rpcu-bundle
+      name: rpcu-ca-trust
     spec:
       sources:
         - secret:
             name: rpcu-bundle
+            key: "ca.crt"
+        - secret:
+            name: root-mgmt-bundle
             key: "ca.crt"
       target:
         configMap:

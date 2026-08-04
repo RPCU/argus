@@ -9,6 +9,7 @@ resources:
   - templates/controlplane-v3.yaml
   - templates/controlplane-v4.yaml
   - templates/controlplane-v5.yaml
+  - templates/controlplane-v7.yaml
   - templates/controlplane-kamaji.yaml
   - templates/controlplane-kamaji-v2.yaml
   - templates/controlplane-kamaji-v3.yaml
@@ -18,6 +19,7 @@ resources:
   - templates/controlplane-kamaji-v7.yaml
   - templates/bootstrap.yaml
   - templates/bootstrap-v2.yaml
+  - templates/bootstrap-v3.yaml
   - templates/infracluster.yaml
   - templates/machines.yaml
   - templates/infrakamaji.yaml

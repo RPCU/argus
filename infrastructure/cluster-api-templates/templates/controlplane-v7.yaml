@@ -1,0 +1,86 @@
+# -----------------------------------------------------------------------------
+# Control plane template (KubeadmControlPlane) — v7.
+#
+# WHAT CHANGED vs -v5 (the previously-referenced template):
+#   Relaxed the kubelet memory reservation, which was too punitive and evicted
+#   pods / entered MemoryPressure far too easily on the control-plane nodes:
+#     1. kube-reserved / system-reserved memory: 768Mi → 256Mi each. The old
+#        768Mi+768Mi carved 1.5Gi of memory off Allocatable per node; the
+#        kubelet + CRI + OS baseline on these nodes is well under 512Mi, so the
+#        reservation was starving the kubepods cgroup for no benefit.
+#     2. Removed eviction-soft (memory.available<1Gi) and its
+#        eviction-soft-grace-period entirely. The 1Gi soft threshold started
+#        evicting pods while the node still had ~1Gi free — the direct cause of
+#        the premature "node was low on resource: memory" evictions.
+#   eviction-hard (memory.available<500Mi) is KEPT — it is the last-resort guard
+#   that still fires before the kernel OOM killer. The nodefs/imagefs/inodes
+#   thresholds and image-gc settings are unchanged.
+#
+# This is based on -v5 (NOT the prepared -v6, whose apiserver memory-tuning flags
+# are a separate, unrelated change) so the roll only carries the eviction fix.
+#
+# IMMUTABILITY: KubeadmControlPlaneTemplate.spec.template.spec is effectively
+# immutable once referenced by a running ClusterClass. To change anything here,
+# create a NEW template with a bumped version suffix (e.g. -v8), point the
+# ClusterClass controlPlane.templateRef at it, and let the topology controller
+# roll the control-plane machines. Never edit -v7 in place on a live cluster.
+# -----------------------------------------------------------------------------
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+kind: KubeadmControlPlaneTemplate
+metadata:
+  name: openstack-default-control-plane-v7
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      kubeadmConfigSpec:
+        clusterConfiguration:
+          encryptionAlgorithm: ECDSA-P256
+          apiServer:
+            extraArgs:
+              - name: kubelet-preferred-address-types
+                value: "InternalIP,Hostname,ExternalIP"
+          controllerManager:
+            extraArgs:
+              - name: node-monitor-grace-period
+                value: 40s
+              - name: node-monitor-period
+                value: 5s
+        initConfiguration:
+          skipPhases:
+            - addon/kube-proxy
+          nodeRegistration:
+            kubeletExtraArgs:
+              - name: provider-id
+                value: openstack:///'{{ instance_id }}'
+              - name: kube-reserved
+                value: cpu=200m,memory=256Mi,ephemeral-storage=2Gi
+              - name: system-reserved
+                value: cpu=200m,memory=256Mi,ephemeral-storage=2Gi
+              - name: eviction-hard
+                value: memory.available<500Mi,nodefs.available<10%,imagefs.available<10%,nodefs.inodesFree<5%
+              - name: eviction-max-pod-grace-period
+                value: "60"
+              - name: image-gc-high-threshold
+                value: "80"
+              - name: image-gc-low-threshold
+                value: "65"
+            name: "{{ local_hostname }}"
+        joinConfiguration:
+          nodeRegistration:
+            kubeletExtraArgs:
+              - name: provider-id
+                value: openstack:///'{{ instance_id }}'
+              - name: kube-reserved
+                value: cpu=200m,memory=256Mi,ephemeral-storage=2Gi
+              - name: system-reserved
+                value: cpu=200m,memory=256Mi,ephemeral-storage=2Gi
+              - name: eviction-hard
+                value: memory.available<500Mi,nodefs.available<10%,imagefs.available<10%,nodefs.inodesFree<5%
+              - name: eviction-max-pod-grace-period
+                value: "60"
+              - name: image-gc-high-threshold
+                value: "80"
+              - name: image-gc-low-threshold
+                value: "65"
+            name: "{{ local_hostname }}"

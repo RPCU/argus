@@ -513,3 +513,16 @@ stringData:
     type: Opaque
     data:
       ca.crt: {{ index (getResource "rootRpcuCA").data "ca.crt" }}
+    ---
+    # root-mgmt CA bundle in cert-manager namespace — same reason as rpcu-bundle
+    # above: trust-manager Bundle sources can only read from the trust namespace.
+    # Distributes the mgmt root CA (*.rpcu.lan / Vault PKI chain) alongside the
+    # openstack root CA (*.rpcu.vpn) so pods trust both internal TLS domains.
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: root-mgmt-bundle
+      namespace: cert-manager
+    type: Opaque
+    data:
+      ca.crt: {{ index (getResource "rootMgmtCA").data "ca.crt" }}

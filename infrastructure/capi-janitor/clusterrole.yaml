@@ -2,7 +2,8 @@
 # in the upstream controller (internal/controller/openstackcluster_controller.go):
 #   - openstackclusters: get/list/watch/patch/update (add/remove the
 #     `janitor.capi.stackhpc.com` finalizer)
-#   - secrets get/delete: read the `clouds.yaml` identity secret and, when the
+#   - secrets get/list/watch/delete: read the `clouds.yaml` identity secret
+#     (list/watch for the controller-runtime cache) and, when the
 #     credential-policy annotation says so, delete the appcred secret once it is
 #     the last finalizer
 #   - events create: emit CleanupSucceeded / CleanupFailed
@@ -35,6 +36,8 @@ rules:
       - secrets
     verbs:
       - get
+      - list
+      - watch
       - delete
   - apiGroups:
       - infrastructure.cluster.x-k8s.io

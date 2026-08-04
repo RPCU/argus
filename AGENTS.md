@@ -79,6 +79,12 @@ Bootstrapped with kind + `clusterctl`; intended to self-manage after
   87600h) → `root-mgmt` ClusterIssuer; leaf `rpcu-lan-wildcard-tls`
   (ns kgateway-system, `*.mgmt.rpcu.lan`). `root-mgmt` can sign any `.rpcu.lan`.
 - `external-secrets.yaml`, `cluster-api-operator.yaml`, `cluster-api-providers.yaml`.
+- `capi-janitor.yaml` — `./infrastructure/capi-janitor` (`dependsOn:
+cluster-api-providers`). The capi-janitor-openstack operator; purges dangling
+  OpenStack resources (FIPs, Octavia LBs, SGs, Cinder volumes+snapshots, appcred)
+  left by OCCM/Cinder-CSI when an `OpenStackCluster` is deleted (finalizer
+  `janitor.capi.stackhpc.com`), BEFORE CAPO tears down the network (avoids the
+  OCCM-LB-holds-network deadlock).
 - `openstack-ccm-identity.yaml` / `openstack-ccm.yaml` — ESO cloud-config +
   OCCM HelmRelease (LoadBalancer via Octavia + Node init).
 - `external-snapshotter-crds.yaml` / `external-snapshotter.yaml` (v8.6.0).
@@ -455,6 +461,29 @@ operator).`capo-variables` is created **manually** (README). ORC is a hard
 - **capo-identity/** — ESO projects `capo-variables` (capo-system) →
   `mgmt/mgmt-cloud-config`. Split from templates for blast-radius isolation.
   `caProvider.namespace` must be empty on a namespaced SecretStore.
+- **capi-janitor/** (mgmt only, ns capi-janitor-system) — the
+  capi-janitor-openstack-go operator (Go rewrite of cluster-api-janitor-openstack,
+  azimuth-cloud/capi-janitor-openstack-go), built reproducibly by `../capo-janitor`
+  (Nix) and published to `zot.rpcu.io/public/capi-janitor-openstack-go:latest`
+  (public repo → no imagePullSecret). **Plain manifests** (namespace / SA /
+  ClusterRole / ClusterRoleBinding / single-replica Recreate Deployment), not the
+  upstream Helm chart — same direct-manifest approach as openstack-exporter/ORC.
+  Watches CAPO `OpenStackCluster` CRs; adds finalizer `janitor.capi.stackhpc.com`;
+  on deletion authenticates with `spec.identityRef` and purges OCCM/Cinder-CSI
+  leftovers (FIPs, Octavia LBs `kube_service_<cluster>_*`, SGs, Cinder
+  volumes+snapshots, appcred) BEFORE CAPO tears down the network (avoids the
+  OCCM-LB-holds-network deadlock), then removes its finalizer. The cluster name it
+  matches tagged resources against comes from the **`cluster.x-k8s.io/cluster-name`
+  label** on the OpenStackCluster (falling back to `metadata.name`) — CAPI's
+  topology controller propagates that label onto the generated OpenStackCluster
+  automatically (verified live: `mgmt`, `production`), so NO ClusterClass/CR change
+  is needed; do NOT hardcode a literal cluster-name in the shared
+  OpenStackClusterTemplate. Env: `CAPI_JANITOR_DEFAULT_VOLUMES_POLICY=delete`
+  (per-cluster override via the `janitor.capi.stackhpc.com/volumes-policy`
+  annotation), `CAPI_JANITOR_RETRY_DEFAULT_DELAY=60`. Health probes on `:8081`
+  (`/healthz`/`/readyz`); RBAC mirrors the upstream kubebuilder markers
+  (openstackclusters get/list/watch/patch/update; secrets get/delete; events
+  create; namespaces + CRDs read).
 - **yaook-operator/** (v2.4.0, ns yaook) — CRDs + per-service operators (infra,
   keystone, keystone-resources, glance, nova, nova-compute, neutron, neutron-ovn,
   horizon, octavia, designate, cds, barbican v2.2.0) + SecretStores/ExternalSecrets
@@ -588,7 +617,8 @@ rook setup→csi-drivers→configs [health-gated on CephCluster], yaook-operator
 1. flux-operator → 2. fluxcd → 3. cilium (LB disabled) → 4. cert-manager
    (+ gateway-api → kgateway-crds → kgateway [mgmt-patched] + cert-manager-issuer)
    → 5. external-secrets → 6. cluster-api-operator → 7. orc → 8. cluster-api-providers
-   (CoreProvider first) → 9. cluster-api-templates → 10. capo-identity (`wait: false`)
+   (CoreProvider first) → 9. cluster-api-templates → capi-janitor (`dependsOn:
+cluster-api-providers`) → 10. capo-identity (`wait: false`)
    → 11. openstack-ccm-identity (`wait: false`) → 12. openstack-ccm →
 2. external-snapshotter-crds → 14. external-snapshotter → 15. openstack-cinder-csi
    → 16. internal-dns (`wait: false`; `auth_url` = gateway endpoint) → 17. crossplane
@@ -910,7 +940,20 @@ env; pre-commit quality gates; 1-minute Git sync.
 
 ---
 
-**Last Updated**: August 2026 — Added a **dragonfly** Sveltos add-on
+**Last Updated**: August 2026 — Added the **capi-janitor-openstack** operator on
+mgmt (`infrastructure/capi-janitor/` plain manifests: namespace
+`capi-janitor-system`, SA, ClusterRole/Binding, single-replica Recreate
+Deployment pulling `zot.rpcu.io/public/capi-janitor-openstack-go:latest` built by
+`../capo-janitor`; wired via `clusters/mgmt/capi-janitor.yaml` Flux Kustomization
+`dependsOn: cluster-api-providers`, registered in `clusters/mgmt/kustomization.yaml`).
+It watches CAPO `OpenStackCluster` CRs, adds the `janitor.capi.stackhpc.com`
+finalizer, and on deletion purges OCCM/Cinder-CSI leftovers (FIPs, Octavia LBs,
+SGs, Cinder volumes+snapshots, appcred) before CAPO tears down the network. The
+cluster name it matches tagged resources against comes from the CAPI-managed
+`cluster.x-k8s.io/cluster-name` label the topology controller already puts on the
+generated OpenStackCluster (verified live on `mgmt`/`production`) — no
+ClusterClass/CR change was needed. Prior substantive change: Added a **dragonfly**
+Sveltos add-on
 (`infrastructure/sveltos/clusterprofiles/dragonfly.yaml`, registered in that
 dir's `kustomization.yaml`): a Flux-takeover ClusterProfile gated by
 `sveltos.argus.rpcu.io/dragonfly: enabled` that installs the DragonflyDB operator

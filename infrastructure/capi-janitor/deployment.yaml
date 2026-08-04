@@ -1,0 +1,87 @@
+# capi-janitor-openstack — Go rewrite of cluster-api-janitor-openstack
+# (https://github.com/azimuth-cloud/capi-janitor-openstack-go).
+#
+# Watches CAPO `OpenStackCluster` resources and adds the finalizer
+# `janitor.capi.stackhpc.com`. On deletion it authenticates to OpenStack with the
+# credential referenced by `spec.identityRef` and purges the dangling resources
+# OCCM / Cinder-CSI leave behind (floating IPs, Octavia load balancers, security
+# groups, Cinder volumes+snapshots, and the appcred) BEFORE CAPO tears the network
+# down — avoiding the deadlock where an OCCM load balancer still references the
+# cluster network. Only then is the finalizer removed and the cluster fully deleted.
+#
+# The cluster name used to match tagged OpenStack resources is taken from the
+# `cluster.x-k8s.io/cluster-name` label on the OpenStackCluster (falling back to
+# metadata.name). CAPI's topology controller propagates that label onto the
+# generated OpenStackCluster, so it matches the name OCCM/CSI tagged resources with.
+#
+# Deployed as a plain Deployment (not the upstream Helm chart) using the locally
+# built, reproducible Nix image published to the RPCU zot registry
+# (../capo-janitor builds azimuth-cloud/capi-janitor-openstack-go). Same
+# direct-manifest approach this repo already uses for openstack-exporter / ORC.
+#
+# Single replica + Recreate strategy: the operator must never run two copies at
+# once or they race on the same finalizer. Port 8081 serves /healthz + /readyz.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: capi-janitor-openstack
+  namespace: capi-janitor-system
+  labels:
+    app.kubernetes.io/name: capi-janitor-openstack
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: capi-janitor-openstack
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: capi-janitor-openstack
+    spec:
+      serviceAccountName: capi-janitor-openstack
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: operator
+          image: zot.rpcu.io/public/capi-janitor-openstack-go:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            # Operator-wide default; per-cluster override via the
+            # janitor.capi.stackhpc.com/volumes-policy annotation on the
+            # OpenStackCluster. "delete" purges Cinder-CSI volumes on teardown.
+            - name: CAPI_JANITOR_DEFAULT_VOLUMES_POLICY
+              value: delete
+            # Retry delay (seconds) after a failed cleanup attempt.
+            - name: CAPI_JANITOR_RETRY_DEFAULT_DELAY
+              value: "60"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

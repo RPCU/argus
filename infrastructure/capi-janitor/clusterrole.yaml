@@ -1,0 +1,56 @@
+# RBAC for the capi-janitor-openstack operator. Mirrors the kubebuilder markers
+# in the upstream controller (internal/controller/openstackcluster_controller.go):
+#   - openstackclusters: get/list/watch/patch/update (add/remove the
+#     `janitor.capi.stackhpc.com` finalizer)
+#   - secrets get/delete: read the `clouds.yaml` identity secret and, when the
+#     credential-policy annotation says so, delete the appcred secret once it is
+#     the last finalizer
+#   - events create: emit CleanupSucceeded / CleanupFailed
+#   - namespaces list/watch + customresourcedefinitions get/list/watch: controller
+#     bootstrap (waits for the OpenStackCluster CRD and caches namespaces)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: capi-janitor-openstack
+  labels:
+    app.kubernetes.io/name: capi-janitor-openstack
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - namespaces
+    verbs:
+      - list
+      - watch
+  - apiGroups:
+      - ""
+      - events.k8s.io
+    resources:
+      - events
+    verbs:
+      - create
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - delete
+  - apiGroups:
+      - infrastructure.cluster.x-k8s.io
+    resources:
+      - openstackclusters
+    verbs:
+      - list
+      - get
+      - watch
+      - patch
+      - update
+  - apiGroups:
+      - apiextensions.k8s.io
+    resources:
+      - customresourcedefinitions
+    verbs:
+      - list
+      - get
+      - watch

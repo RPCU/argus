@@ -24,6 +24,15 @@ enabledControllers:
   - cloud-node-lifecycle
   - service
 
+# Cluster name used by OCCM to tag OpenStack resources (Octavia LBs named
+# `kube_service_<cluster>_*`, FIPs, etc.). The janitor reads this from the
+# `cluster.x-k8s.io/cluster-name` label on the OpenStackCluster and matches it
+# against these tagged resources — so this value MUST equal the cluster name.
+# On workload clusters the Sveltos profile overrides this via a templated
+# ConfigMap (`{{ .Cluster.metadata.name }}`).
+cluster:
+  name: mgmt
+
 # Use an externally-managed cloud-config secret (rendered by External Secrets
 # from the OpenStack clouds.yaml — see infrastructure/openstack-ccm-identity).
 # The chart must NOT create or template the secret itself.

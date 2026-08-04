@@ -1,0 +1,67 @@
+# -----------------------------------------------------------------------------
+# Worker bootstrap template (KubeadmConfig) — v3.
+#
+# WHAT CHANGED vs -v2: relaxed the kubelet memory reservation, which was too
+# punitive and caused pods to be evicted / nodes to enter MemoryPressure far too
+# easily:
+#   1. kube-reserved / system-reserved memory: 768Mi → 256Mi each. The old
+#      768Mi+768Mi carved 1.5Gi of memory off Allocatable per node — on a `large`
+#      (8 GiB) worker that is nearly 19% of RAM reserved for a kubelet/CRI/OS
+#      baseline that actually sits well under 512Mi.
+#   2. Removed eviction-soft (memory.available<1Gi) and its
+#      eviction-soft-grace-period. The 1Gi soft threshold began evicting pods
+#      while ~1Gi was still free — the direct cause of the premature
+#      "node was low on resource: memory" evictions.
+# eviction-hard (memory.available<500Mi) is KEPT as the last-resort guard that
+# still fires before the kernel OOM killer (the -v2 rationale below still holds
+# for KEEPING a reservation + hard threshold — only the magnitude is relaxed).
+#
+# IMMUTABILITY: like the control-plane template, the spec is immutable once a
+# ClusterClass references it. To change it, create a new -v4 and repoint the
+# matching machineDeployment class in clusterclass.yaml. The topology controller
+# will roll the affected MachineDeployment.
+#
+# -----------------------------------------------------------------------------
+# WHY THESE FLAGS EXIST (2026-07-25 incident)
+# -----------------------------------------------------------------------------
+# Worker `mgmt-md-0-285vl-xqztp-jz5cb` went NotReady with "Kubelet stopped
+# posting node status", then hard-rebooted, then took >10 min to bring
+# containerd up. Root cause was resource starvation from running the kubelet with
+# UPSTREAM DEFAULTS (Allocatable == Capacity, eviction-hard at 100Mi). Setting
+# kube-reserved/system-reserved caps the `kubepods` cgroup at
+# (capacity - reserved - eviction-hard) so Pods OOM inside their own cgroup
+# instead of taking the node's control processes down; the hard eviction
+# threshold reacts before the kernel OOM killer. -v3 keeps that protection but
+# tunes the reservation down to a level that no longer starves the schedulable
+# capacity.
+# -----------------------------------------------------------------------------
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
+kind: KubeadmConfigTemplate
+metadata:
+  name: openstack-default-worker-v3
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      joinConfiguration:
+        nodeRegistration:
+          kubeletExtraArgs:
+            - name: provider-id
+              value: openstack:///'{{ instance_id }}'
+            # Carve out capacity for the kubelet/CRI and for the OS.
+            - name: kube-reserved
+              value: cpu=200m,memory=256Mi,ephemeral-storage=2Gi
+            - name: system-reserved
+              value: cpu=200m,memory=256Mi,ephemeral-storage=2Gi
+            # Last-resort guard that still fires before the kernel OOM killer.
+            - name: eviction-hard
+              value: memory.available<500Mi,nodefs.available<10%,imagefs.available<10%,nodefs.inodesFree<5%
+            - name: eviction-max-pod-grace-period
+              value: "60"
+            # The `large` flavor only has a 50Gi root disk; reclaim images
+            # earlier than the 85%/80% defaults so DiskPressure is rare.
+            - name: image-gc-high-threshold
+              value: "80"
+            - name: image-gc-low-threshold
+              value: "65"
+          name: "{{ local_hostname }}"

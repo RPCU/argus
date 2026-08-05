@@ -33,12 +33,12 @@ spec:
     # A VM is in ERROR. openstack_nova_server_status == 4 (the exporter's
     # status map). Per-VM series carrying name/tenant_id/status, so grouping in
     # notification-policy.yaml collapses a multi-VM incident into one message.
-    # for: 5m avoids paging on a transient BUILD->ERROR->rebuild blip.
+    # for: 15m avoids paging on a transient BUILD->ERROR->rebuild blip.
     # ---------------------------------------------------------------------
     - uid: argus-os-vm-error
       title: NovaVMInError
       condition: C
-      for: "5m"
+      for: "15m"
       noDataState: OK
       execErrState: Error
       labels:
@@ -48,7 +48,7 @@ spec:
         __dashboardUid__: openstack-control-plane
         __panelId__: "5"
         summary: "VM in ERROR: {{ $labels.name }} ({{ $labels.tenant_id }})"
-        description: "Nova instance {{ $labels.name }} (id {{ $labels.id }}) in tenant {{ $labels.tenant_id }} has been in ERROR state for 5m. Nova failed to build, migrate, reboot or delete it. Check `openstack server show {{ $labels.id }}`."
+        description: "Nova instance {{ $labels.name }} (id {{ $labels.id }}) in tenant {{ $labels.tenant_id }} has been in ERROR state for 15m. Nova failed to build, migrate, reboot or delete it. Check `openstack server show {{ $labels.id }}`."
       data:
         - refId: A
           relativeTimeRange: { from: 600, to: 0 }
@@ -92,12 +92,12 @@ spec:
     # ---------------------------------------------------------------------
     # An OpenStack API service is down. Sum every *_up; the total should be 8.
     # `or vector(8)` keeps the rule at a concrete value (healthy) if the whole
-    # exporter is briefly unscraped, so a scrape gap doesn't false-page. for:5m.
+    # exporter is briefly unscraped, so a scrape gap doesn't false-page. for:15m.
     # ---------------------------------------------------------------------
     - uid: argus-os-service-down
       title: OpenStackServiceDown
       condition: C
-      for: "5m"
+      for: "15m"
       noDataState: OK
       execErrState: Error
       labels:
@@ -156,12 +156,12 @@ spec:
     # ---------------------------------------------------------------------
     # A nova-compute agent is down = a hypervisor left the scheduling pool.
     # Per-host series; raw metric with lt-1 threshold (NOT ==0) so the series
-    # always has data and NoData==OK holds. for:5m.
+    # always has data and NoData==OK holds. for:15m.
     # ---------------------------------------------------------------------
     - uid: argus-os-nova-compute-down
       title: NovaComputeAgentDown
       condition: C
-      for: "5m"
+      for: "15m"
       noDataState: OK
       execErrState: Error
       labels:
@@ -171,7 +171,7 @@ spec:
         __dashboardUid__: openstack-control-plane
         __panelId__: "6"
         summary: "nova-compute down on {{ $labels.hostname }}"
-        description: "The nova-compute agent on hypervisor {{ $labels.hostname }} has been down for 5m. No VMs can be scheduled to or managed on that host. Check the nova-compute pod and the node's CPU (starvation is the usual cause on this hyperconverged cluster)."
+        description: "The nova-compute agent on hypervisor {{ $labels.hostname }} has been down for 15m. No VMs can be scheduled to or managed on that host. Check the nova-compute pod and the node's CPU (starvation is the usual cause on this hyperconverged cluster)."
       data:
         - refId: A
           relativeTimeRange: { from: 600, to: 0 }

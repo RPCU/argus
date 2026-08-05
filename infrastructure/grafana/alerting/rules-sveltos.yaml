@@ -110,7 +110,7 @@ spec:
     - uid: argus-sveltos-addon-consecutive-failures
       title: SveltosAddonConsecutiveFailures
       condition: C
-      for: "0m"
+      for: "15m"
       noDataState: OK
       execErrState: Error
       labels:

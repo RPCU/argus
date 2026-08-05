@@ -411,6 +411,7 @@ spec:
           },
           "gridPos": { "h": 9, "w": 12, "x": 0, "y": 30 },
           "id": 12,
+          "description": "ARTIFACT — read (read_time/reads_completed). read_time is /proc/diskstats field 7, weighted by queue occupancy, NOT a per-request timer, so brief queue bursts spike this to seconds while the disk is fast. Kept for reference only; do NOT alert on it (the corresponding alert was removed). Use 'Disk Service Time per Device' below for a trustworthy signal, and — for Ceph OSDs — the OSD Commit/Apply Latency panels on the Ceph Storage dashboard.",
           "options": {
             "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] },
             "tooltip": { "mode": "multi", "sort": "desc" }
@@ -423,7 +424,7 @@ spec:
               "refId": "A"
             }
           ],
-          "title": "Read Latency per Device",
+          "title": "Read Latency per Device (queue-weighted artifact — see note)",
           "type": "timeseries"
         },
         {
@@ -438,6 +439,7 @@ spec:
           },
           "gridPos": { "h": 9, "w": 12, "x": 12, "y": 30 },
           "id": 13,
+          "description": "ARTIFACT — write (write_time/writes_completed). write_time is /proc/diskstats field 11, weighted by queue occupancy, NOT a per-request timer, so a brief Ceph OSD fsync/flush burst spikes this to 5,000–13,000ms while io_time utilization is ~50%, queue depth 0 and IOPS ~550 (verified live). Kept for reference only; do NOT alert on it (the corresponding alert was removed). Use 'Disk Service Time per Device' below, and — for Ceph OSDs — the OSD Commit/Apply Latency panels on the Ceph Storage dashboard.",
           "options": {
             "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] },
             "tooltip": { "mode": "multi", "sort": "desc" }
@@ -450,7 +452,7 @@ spec:
               "refId": "A"
             }
           ],
-          "title": "Write Latency per Device",
+          "title": "Write Latency per Device (queue-weighted artifact — see note)",
           "type": "timeseries"
         },
         {
@@ -480,6 +482,36 @@ spec:
             }
           ],
           "title": "Disk I/O Utilization per Device",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "Average device service time = io_time / (reads+writes completed). io_time is the wall-clock the device had ANY I/O in flight, so dividing by completed ops gives a physically-bounded mean busy-time per op — the trustworthy replacement for the queue-weighted read/write 'latency' panels above (it does not spike to seconds on a queue burst). Red line at 50ms. For Ceph OSDs prefer the OSD Commit/Apply Latency panels on the Ceph Storage dashboard.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "min": 0,
+              "custom": { "fillOpacity": 10, "lineWidth": 2, "drawStyle": "line", "thresholdsStyle": { "mode": "line" } },
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 0.05 }] },
+              "color": { "mode": "palette-classic" }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 9, "w": 24, "x": 0, "y": 48 },
+          "id": 15,
+          "options": {
+            "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Mimir" },
+              "expr": "rate(node_disk_io_time_seconds_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*\"}[5m]) / (rate(node_disk_reads_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*\"}[5m]) + rate(node_disk_writes_completed_total{cluster=~\"$cluster\", node=~\"$node\", device!~\"loop.*\"}[5m])) > 0",
+              "legendFormat": "{{cluster}} / {{node}} {{device}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Disk Service Time per Device (io_time / ops)",
           "type": "timeseries"
         }
       ],

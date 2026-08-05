@@ -1,27 +1,34 @@
-# Disk I/O alert rules: utilization saturation and latency.
+# Disk I/O alert rules: utilization saturation.
 #
 # Grafana-MANAGED alerts (evaluated by Grafana against Mimir), same delivery
 # rationale as rules-node.yaml. Backed by node-exporter's node_disk_* family,
 # all verified present in Mimir and NOT dropped by the monitoring base's
 # cardinality relabeling:
 #   node_disk_io_time_seconds_total       — wall-clock time the device had
-#     I/O requests in flight (fraction = utilization).
-#   node_disk_read_time_seconds_total     — cumulative seconds spent on reads.
-#   node_disk_read_bytes_total            — cumulative bytes read.
-#   node_disk_reads_completed_total       — cumulative read operations.
-#   node_disk_write_time_seconds_total    — cumulative seconds spent on writes.
-#   node_disk_written_bytes_total         — cumulative bytes written.
-#   node_disk_writes_completed_total      — cumulative write operations.
+#     I/O requests in flight (fraction = utilization). This is the ONLY
+#     node_disk_* signal that reliably reflects device saturation.
 #
 # Loop devices are excluded (no real signal). Device-mapper (dm-*) devices
 # are KEPT — on NixOS hosts dm-0 is the LVM root volume and its I/O is the
 # dominant signal for capacity planning. Per-device alerts are used
 # rather than node-level aggregates so the notification names the exact device
-# that is saturated or slow.
+# that is saturated.
 #
-# Thresholds mirror the dashboard gauges: utilization red > 90%, latency red >
-# 50 ms. The dashboard also has yellow (70% / 10 ms) but those are advisory —
-# paging starts at red.
+# NO node-exporter "latency" alert. The obvious formula
+#   1000 * rate(node_disk_write_time_seconds_total[5m])
+#        / rate(node_disk_writes_completed_total[5m])
+# is a TRAP and was REMOVED (verified against live Mimir, Aug 2026): the
+# numerator is /proc/diskstats field 11 — I/O time WEIGHTED by queue occupancy,
+# not a per-request timer. A brief Ceph OSD fsync/flush burst deepens the queue
+# for one 5m sample and the ratio explodes to 5,000–13,000 ms while the very same
+# sample shows io_time utilization ~50%, io_now (queue depth) 0, ~550 IOPS, and
+# ceph_osd_commit_latency_ms 10–14 ms — i.e. the disk was FAST. It produced pure
+# false-positive noise (rbd* guest volumes worst). The real storage-latency
+# signal on the openstack cluster is ceph_osd_commit_latency_ms — alerted in
+# rules-openstack.yaml (CephOSDSlowCommit). Device saturation is covered below.
+#
+# Threshold mirrors the dashboard gauge: utilization red > 90% (yellow 70% is
+# advisory only — paging starts at red).
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaAlertRuleGroup
 metadata:
@@ -99,157 +106,6 @@ spec:
                   type: gt
                   params:
                     - 90
-                operator:
-                  type: and
-                query:
-                  params:
-                    - C
-                reducer:
-                  type: last
-                  params: []
-                type: query
-            intervalMs: 1000
-            maxDataPoints: 43200
-            refId: C
-
-    # ---------------------------------------------------------------------
-    # Read latency > 50 ms. Average time per read operation (read_time /
-    # reads_completed). High read latency on the baremetal nodes means the
-    # NVMe drive's queue is deep — often a sign that Ceph OSD recovery or
-    # Nova qcow2 image cloning is saturating the read path.
-    # ---------------------------------------------------------------------
-    - uid: argus-diskio-read-latency
-      title: DiskHighReadLatency
-      condition: C
-      for: "30m"
-      noDataState: OK
-      execErrState: Error
-      labels:
-        severity: warning
-        component: disk-io
-      annotations:
-        __dashboardUid__: node-disk-io-overview
-        __panelId__: "6"
-        summary: "Disk read latency high on {{ $labels.node }}:{{ $labels.device }} ({{ $labels.cluster }})"
-        description: 'Device {{ $labels.device }} on {{ $labels.node }} (cluster {{ $labels.cluster }}) has had average read latency >50ms for 30m (currently {{ printf "%.1f" $values.B.Value }}ms). Check the Disk I/O dashboard — sustained high latency degrades Ceph OSD heartbeats and VM disk I/O.'
-      data:
-        - refId: A
-          relativeTimeRange:
-            from: 600
-            to: 0
-          datasourceUid: Mimir
-          model:
-            datasource:
-              type: prometheus
-              uid: Mimir
-            editorMode: code
-            expr: max by (cluster, node, device) (1000 * rate(node_disk_read_time_seconds_total{device!~"loop.*"}[5m]) / rate(node_disk_reads_completed_total{device!~"loop.*"}[5m]) > 0)
-            instant: true
-            range: false
-            intervalMs: 1000
-            maxDataPoints: 43200
-            legendFormat: __auto
-            refId: A
-        - refId: B
-          datasourceUid: __expr__
-          model:
-            datasource:
-              type: __expr__
-              uid: __expr__
-            expression: A
-            reducer: last
-            type: reduce
-            intervalMs: 1000
-            maxDataPoints: 43200
-            refId: B
-        - refId: C
-          datasourceUid: __expr__
-          model:
-            datasource:
-              type: __expr__
-              uid: __expr__
-            expression: B
-            type: threshold
-            conditions:
-              - evaluator:
-                  type: gt
-                  params:
-                    - 50
-                operator:
-                  type: and
-                query:
-                  params:
-                    - C
-                reducer:
-                  type: last
-                  params: []
-                type: query
-            intervalMs: 1000
-            maxDataPoints: 43200
-            refId: C
-
-    # ---------------------------------------------------------------------
-    # Write latency > 50 ms. Same as read but for the write path. On this
-    # cluster write latency spikes usually coincide with Ceph recovery or
-    # Nova creating a COW clone for a new VM's root disk.
-    # ---------------------------------------------------------------------
-    - uid: argus-diskio-write-latency
-      title: DiskHighWriteLatency
-      condition: C
-      for: "30m"
-      noDataState: OK
-      execErrState: Error
-      labels:
-        severity: warning
-        component: disk-io
-      annotations:
-        __dashboardUid__: node-disk-io-overview
-        __panelId__: "7"
-        summary: "Disk write latency high on {{ $labels.node }}:{{ $labels.device }} ({{ $labels.cluster }})"
-        description: 'Device {{ $labels.device }} on {{ $labels.node }} (cluster {{ $labels.cluster }}) has had average write latency >50ms for 30m (currently {{ printf "%.1f" $values.B.Value }}ms). Check the Disk I/O dashboard — sustained high write latency stalls Nova disk operations and Ceph recovery.'
-      data:
-        - refId: A
-          relativeTimeRange:
-            from: 600
-            to: 0
-          datasourceUid: Mimir
-          model:
-            datasource:
-              type: prometheus
-              uid: Mimir
-            editorMode: code
-            expr: max by (cluster, node, device) (1000 * rate(node_disk_write_time_seconds_total{device!~"loop.*"}[5m]) / rate(node_disk_writes_completed_total{device!~"loop.*"}[5m]) > 0)
-            instant: true
-            range: false
-            intervalMs: 1000
-            maxDataPoints: 43200
-            legendFormat: __auto
-            refId: A
-        - refId: B
-          datasourceUid: __expr__
-          model:
-            datasource:
-              type: __expr__
-              uid: __expr__
-            expression: A
-            reducer: last
-            type: reduce
-            intervalMs: 1000
-            maxDataPoints: 43200
-            refId: B
-        - refId: C
-          datasourceUid: __expr__
-          model:
-            datasource:
-              type: __expr__
-              uid: __expr__
-            expression: B
-            type: threshold
-            conditions:
-              - evaluator:
-                  type: gt
-                  params:
-                    - 50
                 operator:
                   type: and
                 query:

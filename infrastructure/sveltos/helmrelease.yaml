@@ -53,7 +53,7 @@ spec:
             cpu: 80m
             memory: 448Mi
           limits:
-            memory: 1Gi
+            memory: 1536Mi
     accessManager:
       manager:
         resources:

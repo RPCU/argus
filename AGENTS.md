@@ -474,10 +474,7 @@ cluster-api-templates`, which now runs `wait: true` — templates are statusless
   > CR is at `clusters/mgmt/clusters/mgmt.yaml` (`classRef.name: openstack-default-v1`).
   > MIGRATION NOTE: an in-use ClusterClass is protected from deletion by the CAPI
   > `validation.clusterclass.cluster.x-k8s.io` webhook (verified live), so a stray
-  > prune can't destroy `openstack-default`/`openstack-kamaji`; the split
-  > additionally set `cluster-api-templates` `prune: false` for ONE commit so the
-  > handoff dropped the classes from the old inventory WITHOUT deleting, then
-  > re-enabled `prune: true` once `cluster-api-clusterclasses` adopted them.
+  > prune can't destroy `openstack-default`/`openstack-kamaji`.
 
 - **capo-identity/** — ESO projects `capo-variables` (capo-system) →
   `mgmt/mgmt-cloud-config`. Split from templates for blast-radius isolation.
@@ -973,11 +970,10 @@ and dragged the valid templates down, retrying forever. Now `cluster-api-templat
 holds ONLY the versioned templates and runs `wait: true` (statusless CRs → Ready
 immediately); `cluster-api-clusterclasses` adopts them (`wait` omitted to avoid the
 topology-controller wedge); `clusters` now `dependsOn: cluster-api-clusterclasses`.
-Prune-safe handoff: `cluster-api-templates` was set `prune: false` for THIS commit
-only (so dropping the ClusterClasses from its inventory does NOT delete them; the
-new Kustomization adopts them in place via server-side apply, owner-label change
-only) and is flipped back to `prune: true` in the follow-up commit once adoption is
-confirmed. Backstop: the CAPI `validation.clusterclass.cluster.x-k8s.io` webhook
+Prune-safe handoff: `cluster-api-templates` was set `prune: false` for ONE commit
+(so dropping the ClusterClasses from its inventory did NOT delete them; the
+new Kustomization adopted them in place via server-side apply, owner-label change
+only) and is now restored to `prune: true`. Backstop: the CAPI `validation.clusterclass.cluster.x-k8s.io` webhook
 hard-refuses deletion of any in-use ClusterClass (verified live —
 `openstack-default`/`openstack-kamaji` can't be pruned while `mgmt`/`production`
 reference them). Prior substantive change: Wired the **capi-janitor** into the

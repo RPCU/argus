@@ -74,7 +74,7 @@ spec:
         #        -p '{"spec":{"resources":{"requests":{"storage":"20Gi"}}}}'
         #   2. Update this value to match (so future installs get the right
         #      size and the HelmRelease stays truthful).
-        size: 20Gi
+        size: 30Gi
       resources:
         requests:
           cpu: 50m

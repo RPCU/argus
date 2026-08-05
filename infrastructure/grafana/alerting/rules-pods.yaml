@@ -123,14 +123,14 @@ spec:
     # OOMKilled — fires when a container's last termination reason was OOM.
     # kube_pod_container_status_last_terminated_reason persists after restart,
     # so this catches both currently-OOMKilled containers and those that
-    # recovered but were recently killed. A single OOM kill on a critical pod
-    # (Vault, etcd, OVN) is worth a warning; a repeat will also trip the
-    # PodRestartingFrequently rule below.
+    # recovered but were recently killed. The 15m `for` delay avoids stale
+    # alerts from pods that were deleted — the metric lingers until KSM's
+    # cache refreshes and the pod is garbage-collected.
     # ---------------------------------------------------------------------
     - uid: argus-pod-oomkilled
       title: PodOOMKilled
       condition: C
-      for: "0m"
+      for: "30m"
       noDataState: OK
       execErrState: Error
       labels:

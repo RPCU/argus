@@ -10,18 +10,65 @@ spec:
     name: flux-system
     namespace: flux-system
   path: ./infrastructure/cluster-api-templates
-  prune: true
-  # NOTE: wait is intentionally OMITTED (defaults to false). With wait: true,
-  # Flux health-gates on every object in this Kustomization via kstatus —
-  # including the ClusterClass. When the ClusterClass infrastructure.templateRef
-  # is rotated to a new -vN OpenStackClusterTemplate, the ClusterClass briefly
-  # reports InProgress until the topology controller resolves the new template
-  # reference. Because the ClusterClass and the template are applied in the SAME
-  # Kustomization with no ordering guarantee, a health-wait could trip before the
-  # template is reconciled, leaving the ClusterClass pointing at a not-yet-ready
-  # template and the Kustomization stuck (the topology controller then wedges,
-  # so it never recovers). Without wait, Flux applies the template AND the
-  # ClusterClass together and returns; CAPI converges asynchronously.
+  # MIGRATION (temporary): prune is set to false for the split-out commit ONLY.
+  # The 4 ClusterClasses used to live in THIS Kustomization's inventory; the split
+  # moves them to cluster-api-clusterclasses. On the reconcile that picks up the
+  # split, this Kustomization sees the ClusterClasses gone from its desired set —
+  # with prune: true it would DELETE them in that same reconcile, before the new
+  # Kustomization can adopt them (live Clusters reference them: mgmt →
+  # openstack-default, production → openstack-kamaji). prune: false makes it drop
+  # them from its inventory WITHOUT deleting; cluster-api-clusterclasses then
+  # adopts them in place via server-side apply (owner-label change only).
+  # RE-ENABLE prune: true in the NEXT commit once adoption is confirmed
+  # (kubectl get clusterclass -n mgmt -o
+  #  jsonpath='{.items[*].metadata.labels.kustomize\.toolkit\.fluxcd\.io/name}'
+  #  should read cluster-api-clusterclasses for all 4).
+  prune: false
+  # This Kustomization now holds ONLY the versioned templates
+  # (OpenStackClusterTemplate / KubeadmControlPlaneTemplate / KubeadmConfigTemplate
+  # / OpenStackMachineTemplate) — the ClusterClasses moved to
+  # cluster-api-clusterclasses.yaml, which dependsOn this one. This guarantees a
+  # NEW -vN template is applied to the API server BEFORE the ClusterClass that
+  # repoints its templateRef at it. When the ClusterClass + the not-yet-created
+  # template lived in the SAME Kustomization, there was no intra-set ordering
+  # guarantee: the ClusterClass could reconcile against a templateRef the API
+  # server did not yet have, report a topology/templateRef error, and mark the
+  # WHOLE Kustomization NotReady — dragging the perfectly valid templates down
+  # with it and retrying forever. Splitting lets the templates land first.
+  #
+  # wait: true is SAFE here (unlike on the ClusterClass) because these templates
+  # are plain CRs with no controller-driven status — kstatus reports them Ready
+  # as soon as they exist. Waiting on them is exactly what lets the dependent
+  # ClusterClass Kustomization trust that the template is present.
+  wait: true
   timeout: 10m
   dependsOn:
     - name: cluster-api-providers
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cluster-api-clusterclasses
+  namespace: flux-system
+spec:
+  interval: 30m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  path: ./infrastructure/cluster-api-clusterclasses
+  prune: true
+  # NOTE: wait is intentionally OMITTED (defaults to false). With wait: true,
+  # Flux health-gates on the ClusterClass via kstatus. When the ClusterClass
+  # infrastructure.templateRef is rotated to a new -vN template, the ClusterClass
+  # briefly reports InProgress until the topology controller resolves the new
+  # template reference; a health-wait could trip and, if the topology controller
+  # wedges, never recover. Without wait, Flux applies the ClusterClass and
+  # returns; CAPI converges asynchronously.
+  #
+  # The template it references is guaranteed present because this Kustomization
+  # dependsOn cluster-api-templates (which uses wait: true), so the atomic-apply
+  # ordering race is resolved at the Kustomization dependency level instead.
+  timeout: 10m
+  dependsOn:
+    - name: cluster-api-templates

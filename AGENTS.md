@@ -419,9 +419,19 @@ Dragonfly` CRD) via a Flux takeover of the SAME base mgmt uses,
 operator).`capo-variables` is created **manually** (README). ORC is a hard
   CAPO dependency but is a plain Flux Kustomization, NOT a provider CR.
 - **orc/** (v2.5.0) — standalone, fetched by URL (CAPO image resolution).
-- **cluster-api-templates/** — generic OpenStack ClusterClass; base templates
+- **cluster-api-templates/** — versioned base templates (`OpenStackClusterTemplate`
+  / `KubeadmControlPlaneTemplate` / `KubeadmConfigTemplate` / `OpenStackMachineTemplate`),
   split per-component with `-vN` suffixes; per-cluster values are ClusterClass
-  variables via patches. See `README.md` for the variable table + `-vN` rotation.
+  variables via patches. **The ClusterClasses themselves moved to
+  `cluster-api-clusterclasses/`** (own Flux Kustomization, `dependsOn:
+cluster-api-templates`, which now runs `wait: true` — templates are statusless
+  CRs so kstatus reports them Ready as soon as they exist). WHY THE SPLIT: with
+  the ClusterClass and its templates in ONE Kustomization there is no intra-set
+  apply ordering, so a `-vN` templateRef rotation lets the ClusterClass reconcile
+  against a not-yet-present template → topology/templateRef error that marks the
+  WHOLE Kustomization NotReady, dragging the valid templates down and retrying
+  forever. The split lands templates first, then the ClusterClasses adopt them.
+  See `README.md` for the variable table + `-vN` rotation.
   - `clusterclass.yaml` `openstack-default` — variables: identityRef,
     externalNetworkId, managedSubnetCIDR/AllocationPools, imageName,
     controlPlaneFlavor, workerFlavor, sshKeyName, apiServerFloatingIP, **oidc**.
@@ -455,11 +465,19 @@ operator).`capo-variables` is created **manually** (README). ORC is a hard
   > `imageName` / `sshKeyName` per pool via `variables.overrides`.
   > `controlPlaneFlavor` and cluster-wide values can't be per-pool.
 
-  > `cluster-api-templates` `dependsOn: cluster-api-providers` only; the
-  > `mgmt-cloud-config` secret is in `capo-identity`. Do **NOT** set `wait: true`
-  > on this Kustomization — with the ClusterClass and its templates in one
-  > Kustomization, a `-vN` rotation can wedge the topology controller. The `Cluster`
+  > `cluster-api-templates` `dependsOn: cluster-api-providers` only and now runs
+  > `wait: true` (templates are statusless CRs). The `mgmt-cloud-config` secret is
+  > in `capo-identity`. The **ClusterClasses live in `cluster-api-clusterclasses/`**
+  > (`dependsOn: cluster-api-templates`, `wait` OMITTED — with `wait: true` a `-vN`
+  > rotation can wedge the topology controller). The `clusters` Flux Kustomization
+  > (the `Cluster` CR) now `dependsOn: cluster-api-clusterclasses`. The `Cluster`
   > CR is at `clusters/mgmt/clusters/mgmt.yaml` (`classRef.name: openstack-default-v1`).
+  > MIGRATION NOTE: an in-use ClusterClass is protected from deletion by the CAPI
+  > `validation.clusterclass.cluster.x-k8s.io` webhook (verified live), so a stray
+  > prune can't destroy `openstack-default`/`openstack-kamaji`; the split
+  > additionally set `cluster-api-templates` `prune: false` for ONE commit so the
+  > handoff dropped the classes from the old inventory WITHOUT deleting, then
+  > re-enabled `prune: true` once `cluster-api-clusterclasses` adopted them.
 
 - **capo-identity/** — ESO projects `capo-variables` (capo-system) →
   `mgmt/mgmt-cloud-config`. Split from templates for blast-radius isolation.
@@ -943,10 +961,29 @@ env; pre-commit quality gates; 1-minute Git sync.
 
 ---
 
-**Last Updated**: August 2026 — Wired the **capi-janitor** into the Sveltos
-`capi-management` bundle so a workload cluster promoted to a management cluster
-(label `sveltos.argus.rpcu.io/capi-management: enabled`) gets the janitor too.
-Added a `capi-janitor.yaml` Flux Kustomization
+**Last Updated**: August 2026 — **Split the ClusterClasses out of the
+`cluster-api-templates` Flux Kustomization** into a new
+`cluster-api-clusterclasses` one (`infrastructure/cluster-api-clusterclasses/` +
+the second Kustomization object in `clusters/mgmt/cluster-api-templates.yaml`,
+`dependsOn: cluster-api-templates`; the Sveltos `capi-management` bundle mirrors
+the split). The old single Kustomization had no intra-set apply ordering, so a
+`-vN` templateRef rotation let the ClusterClass reconcile against a not-yet-present
+template → topology/templateRef error that marked the WHOLE Kustomization NotReady
+and dragged the valid templates down, retrying forever. Now `cluster-api-templates`
+holds ONLY the versioned templates and runs `wait: true` (statusless CRs → Ready
+immediately); `cluster-api-clusterclasses` adopts them (`wait` omitted to avoid the
+topology-controller wedge); `clusters` now `dependsOn: cluster-api-clusterclasses`.
+Prune-safe handoff: `cluster-api-templates` was set `prune: false` for THIS commit
+only (so dropping the ClusterClasses from its inventory does NOT delete them; the
+new Kustomization adopts them in place via server-side apply, owner-label change
+only) and is flipped back to `prune: true` in the follow-up commit once adoption is
+confirmed. Backstop: the CAPI `validation.clusterclass.cluster.x-k8s.io` webhook
+hard-refuses deletion of any in-use ClusterClass (verified live —
+`openstack-default`/`openstack-kamaji` can't be pruned while `mgmt`/`production`
+reference them). Prior substantive change: Wired the **capi-janitor** into the
+Sveltos `capi-management` bundle so a workload cluster promoted to a management
+cluster (label `sveltos.argus.rpcu.io/capi-management: enabled`) gets the janitor
+too. Added a `capi-janitor.yaml` Flux Kustomization
 (`path: ./infrastructure/capi-janitor`, `dependsOn: cluster-api-providers`,
 `wait: true`) to the `capi-management-flux-kustomizations` ConfigMap in
 `infrastructure/sveltos/clusterprofiles/capi-management.yaml`, mirroring

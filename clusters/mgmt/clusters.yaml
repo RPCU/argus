@@ -13,4 +13,4 @@ spec:
   prune: true
   timeout: 5m
   dependsOn:
-    - name: cluster-api-templates
+    - name: cluster-api-clusterclasses

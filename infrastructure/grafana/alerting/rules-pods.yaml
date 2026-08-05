@@ -120,12 +120,14 @@ spec:
             refId: C
 
     # ---------------------------------------------------------------------
-    # OOMKilled — fires when a container's last termination reason was OOM.
-    # kube_pod_container_status_last_terminated_reason persists after restart,
-    # so this catches both currently-OOMKilled containers and those that
-    # recovered but were recently killed. The 15m `for` delay avoids stale
-    # alerts from pods that were deleted — the metric lingers until KSM's
-    # cache refreshes and the pod is garbage-collected.
+    # OOMKilled — fires when a container's last termination reason was OOM
+    # AND the container is not currently running. kube_pod_container_status_last_terminated_reason
+    # persists across restarts, so without the running filter the alert
+    # would fire indefinitely even after the pod recovered. The `unless`
+    # drops series where the container is running — once it restarts
+    # successfully the alert goes silent. The 30m `for` delay also avoids
+    # stale alerts from pods that were deleted (metric lingers until KSM's
+    # cache refreshes).
     # ---------------------------------------------------------------------
     - uid: argus-pod-oomkilled
       title: PodOOMKilled
@@ -152,7 +154,10 @@ spec:
               type: prometheus
               uid: Mimir
             editorMode: code
-            expr: max by (cluster, namespace, pod, container) (kube_pod_container_status_last_terminated_reason{reason="OOMKilled"})
+            expr: |
+              max by (cluster, namespace, pod, container) (kube_pod_container_status_last_terminated_reason{reason="OOMKilled"})
+              unless on (cluster, namespace, pod, container)
+              kube_pod_container_status_running == 1
             instant: true
             range: false
             intervalMs: 1000

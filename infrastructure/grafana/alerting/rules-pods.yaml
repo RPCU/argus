@@ -1,9 +1,9 @@
 # Pod / workload alert rules: CrashLoopBackOff, OOMKilled, not-ready, restart storms.
 #
 # Grafana-MANAGED alerts (evaluated by Grafana against Mimir), same rationale as
-# rules-node.yaml: Mimir's ruler is disabled and every cluster's local
-# Alertmanager has no receivers, so Grafana unified alerting is the only path
-# that delivers a Discord notification. Because the queries run against Mimir,
+# rules-node.yaml: Mimir's ruler is disabled and the local Alertmanager is
+# disabled, so Grafana unified alerting is the only path that delivers a Discord
+# notification. Because the queries run against Mimir,
 # ONE rule set covers every cluster that remote_writes in (mgmt, openstack,
 # production) — the `cluster` external label comes back as an alert label
 # automatically, so grouping/routing is per-cluster with no per-cluster CRs.

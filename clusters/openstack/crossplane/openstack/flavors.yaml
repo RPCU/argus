@@ -61,6 +61,18 @@ spec:
 apiVersion: compute.openstack.m.crossplane.io/v1alpha1
 kind: FlavorV2
 metadata:
+  name: bis-xlarge
+spec:
+  forProvider:
+    name: bis-xlarge
+    vcpus: 8
+    ram: 16384
+    disk: 30
+    isPublic: true
+---
+apiVersion: compute.openstack.m.crossplane.io/v1alpha1
+kind: FlavorV2
+metadata:
   name: octavia-amphora
 spec:
   forProvider:

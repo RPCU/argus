@@ -2,9 +2,9 @@
 #
 # These are Grafana-MANAGED alerts (evaluated by Grafana against the Mimir
 # datasource), not Prometheus `PrometheusRule` CRs. That is deliberate: Mimir's
-# ruler is disabled (`infrastructure/mimir/helmrelease.yaml`) and each cluster's
-# local Alertmanager has no receivers configured, so Grafana unified alerting is
-# the only path that actually delivers a notification. Because the queries run
+# ruler is disabled (`infrastructure/mimir/helmrelease.yaml`) and the local
+# Alertmanager is disabled, so Grafana unified alerting is the only path that
+# actually delivers a notification. Because the queries run
 # against Mimir, ONE rule covers every cluster that remote_writes into it — the
 # `cluster` external label comes back as an alert label automatically.
 #

@@ -310,16 +310,7 @@ spec:
 
     # --- AlertManager ---
     alertmanager:
-      enabled: true
-      alertmanagerSpec:
-        retention: 24h
-        storage: {}
-        resources:
-          requests:
-            cpu: 10m
-            memory: 32Mi
-          limits:
-            memory: 128Mi
+      enabled: false
 
     # --- Exporters ---
     nodeExporter:

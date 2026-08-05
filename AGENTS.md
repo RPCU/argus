@@ -201,7 +201,7 @@ kube-prometheus-stack}`. The SM is **monitoring-gated**: this shared base is
   cert-manager (`certmanager_certificate_expiration_timestamp_seconds` +
   `_ready_status`, `$cluster`+`$namespace`).
 - **grafana/alerting/** — **own Flux Kustomization** (ns monitoring). Grafana-
-  managed alert rules (Mimir ruler + Alertmanager receivers are both off, so
+  managed alert rules (Mimir ruler + local Alertmanager are both off, so
   Grafana unified alerting is the ONLY delivery path). ONE rule set covers every
   cluster remote_writing to Mimir (`cluster` external label auto-appears).
   - `discord-secret.yaml` ESO (`secrets-mgmt/grafana` → `discord-webhook-url`

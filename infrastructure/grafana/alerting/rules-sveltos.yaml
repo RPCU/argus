@@ -3,9 +3,8 @@
 #
 # These are Grafana-MANAGED alerts (evaluated by Grafana against the Mimir
 # datasource), not Prometheus PrometheusRule CRs. Same rationale as all other
-# rules in this directory: Mimir's ruler is disabled and each cluster's local
-# Alertmanager has no receivers configured, so Grafana unified alerting is the
-# only delivery path.
+# rules in this directory: Mimir's ruler is disabled and the local Alertmanager
+# is disabled, so Grafana unified alerting is the only delivery path.
 #
 # Every expression below was verified against live Mimir before commit.
 #

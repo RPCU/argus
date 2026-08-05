@@ -45,14 +45,14 @@ spec:
   rules:
     # ---------------------------------------------------------------------
     # CrashLoopBackOff — the headline ask. Fires when a container has been
-    # sitting in CrashLoopBackOff for 5m. Per-container series, so grouping in
+    # sitting in CrashLoopBackOff for 15m. Per-container series, so grouping in
     # notification-policy.yaml (by alertname+cluster) collapses a multi-pod
     # crash into one Discord message per cluster.
     # ---------------------------------------------------------------------
     - uid: argus-pod-crashloop
       title: PodCrashLoopBackOff
       condition: C
-      for: "5m"
+      for: "15m"
       noDataState: OK
       execErrState: Error
       labels:
@@ -62,7 +62,7 @@ spec:
         __dashboardUid__: cluster-cpu-ram-overview
         __panelId__: "10"
         summary: "CrashLoopBackOff: {{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.cluster }})"
-        description: "Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} on cluster {{ $labels.cluster }} has been in CrashLoopBackOff for 5m. Check `kubectl -n {{ $labels.namespace }} logs {{ $labels.pod }} -c {{ $labels.container }} --previous`."
+        description: "Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} on cluster {{ $labels.cluster }} has been in CrashLoopBackOff for 15m. Check `kubectl -n {{ $labels.namespace }} logs {{ $labels.pod }} -c {{ $labels.container }} --previous`."
       data:
         - refId: A
           relativeTimeRange:
@@ -206,7 +206,7 @@ spec:
     - uid: argus-pod-restarting
       title: PodRestartingFrequently
       condition: C
-      for: "10m"
+      for: "20m"
       noDataState: OK
       execErrState: Error
       labels:
@@ -274,7 +274,7 @@ spec:
             refId: C
 
     # ---------------------------------------------------------------------
-    # Container not ready — a container that is NOT ready for 15m without
+    # Container not ready — a container that is NOT ready for 30m without
     # necessarily crash-looping (stuck init, failing readiness, wedged
     # dependency). Completed/failed pods are excluded: they go NotReady on
     # normal completion or after final termination, which is not a fault.
@@ -304,7 +304,7 @@ spec:
     - uid: argus-pod-not-ready
       title: PodContainerNotReady
       condition: C
-      for: "15m"
+      for: "30m"
       noDataState: OK
       execErrState: Error
       labels:
@@ -314,7 +314,7 @@ spec:
         __dashboardUid__: cluster-cpu-ram-overview
         __panelId__: "10"
         summary: "Container not ready: {{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.cluster }})"
-        description: "Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} on cluster {{ $labels.cluster }} has not been Ready for 15m."
+        description: "Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} on cluster {{ $labels.cluster }} has not been Ready for 30m."
       data:
         - refId: A
           relativeTimeRange:

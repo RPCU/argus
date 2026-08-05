@@ -221,7 +221,7 @@ spec:
             maxDataPoints: 43200
             refId: C
 
-    # Fires when a certificate has been in Ready=False state for > 15 minutes.
+    # Fires when a certificate has been in Ready=False state for > 30 minutes.
     # A cert that is not ready is either failing issuance, failing renewal,
     # or has a conditions mismatch. This is distinct from expiry — a cert
     # can be far from expiry but stuck unready (e.g. DNS01 challenge failing,
@@ -229,7 +229,7 @@ spec:
     - uid: argus-cert-not-ready
       title: CertManagerCertificateNotReady
       condition: C
-      for: "15m"
+      for: "30m"
       noDataState: OK
       execErrState: Error
       labels:
@@ -237,7 +237,7 @@ spec:
         component: cert-manager
       annotations:
         summary: "Certificate {{ $labels.name }} not ready ({{ $labels.cluster }})"
-        description: "Certificate {{ $labels.namespace }}/{{ $labels.name }} in cluster {{ $labels.cluster }} has been in Ready=False state for 15 minutes. Check cert-manager logs and certificate status conditions."
+        description: "Certificate {{ $labels.namespace }}/{{ $labels.name }} in cluster {{ $labels.cluster }} has been in Ready=False state for 30 minutes. Check cert-manager logs and certificate status conditions."
       data:
         - refId: A
           relativeTimeRange:

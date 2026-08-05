@@ -50,7 +50,7 @@ spec:
     - uid: argus-flux-recon-errors
       title: FluxReconciliationErrors
       condition: C
-      for: "5m"
+      for: "15m"
       noDataState: OK
       execErrState: Error
       labels:
@@ -58,7 +58,7 @@ spec:
         component: flux
       annotations:
         summary: "Flux reconciliation errors on {{ $labels.cluster }}"
-        description: 'Flux controller {{ $labels.controller }} in cluster {{ $labels.cluster }} is experiencing reconciliation errors at {{ printf "%.2f" $values.B.Value }}/s for the past 5 minutes.'
+        description: 'Flux controller {{ $labels.controller }} in cluster {{ $labels.cluster }} is experiencing reconciliation errors at {{ printf "%.2f" $values.B.Value }}/s for the past 15 minutes.'
         __dashboardUid__: fluxcd-status
         __panelId__: "8"
       data:
@@ -123,7 +123,7 @@ spec:
     - uid: argus-flux-recon-timeouts
       title: FluxReconciliationTimeouts
       condition: C
-      for: "10m"
+      for: "20m"
       noDataState: OK
       execErrState: Error
       labels:
@@ -131,7 +131,7 @@ spec:
         component: flux
       annotations:
         summary: "Flux reconciliation timeouts on {{ $labels.cluster }}"
-        description: 'Flux controller {{ $labels.controller }} in cluster {{ $labels.cluster }} is experiencing reconciliation timeouts at {{ printf "%.2f" $values.B.Value }}/s for the past 10 minutes.'
+        description: 'Flux controller {{ $labels.controller }} in cluster {{ $labels.cluster }} is experiencing reconciliation timeouts at {{ printf "%.2f" $values.B.Value }}/s for the past 20 minutes.'
         __dashboardUid__: fluxcd-status
         __panelId__: "9"
       data:

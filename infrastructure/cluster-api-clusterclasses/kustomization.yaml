@@ -1,0 +1,29 @@
+# The ClusterClass objects are built by a SEPARATE Flux Kustomization that
+# dependsOn cluster-api-templates. This guarantees every OpenStackClusterTemplate
+# / KubeadmControlPlaneTemplate / KubeadmConfigTemplate is applied to the API
+# server BEFORE the ClusterClass that references it.
+#
+# WHY THE SPLIT: when a ClusterClass templateRef is rotated to a NEW -vN template
+# AND that template is created in the SAME Kustomization, there is no ordering
+# guarantee within the atomic apply, so the ClusterClass can be reconciled/
+# validated against a template the API server does not yet have. The ClusterClass
+# then reports a topology/templateRef error and marks the WHOLE Kustomization
+# NotReady — dragging the (perfectly valid) templates down with it and retrying
+# forever. Splitting the templates into their own dependency Kustomization
+# removes the ordering race: templates land first (wait: true), then the
+# ClusterClasses adopt them.
+#
+# MIGRATION / NO-PRUNE: these ClusterClasses previously belonged to the
+# cluster-api-templates Kustomization's inventory. Moving them here changes their
+# Flux owner labels, which would normally make the OLD Kustomization prune
+# (delete) them on the next reconcile — catastrophic while live Clusters
+# reference them. This is avoided by setting prune: false on the OLD
+# cluster-api-templates Kustomization (see clusters/mgmt/cluster-api-templates.yaml),
+# so it never garbage-collects the objects it drops; this Kustomization then
+# adopts them in place via server-side apply (owner-label update only, no
+# delete/recreate).
+resources:
+  - clusterclass.yaml
+  - clusterclass-v1.yaml
+  - clusterclass-kamaji.yaml
+  - clusterclass-kamaji-v1.yaml

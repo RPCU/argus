@@ -358,8 +358,11 @@ kube-prometheus-stack}`. The SM is **monitoring-gated**: this shared base is
   - `capi-management.yaml` (`dependsOn: flux-instance`, label `.../capi-management`)
     — full CAPI/CAPO stack + Sveltos as Flux Kustomization CRs (Sveltos core,
     ClusterProfiles, cert-manager v1.19.2, external-secrets v2.3.0,
-    cluster-api-operator v0.27.0, ORC v2.5.0, CAPI providers, capo-identity,
-    ClusterClass templates, kamaji `wait: false`). Transfers `capo-variables`
+    cluster-api-operator v0.27.0, ORC v2.5.0, CAPI providers, capi-janitor
+    (`dependsOn: cluster-api-providers`, mirrors `clusters/mgmt/capi-janitor.yaml`
+    — so a promoted mgmt cluster can tear down its own `OpenStackCluster`s without
+    the OCCM-LB-holds-network deadlock), capo-identity, ClusterClass templates,
+    kamaji `wait: false`). Transfers `capo-variables`
     from mgmt via `templateResourceRefs`. Per-cluster CAPO version override via
     the Cluster annotation `sveltos.argus.rpcu.io/capo-version` (templated patch;
     `"default"`/empty = repo-pinned). RBAC via `capi-management-capo-rbac` +
@@ -940,7 +943,18 @@ env; pre-commit quality gates; 1-minute Git sync.
 
 ---
 
-**Last Updated**: August 2026 — Added the **capi-janitor-openstack** operator on
+**Last Updated**: August 2026 — Wired the **capi-janitor** into the Sveltos
+`capi-management` bundle so a workload cluster promoted to a management cluster
+(label `sveltos.argus.rpcu.io/capi-management: enabled`) gets the janitor too.
+Added a `capi-janitor.yaml` Flux Kustomization
+(`path: ./infrastructure/capi-janitor`, `dependsOn: cluster-api-providers`,
+`wait: true`) to the `capi-management-flux-kustomizations` ConfigMap in
+`infrastructure/sveltos/clusterprofiles/capi-management.yaml`, mirroring
+`clusters/mgmt/capi-janitor.yaml`. Without it, deleting an `OpenStackCluster` on
+the promoted mgmt cluster would hit the OCCM-LB-holds-network teardown deadlock.
+The base is self-contained (namespace/SA/RBAC/CA-bundle/Deployment) so a plain
+Flux takeover suffices (same pattern as `capo-identity`/`cluster-api-templates`).
+Prior substantive change: Added the **capi-janitor-openstack** operator on
 mgmt (`infrastructure/capi-janitor/` plain manifests: namespace
 `capi-janitor-system`, SA, ClusterRole/Binding, single-replica Recreate
 Deployment pulling `zot.rpcu.io/public/capi-janitor-openstack-go:latest` built by

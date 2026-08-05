@@ -16,9 +16,12 @@
 #   5. cluster-api-operator   — declarative CAPI provider lifecycle manager
 #   6. ORC                    — OpenStack Resource Controller (CAPO image resolution)
 #   7. cluster-api-providers  — CAPI core + kubeadm + kamaji + CAPO provider CRs
-#   8. capo-identity          — ESO: capo-variables -> mgmt-cloud-config (identityRef)
-#   9. cluster-api-templates  — ClusterClass + versioned OpenStack templates
-#  10. kamaji                  — Kamaji hosted control-plane manager (Helm + etcd
+#   8. capi-janitor           — purges OCCM/Cinder-CSI leftovers (FIPs, Octavia
+#                               LBs, SGs, Cinder volumes) on OpenStackCluster
+#                               deletion, before CAPO tears down the network
+#   9. capo-identity          — ESO: capo-variables -> mgmt-cloud-config (identityRef)
+#  10. cluster-api-templates  — ClusterClass + versioned OpenStack templates
+#  11. kamaji                  — Kamaji hosted control-plane manager (Helm + etcd
 #                               datastore); the openstack-kamaji ClusterClass runs
 #                               each workload apiserver as pods here
 #
@@ -379,6 +382,30 @@ data:
             spec:
               version: {{ $capoVersion }}
       {{- end }}
+  capi-janitor.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: capi-janitor
+      namespace: flux-system
+    spec:
+      interval: 10m
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/capi-janitor
+      prune: true
+      wait: true
+      timeout: 5m
+      # The janitor watches the CAPO OpenStackCluster CRD, so it can only start
+      # once the infrastructure provider (CAPO) has registered it — that happens
+      # in cluster-api-providers. Same dependency the mgmt cluster uses
+      # (clusters/mgmt/capi-janitor.yaml). A workload cluster promoted to a
+      # management cluster needs the janitor too: without it, deleting an
+      # OpenStackCluster hits the OCCM-LB-holds-network teardown deadlock.
+      dependsOn:
+        - name: cluster-api-providers
   capo-identity.yaml: |
     apiVersion: kustomize.toolkit.fluxcd.io/v1
     kind: Kustomization

@@ -12,6 +12,14 @@
 #   openstack_nova_agent_state{service}    1/0 per nova agent per host
 #   openstack_loadbalancer_loadbalancer_status  value 4 = ERROR (0 ONLINE)
 #
+# CephOSDSlowCommit additionally uses the Rook mgr's ceph_osd_commit_latency_ms
+# (ns rook-ceph, job rook-ceph-mgr). This is the AUTHORITATIVE per-OSD storage
+# write-latency signal and REPLACES the removed node-exporter disk-latency alerts
+# (see rules-diskio.yaml — that formula was a queue-weighted /proc artifact that
+# false-fired at 5,000+ ms while the disks were healthy). Healthy baseline here is
+# 10–14 ms; the hostname is joined from ceph_osd_metadata (same pattern as the
+# ceph-storage dashboard).
+#
 # Standard three-stage shape (A instant query -> B reduce(last) -> C threshold,
 # condition: C). noDataState: OK throughout — at steady state there are no ERROR
 # VMs and no down services, so those queries return empty; `or vector(0)` is used
@@ -264,6 +272,77 @@ spec:
             type: threshold
             conditions:
               - evaluator: { type: gt, params: [0] }
+                operator: { type: and }
+                query: { params: [C] }
+                reducer: { type: last, params: [] }
+                type: query
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: C
+
+    # ---------------------------------------------------------------------
+    # A Ceph OSD's commit (write) latency is sustained-high. This is the REAL
+    # storage-latency alert (replaces the removed node-exporter disk-latency
+    # rules). ceph_osd_commit_latency_ms is the OSD's own write-path latency as
+    # measured by Ceph — bounded and physical, unlike the /proc queue-weighted
+    # ratio. Baseline on these NVMe OSDs is 10–14 ms; a sustained >100 ms means a
+    # genuinely degrading drive or a CPU-starved OSD (the usual cause on this
+    # hyperconverged cluster). for:15m — brief spikes during recovery/backfill or
+    # compaction are normal and must not page. hostname joined from
+    # ceph_osd_metadata (0 = healthy via `or vector(0)` so a scrape gap can't
+    # NoData-flip the whole rule).
+    # ---------------------------------------------------------------------
+    - uid: argus-os-ceph-osd-slow-commit
+      title: CephOSDSlowCommit
+      condition: C
+      for: "15m"
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: warning
+        component: openstack
+      annotations:
+        __dashboardUid__: ceph-storage-health
+        __panelId__: "22"
+        summary: "Ceph OSD slow commit latency: {{ $labels.ceph_daemon }} ({{ $labels.hostname }})"
+        description: '{{ $labels.ceph_daemon }} on {{ $labels.hostname }} has had commit (write) latency >100ms for 15m (currently {{ printf "%.0f" $values.B.Value }}ms; healthy is 10–14ms). Check the Ceph Storage dashboard — a degrading NVMe drive or a CPU-starved OSD is the usual cause on this hyperconverged cluster.'
+      data:
+        - refId: A
+          relativeTimeRange: { from: 600, to: 0 }
+          datasourceUid: Mimir
+          model:
+            datasource: { type: prometheus, uid: Mimir }
+            editorMode: code
+            expr: |
+              max by (ceph_daemon, hostname) (
+                ceph_osd_commit_latency_ms{cluster="openstack"}
+                * on (ceph_daemon) group_left(hostname) ceph_osd_metadata{cluster="openstack"}
+              )
+              or vector(0)
+            instant: true
+            range: false
+            intervalMs: 1000
+            maxDataPoints: 43200
+            legendFormat: __auto
+            refId: A
+        - refId: B
+          datasourceUid: __expr__
+          model:
+            datasource: { type: __expr__, uid: __expr__ }
+            expression: A
+            reducer: last
+            type: reduce
+            intervalMs: 1000
+            maxDataPoints: 43200
+            refId: B
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            datasource: { type: __expr__, uid: __expr__ }
+            expression: B
+            type: threshold
+            conditions:
+              - evaluator: { type: gt, params: [100] }
                 operator: { type: and }
                 query: { params: [C] }
                 reducer: { type: last, params: [] }

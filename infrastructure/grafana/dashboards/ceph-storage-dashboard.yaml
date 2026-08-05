@@ -352,13 +352,33 @@ spec:
               "unit": "ms"
             }
           },
-          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 37 },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 37 },
           "id": 22,
           "options": { "legend": { "calcs": ["mean", "max", "lastNotNull"], "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi", "sort": "desc" } },
           "targets": [
             { "expr": "ceph_osd_apply_latency_ms{cluster=~\"$cluster\"} * on (ceph_daemon) group_left(hostname) ceph_osd_metadata{cluster=~\"$cluster\"}", "legendFormat": "{{ceph_daemon}} ({{hostname}})", "refId": "A" }
           ],
           "title": "OSD Apply Latency",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Mimir" },
+          "description": "OSD commit (write) latency over time, per OSD — Ceph's own bounded write-path timer (ceph_osd_commit_latency_ms). This is the metric the CephOSDSlowCommit alert fires on (>100ms for 15m); the red line marks that threshold. Healthy baseline on these NVMe OSDs is 10–14ms. Unlike the node-exporter node_disk_*_time ratio, this is physical and does not spike on brief queue bursts.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never", "spanNulls": true, "thresholdsStyle": { "mode": "line" } },
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 100 }] },
+              "unit": "ms"
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 37 },
+          "id": 23,
+          "options": { "legend": { "calcs": ["mean", "max", "lastNotNull"], "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [
+            { "expr": "ceph_osd_commit_latency_ms{cluster=~\"$cluster\"} * on (ceph_daemon) group_left(hostname) ceph_osd_metadata{cluster=~\"$cluster\"}", "legendFormat": "{{ceph_daemon}} ({{hostname}})", "refId": "A" }
+          ],
+          "title": "OSD Commit Latency",
           "type": "timeseries"
         },
         {

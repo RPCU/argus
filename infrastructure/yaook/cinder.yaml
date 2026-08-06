@@ -55,6 +55,9 @@ spec:
       max_pool_size: 10
       max_overflow: 15
   database:
+    mysqlConfig:
+      mysqld:
+        max_statement_time: 60
     backup:
       mysqldump: false
       schedule: 0 * * * *

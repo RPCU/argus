@@ -19,6 +19,9 @@ spec:
     replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   database:
+    mysqlConfig:
+      mysqld:
+        max_statement_time: 60
     backup:
       mysqldump: false
       schedule: 0 * * * *
@@ -191,6 +194,9 @@ spec:
   # fully closed.
   powerdns:
     database:
+      mysqlConfig:
+        mysqld:
+          max_statement_time: 60
       backup:
         mysqldump: false
         schedule: 0 * * * *

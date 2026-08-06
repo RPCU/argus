@@ -66,6 +66,7 @@ spec:
     mysqlConfig:
       mysqld:
         max_connections: 2000
+        max_statement_time: 60
   issuerRef:
     name: yaook-internal
   keystoneRef:

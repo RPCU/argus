@@ -22,6 +22,9 @@ spec:
         limits:
           memory: 2Gi
   database:
+    mysqlConfig:
+      mysqld:
+        max_statement_time: 60
     backup:
       mysqldump: false
       schedule: 0 * * * *

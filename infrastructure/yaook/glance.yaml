@@ -6,6 +6,9 @@ spec:
   keystoneRef:
     name: keystone
   database:
+    mysqlConfig:
+      mysqld:
+        max_statement_time: 60
     replicas: 1
     resources:
       mariadb-galera:

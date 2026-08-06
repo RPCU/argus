@@ -61,6 +61,18 @@ spec:
 apiVersion: compute.openstack.m.crossplane.io/v1alpha1
 kind: FlavorV2
 metadata:
+  name: duo-large
+spec:
+  forProvider:
+    name: duo-large
+    vcpus: 2
+    ram: 8192
+    disk: 30
+    isPublic: true
+---
+apiVersion: compute.openstack.m.crossplane.io/v1alpha1
+kind: FlavorV2
+metadata:
   name: xlarge
 spec:
   forProvider:

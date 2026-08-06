@@ -20,7 +20,9 @@ spec:
     watchNamespaces: ""
     resources:
       requests:
-        cpu: 100m
+        # Measured P95 ~2m / peak ~2m CPU over 3d (Mimir) — idle reconciler.
+        # Trimmed 100m -> 20m to free worker budget for etcd + tenant CPs.
+        cpu: 20m
         memory: 128Mi
       limits:
         memory: 512Mi

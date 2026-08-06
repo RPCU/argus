@@ -31,6 +31,12 @@ spec:
   # Deployment specification & env vars for Zitadel OIDC secret
   deployment:
     spec:
+      # Recreate avoids Multi-Attach errors on every rollout: the PVC is RWO,
+      # so RollingUpdate tries to attach the volume to the new pod before the
+      # old pod releases it. Recreate kills the old pod first, then creates the
+      # new one with a clean volume attach.
+      strategy:
+        type: Recreate
       template:
         spec:
           securityContext:

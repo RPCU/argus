@@ -8,7 +8,9 @@ image:
 replicaCount: 3
 resources:
   requests:
-    cpu: 200m
+    # Measured P95 ~115m / peak ~124m CPU over 3d (Mimir). Trimmed from
+    # 200m to reclaim worker CPU budget; limit kept at 1 core.
+    cpu: 150m
     memory: 256Mi
   limits:
     cpu: "1"
@@ -17,27 +19,32 @@ kamaji-etcd:
   clusterDomain: "mgmt.local"
   resources:
     requests:
-      cpu: 500m
+      # Measured P95 ~115m / peak ~124m CPU per member over 3d (Mimir).
+      # 500m was ~4x peak and blocked scheduling on a 2-node fleet;
+      # 250m is 2x peak with headroom.
+      cpu: 250m
       memory: 256Mi
   # Spread the 3 etcd members across distinct nodes. Without this, node
   # churn (CAPI remediation) packed 2/3 members onto ONE worker (observed
-  # 2026-07-07), so a single node degraded EVERY tenant control plane —
-  # tenant apiservers timed out on liveness/readiness for hours and workload
-  # clusters' leader-elected controllers (e.g. csi-nfs-controller sidecars)
-  # crash-looped on lease-renewal timeouts. `required` (not preferred) on
-  # hostname, same convention as the Vault and rook MDS anti-affinity — with
-  # 3 mgmt workers a temporarily Pending member (quorum 2/3 intact) is
-  # preferable to co-location.
+  # 2026-07-07), so a single node degraded EVERY tenant control plane.
+  #
+  # PREFERRED (not required): the mgmt fleet is currently 2 workers, and
+  # `required` left the 3rd member Pending forever. `preferred` lets all 3
+  # members fit on 2 nodes (two may co-locate). TRADEOFF: losing the node
+  # that hosts 2 members drops etcd below quorum (2/3) until reschedule —
+  # accepted for a 2-node fleet. Restore `required` when a 3rd worker exists.
   affinity:
     podAntiAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector:
-            matchExpressions:
-              - key: app.kubernetes.io/name
-                operator: In
-                values:
-                  - kamaji-etcd
-          topologyKey: "kubernetes.io/hostname"
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values:
+                    - kamaji-etcd
+            topologyKey: "kubernetes.io/hostname"
 gatewayAPI:
   enabled: false
 datastore:

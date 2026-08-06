@@ -33,10 +33,24 @@ spec:
       # failover internally. The chart provisions a StatefulSet plus the
       # leader-aware `vault-active` / `vault-standby` services.
       #
-      # NOTE: the chart's server podAntiAffinity is
-      # requiredDuringSchedulingIgnoredDuringExecution on hostname, so the 3
-      # replicas REQUIRE 3 distinct schedulable nodes — otherwise the extra pods
-      # stay Pending. Reduce replicas (and quorum) if mgmt has fewer nodes.
+      # NOTE: the chart's DEFAULT server podAntiAffinity is
+      # requiredDuringSchedulingIgnoredDuringExecution on hostname, which REQUIRES
+      # 3 distinct schedulable nodes. On a 2-worker mgmt fleet the 3rd replica
+      # stays Pending forever. We override it to PREFERRED so all 3 replicas fit
+      # on 2 nodes (two members may co-locate). TRADEOFF: losing the node that
+      # hosts 2 members drops Raft below quorum (2/3) until reschedule — acceptable
+      # for a 2-node fleet; restore `required` (or a 3rd worker) for full HA.
+      affinity: |
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: {{ template "vault.name" . }}
+                    app.kubernetes.io/instance: "{{ .Release.Name }}"
+                    component: server
+                topologyKey: kubernetes.io/hostname
       ha:
         enabled: true
         replicas: 3

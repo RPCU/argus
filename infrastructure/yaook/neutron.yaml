@@ -303,11 +303,13 @@ spec:
         raftElectionTimerMs: 60000
         replicas: 3
         resources:
-          # The raft member itself. Single-threaded, so a 500m request is a real
-          # half-core of weight rather than a token value.
+          # The raft member itself. Single-threaded, so a 300m request is a real
+          # third-core of weight rather than a token value. 50x headroom over
+          # measured idle (~5m) — enough to win scheduling contests without
+          # starving other workloads on the same node.
           ovsdb:
             requests:
-              cpu: 500m
+              cpu: 300m
               memory: 512Mi
             limits:
               memory: 2Gi
@@ -328,7 +330,7 @@ spec:
         resources:
           northd:
             requests:
-              cpu: 300m
+              cpu: 200m
               memory: 256Mi
             limits:
               memory: 1Gi
@@ -344,9 +346,10 @@ spec:
           resources:
             # Every ovn-controller in the cloud reads SB THROUGH the relay, so a
             # starved relay stalls the dataplane on all nodes at once.
+            # 200m = 40x headroom over measured idle (~5m).
             ovn-relay:
               requests:
-                cpu: 300m
+                cpu: 200m
                 memory: 256Mi
               limits:
                 memory: 1Gi
@@ -359,10 +362,11 @@ spec:
         replicas: 3
         resources:
           # SB is the larger of the two DBs (idl-cells 14818 vs NB's 2751) and
-          # is read by every ovn-controller, hence more headroom than NB.
+          # is read by every ovn-controller. 300m = 60x headroom over measured
+          # idle (~5m), still well above BestEffort floor.
           ovsdb:
             requests:
-              cpu: 500m
+              cpu: 300m
               memory: 1Gi
             limits:
               memory: 3Gi

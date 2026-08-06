@@ -40,7 +40,7 @@ spec:
           variables:
             overrides:
               - name: workerFlavor
-                value: xlarge
+                value: cis-xlarge
     variables:
       - name: identityRef
         value:

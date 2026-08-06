@@ -24,6 +24,10 @@ spec:
         - class: default-worker
           name: md-0
           replicas: 2
+          variables:
+            overrides:
+              - name: workerFlavor
+                value: cis-xlarge
     variables:
       - name: identityRef
         value:

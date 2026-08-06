@@ -25,6 +25,9 @@ spec:
     # on Kubernetes nodes and must not collide with Kubernetes IP ranges!
     managementSubnetCIDR: "172.31.0.0/16"
   database:
+    mysqlConfig:
+      mysqld:
+        max_statement_time: 60
     replicas: 1
     resources:
       mariadb-galera:

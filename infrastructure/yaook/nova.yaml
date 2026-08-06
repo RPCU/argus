@@ -107,6 +107,7 @@ spec:
         mysqld:
           max_connections: 1337
           max_heap_table_size: 64M
+          max_statement_time: 60
       proxy:
         replicas: 1
         resources:
@@ -149,6 +150,8 @@ spec:
       mysqlConfig:
         galera:
           wsrep_slave_threads: 3
+        mysqld:
+          max_statement_time: 60
       proxy:
         replicas: 1
         resources:
@@ -191,6 +194,8 @@ spec:
       mysqlConfig:
         galera:
           wsrep_slave_threads: 3
+        mysqld:
+          max_statement_time: 60
       proxy:
         replicas: 1
         resources:
@@ -234,6 +239,7 @@ spec:
         mysqld:
           max_connections: 1337
           max_heap_table_size: 64M
+          max_statement_time: 60
       proxy:
         replicas: 1
         resources:

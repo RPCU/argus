@@ -70,10 +70,11 @@ spec:
                       optional: true
               resources:
                 requests:
-                  # Measured P95 ~18m / peak ~19m CPU over 3d (Mimir). Trimmed
-                  # 250m -> 60m to free worker budget for etcd + tenant CPs;
-                  # 1000m limit retained for dashboard-render bursts.
-                  cpu: 60m
+                  # Measured over 7d (Mimir): avg ~29m, P95 ~104m, max ~187m —
+                  # dashboard rendering is genuinely bursty. Request set to 120m
+                  # (just above P95) so it's not CPU-starved under contention;
+                  # trimmed from the original 250m. 1000m limit kept for bursts.
+                  cpu: 120m
                   memory: 512Mi
                 limits:
                   cpu: 1000m

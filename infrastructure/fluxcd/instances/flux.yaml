@@ -74,6 +74,24 @@ spec:
           - op: replace
             path: /spec/template/spec/containers/0/resources/limits/memory
             value: 1536Mi
+      # Right-sized CPU requests (chart defaults were 100m each). Measured
+      # (Mimir, 3d, mgmt): notification P95 ~2m/peak ~2m; helm P95 ~19m/peak
+      # ~47m. kustomize (peak ~141m) and source keep their defaults. CPU
+      # request-only — bursts allowed above; no CPU limit added.
+      - target:
+          kind: Deployment
+          name: notification-controller
+        patch: |
+          - op: replace
+            path: /spec/template/spec/containers/0/resources/requests/cpu
+            value: 20m
+      - target:
+          kind: Deployment
+          name: helm-controller
+        patch: |
+          - op: replace
+            path: /spec/template/spec/containers/0/resources/requests/cpu
+            value: 60m
   sync:
     kind: GitRepository
     url: "https://github.com/RPCU/argus.git"

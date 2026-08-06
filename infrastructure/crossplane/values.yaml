@@ -1,3 +1,15 @@
 args:
   - --enable-usages
   - --enable-realtime-compositions
+# Right-sized CPU requests to reclaim worker budget on the 2-worker mgmt
+# fleet (chart defaults were 100m each). Measured (Mimir, 3d): core P95
+# ~72m/peak ~123m; rbac-manager P95 ~1m/peak ~2m. CPU request-only (no CPU
+# limit); memory left at chart defaults.
+resourcesCrossplane:
+  requests:
+    cpu: 60m
+    memory: 256Mi
+resourcesRBACManager:
+  requests:
+    cpu: 20m
+    memory: 256Mi

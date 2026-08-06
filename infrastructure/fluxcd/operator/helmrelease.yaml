@@ -16,3 +16,11 @@ spec:
     crds: CreateReplace
   upgrade:
     crds: CreateReplace
+  values:
+    # Right-sized CPU request to reclaim worker budget on the 2-worker mgmt
+    # fleet (chart default 100m). Measured P95 ~11m / peak ~45m (Mimir, 3d).
+    # CPU request-only; memory left at chart default.
+    resources:
+      requests:
+        cpu: 30m
+        memory: 64Mi

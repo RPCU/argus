@@ -1,0 +1,511 @@
+# =============================================================================
+# ClusterClass: openstack-kamaji-external
+#
+# A Kamaji-based OpenStack ClusterClass that hosts the tenant control plane on
+# an EXTERNAL cluster (not the management cluster) via externalClusterReference.
+#
+# This is the same as openstack-kamaji but with:
+#   - controlPlane.templateRef → openstack-kamaji-control-plane-external (adds
+#     externalClusterReference + network.gateway)
+#   - network.serviceType: ClusterIP (not LoadBalancer)
+#   - API server exposed via Gateway API TLSRoute on the external cluster
+#
+# Required variables (same as openstack-kamaji):
+#   - identityRef, externalNetworkId, imageName
+#
+# New mandatory variable:
+#   - gatewayHostname: FQDN for the API server TLSRoute (e.g. test.kcp.rpcu.lan)
+#
+# Optional variables with new defaults:
+#   - externalKubeconfigSecretName: defaults to <cluster-name>-kubeconfig
+#   - deploymentNamespace: defaults to kamaji-tenants
+#   - gatewayName: defaults to "https"
+#   - gatewayNamespace: defaults to "kgateway-system"
+#   - gatewaySectionName: defaults to "kcp"
+# =============================================================================
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: ClusterClass
+metadata:
+  name: openstack-kamaji-external
+  namespace: mgmt
+spec:
+  # ---------------------------------------------------------------------------
+  # Control plane — Kamaji hosted control plane via externalClusterReference
+  # ---------------------------------------------------------------------------
+  controlPlane:
+    templateRef:
+      apiVersion: controlplane.cluster.x-k8s.io/v1alpha2
+      kind: KamajiControlPlaneTemplate
+      name: openstack-kamaji-control-plane-external
+    # NOTE: no machineInfrastructure — Kamaji runs the control plane as pods
+    # in the EXTERNAL cluster, not on dedicated OpenStack VMs.
+
+  # ---------------------------------------------------------------------------
+  # Cluster infrastructure — same OpenStack template as openstack-kamaji
+  # ---------------------------------------------------------------------------
+  infrastructure:
+    templateRef:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+      kind: OpenStackClusterTemplate
+      name: openstack-kamaji-cluster-v5
+
+  # ---------------------------------------------------------------------------
+  # Worker topology — same as openstack-kamaji
+  # ---------------------------------------------------------------------------
+  workers:
+    machineDeployments:
+      - class: default-worker
+        bootstrap:
+          templateRef:
+            apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
+            kind: KubeadmConfigTemplate
+            name: openstack-default-worker-v2
+        infrastructure:
+          templateRef:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            kind: OpenStackMachineTemplate
+            name: openstack-default-worker-v1
+        healthCheck:
+          checks:
+            nodeStartupTimeoutSeconds: 1200
+            unhealthyNodeConditions:
+              - type: Ready
+                status: Unknown
+                timeoutSeconds: 300
+              - type: Ready
+                status: "False"
+                timeoutSeconds: 300
+          remediation:
+            maxInFlight: 1
+            triggerIf:
+              unhealthyLessThanOrEqualTo: 40%
+
+  # ---------------------------------------------------------------------------
+  # Variables
+  # ---------------------------------------------------------------------------
+  variables:
+    - name: identityRef
+      required: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: Reference to the secret holding the OpenStack clouds.yaml.
+          properties:
+            name:
+              type: string
+            cloudName:
+              type: string
+              default: openstack
+          required:
+            - name
+
+    - name: externalNetworkId
+      required: true
+      schema:
+        openAPIV3Schema:
+          type: string
+          description: ID of the external/floating-IP network.
+
+    - name: managedSubnetCIDR
+      required: false
+      schema:
+        openAPIV3Schema:
+          type: string
+          default: 192.168.1.0/24
+          description: CIDR for the managed node subnet.
+
+    - name: imageName
+      required: true
+      schema:
+        openAPIV3Schema:
+          type: string
+          description: Glance image name used for worker machines.
+
+    - name: workerFlavor
+      required: false
+      schema:
+        openAPIV3Schema:
+          type: string
+          default: xlarge
+          description: OpenStack flavor for worker machines.
+
+    - name: sshKeyName
+      required: false
+      schema:
+        openAPIV3Schema:
+          type: string
+          default: ""
+          description: Name of an existing OpenStack SSH key pair to inject.
+
+    - name: apiServerFloatingIP
+      required: false
+      schema:
+        openAPIV3Schema:
+          type: string
+          description: >-
+            Floating IP to pin to the API server load balancer. If omitted,
+            OpenStack allocates one automatically.
+          pattern: '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
+
+    - name: dataStoreName
+      required: false
+      schema:
+        openAPIV3Schema:
+          type: string
+          default: default
+          description: >-
+            Name of the Kamaji DataStore CR to use for the tenant control
+            plane's etcd. Defaults to "default" (the datastore deployed by
+            the Kamaji Helm chart).
+
+    - name: gatewayHostname
+      required: true
+      schema:
+        openAPIV3Schema:
+          type: string
+          description: >-
+            FQDN for the API server TLSRoute (e.g. test.kcp.rpcu.lan).
+            Workers use this hostname to reach the tenant API server via the
+            Gateway on the external cluster.
+
+    - name: externalKubeconfigSecretName
+      required: false
+      schema:
+        openAPIV3Schema:
+          type: string
+          default: ""
+          description: >-
+            Name of the Secret (in the mgmt cluster, same namespace as the
+            Cluster) containing the kubeconfig for the external cluster. When
+            empty, defaults to <cluster-name>-kubeconfig (the standard CAPI
+            kubeconfig Secret name).
+
+    - name: deploymentNamespace
+      required: false
+      schema:
+        openAPIV3Schema:
+          type: string
+          default: kamaji-tenants
+          description: >-
+            Namespace on the external cluster where TenantControlPlane resources
+            and control plane components are created.
+
+    - name: gatewayName
+      required: false
+      schema:
+        openAPIV3Schema:
+          type: string
+          default: https
+          description: >-
+            Name of the Gateway resource on the external cluster that the
+            TLSRoute will attach to.
+
+    - name: gatewayNamespace
+      required: false
+      schema:
+        openAPIV3Schema:
+          type: string
+          default: kgateway-system
+          description: >-
+            Namespace of the Gateway resource on the external cluster.
+
+    - name: gatewaySectionName
+      required: false
+      schema:
+        openAPIV3Schema:
+          type: string
+          default: kcp
+          description: >-
+            Section name of the Gateway listener that the TLSRoute will
+            attach to (maps to ParentReference.SectionName).
+
+    - name: oidc
+      required: false
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: >-
+            Configure kube-apiserver OIDC authentication. When enabled, the
+            control-plane apiserver is wired to the shared Zitadel "kubernetes"
+            OIDC client (clusters/openstack/crossplane/zitadel, a public/PKCE
+            app with no client secret). Users log in with `kubectl oidc-login`
+            (kubelogin); the apiserver only validates ID tokens, so no secret is
+            needed here. clientID is the Client ID generated by the Zitadel Oidc
+            app and must be copied in by hand.
+          properties:
+            enabled:
+              type: boolean
+              default: false
+              description: Inject the --oidc-* apiserver flags.
+            issuerURL:
+              type: string
+              default: https://rpcu-gabeck.eu1.zitadel.cloud
+              description: OIDC issuer (the Zitadel instance URL).
+            clientID:
+              type: string
+              default: ""
+              description: >-
+                Client ID of the Zitadel "kubernetes" Oidc app. Required when
+                enabled.
+            usernameClaim:
+              type: string
+              default: sub
+              description: ID-token claim mapped to the Kubernetes username.
+            usernamePrefix:
+              type: string
+              default: ""
+              description: >-
+                Prefix prepended to usernames. Left empty to match the bare
+                group names asserted by the Zitadel "groupsClaim" Action and the
+                RBAC bindings (clusters/mgmt/apps/kubernetes-rbac).
+            groupsClaim:
+              type: string
+              default: groups
+              description: >-
+                ID-token claim mapped to Kubernetes groups. The shared Zitadel
+                "groupsClaim" Action (clusters/openstack/crossplane/zitadel/actions.yaml)
+                injects the user's project role keys (e.g. kube-admin,
+                kube-user) into this claim.
+            groupsPrefix:
+              type: string
+              default: ""
+              description: >-
+                Prefix prepended to groups. Left EMPTY on purpose: the
+                groupsClaim Action emits bare role keys (kube-admin / kube-user)
+                and the RBAC ClusterRoleBindings bind those bare group names. A
+                non-empty prefix here would require the bindings to use
+                "<prefix>kube-admin" instead.
+          required:
+            - enabled
+
+  # ---------------------------------------------------------------------------
+  # Patches
+  # ---------------------------------------------------------------------------
+  patches:
+    - name: identityRef
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            kind: OpenStackClusterTemplate
+            matchResources:
+              infrastructureCluster: true
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/identityRef
+              valueFrom:
+                variable: identityRef
+
+    - name: externalNetwork
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            kind: OpenStackClusterTemplate
+            matchResources:
+              infrastructureCluster: true
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/externalNetwork
+              valueFrom:
+                template: |
+                  id: '{{ .externalNetworkId }}'
+        # NOTE: no serviceAnnotations patch on the KamajiControlPlaneTemplate —
+        # externalClusterReference mode uses Gateway API, not a cloud LB.
+
+    - name: managedSubnet
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            kind: OpenStackClusterTemplate
+            matchResources:
+              infrastructureCluster: true
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/managedSubnets
+              valueFrom:
+                template: |
+                  - cidr: '{{ .managedSubnetCIDR }}'
+
+    - name: imageName
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            kind: OpenStackMachineTemplate
+            matchResources:
+              machineDeploymentClass:
+                names:
+                  - default-worker
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/image/filter/name
+              valueFrom:
+                variable: imageName
+
+    - name: workerFlavor
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            kind: OpenStackMachineTemplate
+            matchResources:
+              machineDeploymentClass:
+                names:
+                  - default-worker
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/flavor
+              valueFrom:
+                variable: workerFlavor
+
+    - name: sshKeyName
+      enabledIf: "{{ if .sshKeyName }}true{{ end }}"
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            kind: OpenStackMachineTemplate
+            matchResources:
+              machineDeploymentClass:
+                names:
+                  - default-worker
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/sshKeyName
+              valueFrom:
+                variable: sshKeyName
+
+    - name: apiServerFloatingIP
+      enabledIf: "{{ if .apiServerFloatingIP }}true{{ end }}"
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            kind: OpenStackClusterTemplate
+            matchResources:
+              infrastructureCluster: true
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/apiServerFloatingIP
+              valueFrom:
+                variable: apiServerFloatingIP
+
+    - name: dataStoreName
+      definitions:
+        - selector:
+            apiVersion: controlplane.cluster.x-k8s.io/v1alpha2
+            kind: KamajiControlPlaneTemplate
+            matchResources:
+              controlPlane: true
+          jsonPatches:
+            - op: replace
+              path: /spec/template/spec/dataStoreName
+              valueFrom:
+                variable: dataStoreName
+
+    # ---------------------------------------------------------------------------
+    # externalClusterReference patches — deploy TCP components to the external cluster
+    # ---------------------------------------------------------------------------
+
+    # deploymentNamespace: where to create TenantControlPlane resources
+    - name: deploymentNamespace
+      definitions:
+        - selector:
+            apiVersion: controlplane.cluster.x-k8s.io/v1alpha2
+            kind: KamajiControlPlaneTemplate
+            matchResources:
+              controlPlane: true
+          jsonPatches:
+            - op: replace
+              path: /spec/template/spec/deployment/externalClusterReference/deploymentNamespace
+              valueFrom:
+                variable: deploymentNamespace
+
+    # kubeconfigSecretName: secret containing the external cluster kubeconfig
+    - name: kubeconfigSecretName
+      definitions:
+        - selector:
+            apiVersion: controlplane.cluster.x-k8s.io/v1alpha2
+            kind: KamajiControlPlaneTemplate
+            matchResources:
+              controlPlane: true
+          jsonPatches:
+            - op: replace
+              path: /spec/template/spec/deployment/externalClusterReference/kubeconfigSecretName
+              valueFrom:
+                template: |
+                  {{ if .externalKubeconfigSecretName }}{{ .externalKubeconfigSecretName }}{{ else }}{{ .cluster.name }}-kubeconfig{{ end }}
+
+    # ---------------------------------------------------------------------------
+    # Gateway API patches — expose API server via TLSRoute
+    # ---------------------------------------------------------------------------
+
+    # network.gateway: where to attach the TLSRoute
+    - name: gateway
+      definitions:
+        - selector:
+            apiVersion: controlplane.cluster.x-k8s.io/v1alpha2
+            kind: KamajiControlPlaneTemplate
+            matchResources:
+              controlPlane: true
+          jsonPatches:
+            - op: replace
+              path: /spec/template/spec/network/gateway/hostname
+              valueFrom:
+                variable: gatewayHostname
+            - op: replace
+              path: /spec/template/spec/network/gateway/name
+              valueFrom:
+                variable: gatewayName
+            - op: replace
+              path: /spec/template/spec/network/gateway/namespace
+              valueFrom:
+                variable: gatewayNamespace
+            - op: add
+              path: /spec/template/spec/network/gateway/sectionName
+              valueFrom:
+                variable: gatewaySectionName
+            # certSANs[0] = the external FQDN, so the served apiserver cert is
+            # valid when in-cluster clients reach it through the SNI-rewrite
+            # proxy (SNI=gatewayHostname). Kamaji also auto-adds the gateway
+            # hostname, but we set it explicitly to be safe.
+            - op: replace
+              path: /spec/template/spec/network/certSANs/0
+              valueFrom:
+                variable: gatewayHostname
+
+    # Wire the kube-apiserver to the shared Zitadel "kubernetes" OIDC client.
+    - name: oidc
+      enabledIf: "{{ if .oidc.enabled }}true{{ end }}"
+      definitions:
+        - selector:
+            apiVersion: controlplane.cluster.x-k8s.io/v1alpha2
+            kind: KamajiControlPlaneTemplate
+            matchResources:
+              controlPlane: true
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/apiServer/extraArgs/-
+              valueFrom:
+                template: |
+                  --oidc-issuer-url={{ .oidc.issuerURL }}
+            - op: add
+              path: /spec/template/spec/apiServer/extraArgs/-
+              valueFrom:
+                template: |
+                  --oidc-client-id={{ .oidc.clientID }}
+            - op: add
+              path: /spec/template/spec/apiServer/extraArgs/-
+              valueFrom:
+                template: |
+                  --oidc-username-claim={{ .oidc.usernameClaim }}
+            - op: add
+              path: /spec/template/spec/apiServer/extraArgs/-
+              valueFrom:
+                template: |
+                  --oidc-username-prefix={{ .oidc.usernamePrefix }}
+            - op: add
+              path: /spec/template/spec/apiServer/extraArgs/-
+              valueFrom:
+                template: |
+                  --oidc-groups-claim={{ .oidc.groupsClaim }}
+            - op: add
+              path: /spec/template/spec/apiServer/extraArgs/-
+              valueFrom:
+                template: |
+                  --oidc-groups-prefix={{ .oidc.groupsPrefix }}

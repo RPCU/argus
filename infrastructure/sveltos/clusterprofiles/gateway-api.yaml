@@ -186,6 +186,35 @@ data:
             mode: Terminate
             certificateRefs:
               - name: wildcard-tls
+        # Kamaji tenant control plane API servers — TLS Passthrough for SNI
+        # routing. Each tenant cluster gets its own TLSRoute (created by the
+        # Kamaji controller) with hostname <tenant>.<cluster>.rpcu.lan, all
+        # routing through this single Gateway listener.
+        - protocol: TLS
+          port: 443
+          name: kcp
+          hostname: "*.{{ .Cluster.metadata.name }}.rpcu.lan"
+          allowedRoutes:
+            namespaces:
+              from: All
+          tls:
+            mode: Passthrough
+        # Kamaji konnectivity server — when the konnectivity addon is enabled and
+        # the TCP is exposed via Gateway API (serviceType: ClusterIP), Kamaji
+        # creates a SECOND TLSRoute for the konnectivity tunnel. The listener name
+        # (konnectivity-server) and port (8132) are HARDCODED by Kamaji; every
+        # gateway in the TCP's parentRefs must carry this listener or the
+        # worker-node agents can't establish the tunnel (breaks logs/exec/
+        # port-forward/metrics). TLS Passthrough, same hostname pattern as kcp.
+        - protocol: TLS
+          port: 8132
+          name: konnectivity-server
+          hostname: "*.{{ .Cluster.metadata.name }}.rpcu.lan"
+          allowedRoutes:
+            namespaces:
+              from: All
+          tls:
+            mode: Passthrough
     ---
     apiVersion: gateway.kgateway.dev/v1alpha1
     kind: GatewayParameters

@@ -14,7 +14,7 @@
 #   - identityRef, externalNetworkId, imageName
 #
 # New mandatory variable:
-#   - gatewayHostname: FQDN for the API server TLSRoute (e.g. test.kcp.rpcu.lan)
+#   - gatewayHostname: FQDN for the API server TLSRoute (e.g. test.kcp.production.rpcu.lan)
 #
 # Optional variables with new defaults:
 #   - externalKubeconfigSecretName: defaults to <cluster-name>-kubeconfig
@@ -164,9 +164,11 @@ spec:
         openAPIV3Schema:
           type: string
           description: >-
-            FQDN for the API server TLSRoute (e.g. test.kcp.rpcu.lan).
+            FQDN for the API server TLSRoute (e.g. test.kcp.production.rpcu.lan).
             Workers use this hostname to reach the tenant API server via the
-            Gateway on the external cluster.
+            Gateway on the external cluster. Must use the *.kcp.<cluster>.rpcu.lan
+            pattern to avoid hostname conflicts with the HTTPS listener on the
+            same port (443).
 
     - name: externalKubeconfigSecretName
       required: false

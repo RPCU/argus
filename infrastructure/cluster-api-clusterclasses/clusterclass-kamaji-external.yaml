@@ -460,12 +460,13 @@ spec:
               path: /spec/template/spec/network/gateway/sectionName
               valueFrom:
                 variable: gatewaySectionName
-            # certSANs[0] = the external FQDN, so the served apiserver cert is
+            # certSANs = the external FQDN, so the served apiserver cert is
             # valid when in-cluster clients reach it through the SNI-rewrite
-            # proxy (SNI=gatewayHostname). Kamaji also auto-adds the gateway
-            # hostname, but we set it explicitly to be safe.
-            - op: replace
-              path: /spec/template/spec/network/certSANs/0
+            # proxy (SNI=gatewayHostname). CAPI's validation webhook doesn't
+            # allow replace on individual array elements, so we overwrite the
+            # whole array with `add` (which replaces if the path exists).
+            - op: add
+              path: /spec/template/spec/network/certSANs
               valueFrom:
                 variable: gatewayHostname
 

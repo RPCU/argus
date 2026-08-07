@@ -432,8 +432,25 @@ spec:
                   {{ if .externalKubeconfigSecretName }}{{ .externalKubeconfigSecretName }}{{ else }}{{ .builtin.cluster.name }}-kubeconfig{{ end }}
 
     # ---------------------------------------------------------------------------
-    # Gateway API patches — expose API server via TLSRoute
+    # controlPlaneEndpoint + Gateway API patches — expose API server via TLSRoute
     # ---------------------------------------------------------------------------
+
+    # controlPlaneEndpoint: CAPI uses this to reach the tenant API server.
+    # For external cluster reference, this is the Gateway TLS Passthrough
+    # endpoint (gatewayHostname:443). The port is hardcoded to 443 (TLS
+    # Passthrough); only the host is patched from the gatewayHostname variable.
+    - name: controlPlaneEndpoint
+      definitions:
+        - selector:
+            apiVersion: controlplane.cluster.x-k8s.io/v1alpha2
+            kind: KamajiControlPlaneTemplate
+            matchResources:
+              controlPlane: true
+          jsonPatches:
+            - op: replace
+              path: /spec/template/spec/controlPlaneEndpoint/host
+              valueFrom:
+                variable: gatewayHostname
 
     # network.gateway: where to attach the TLSRoute
     - name: gateway

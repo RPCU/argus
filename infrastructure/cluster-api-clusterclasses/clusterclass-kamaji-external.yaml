@@ -462,13 +462,14 @@ spec:
                 variable: gatewaySectionName
             # certSANs = the external FQDN, so the served apiserver cert is
             # valid when in-cluster clients reach it through the SNI-rewrite
-            # proxy (SNI=gatewayHostname). CAPI's validation webhook doesn't
-            # allow replace on individual array elements, so we overwrite the
-            # whole array with `add` (which replaces if the path exists).
+            # proxy (SNI=gatewayHostname). The template wraps the string in a
+            # YAML list so `add` produces the required JSON array (not a bare
+            # string, which would fail the API server's type check).
             - op: add
               path: /spec/template/spec/network/certSANs
               valueFrom:
-                variable: gatewayHostname
+                template: |
+                  - '{{ .gatewayHostname }}'
 
     # Wire the kube-apiserver to the shared Zitadel "kubernetes" OIDC client.
     - name: oidc

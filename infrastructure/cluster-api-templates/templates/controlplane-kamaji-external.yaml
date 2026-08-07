@@ -25,12 +25,6 @@ metadata:
 spec:
   template:
     spec:
-      # controlPlaneEndpoint: CAPI uses this to reach the tenant API server.
-      # For external cluster reference, this is the Gateway TLS Passthrough
-      # endpoint (hostname + 443). Patched per-cluster from gatewayHostname.
-      controlPlaneEndpoint:
-        host: placeholder.invalid
-        port: 443
       dataStoreName: default
       deployment:
         affinity:
@@ -74,7 +68,7 @@ spec:
         # konnectivity is enabled, a second TLSRoute for the konnectivity-server
         # (hardcoded listener name "konnectivity-server", port 8132) against the
         # same gateway parentRefs — the Gateway MUST carry both listeners.
-        serviceType: ClusterIP
+        serviceType: LoadBalancer
         # certSANs: the external FQDN the tenant API server is reached by. The
         # in-cluster kubernetes.default.svc path is steered by a Cilium Local
         # Redirect Policy to a node-local SNI-rewrite proxy that forwards to the

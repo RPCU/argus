@@ -191,12 +191,17 @@ data:
         # Kamaji controller) with hostname <tenant>.kcp.<cluster>.rpcu.lan, all
         # routing through this single Gateway listener.
         #
-        # IMPORTANT: the kcp listener MUST use a DIFFERENT hostname than the
-        # https listener (both are on port 443). Gateway API requires unique
-        # hostnames per port — even across different protocols (Terminate vs
-        # Passthrough). Using *.kcp.<cluster>.rpcu.lan avoids the conflict.
+        # PORT 6443 (not 443). Kamaji ALWAYS advertises networkProfile.port
+        # (default 6443) in every kubeconfig it generates (the tenant admin
+        # kubeconfig AND the CAPI-propagated one) — there is NO field in Kamaji
+        # v0.20.0 to override the advertised apiserver port (network.gateway.port
+        # only selects which listener the TLSRoute attaches to, it does NOT change
+        # the kubeconfig host:port). So the Gateway listener MUST serve on 6443 to
+        # match, or every client dials <fqdn>:6443 and times out against a :443
+        # listener. Using 6443 also sidesteps the port-443 hostname-uniqueness
+        # constraint entirely (it no longer shares a port with the https listener).
         - protocol: TLS
-          port: 443
+          port: 6443
           name: kcp
           hostname: "*.kcp.{{ .Cluster.metadata.name }}.rpcu.lan"
           allowedRoutes:

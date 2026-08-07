@@ -10,3 +10,36 @@ spec:
   manager:
     featureGates:
       ExternalClusterReference: true
+  # ---------------------------------------------------------------------------
+  # CRD patch: drop `minProperties: 1` from KamajiControlPlane.spec.controlPlaneEndpoint
+  #
+  # WHY. With deployment.externalClusterReference the Kamaji controller adds its
+  # finalizer via a FULL-OBJECT client.Update BEFORE it has an endpoint to set
+  # (the endpoint is only known once the TenantControlPlane on the external
+  # cluster reports it). KamajiControlPlaneSpec.ControlPlaneEndpoint is a
+  # NON-POINTER capiv1beta2.APIEndpoint tagged `json:",omitempty"` — but Go's
+  # encoding/json IGNORES omitempty for struct values (only Go 1.24 `omitzero`
+  # would omit a zero struct), so the empty endpoint always marshals as `{}`.
+  # The generated CRD then rejects `{}` via `minProperties: 1`
+  # ("spec.controlPlaneEndpoint in body should have at least 1 properties"), so
+  # the finalizer Update fails, the TCP is never created, and the KCP deadlocks.
+  # This ONLY hits the externalClusterReference path (the LoadBalancer path sets
+  # the endpoint from the Service before ever Update-ing the KCP).
+  #
+  # Dropping minProperties lets the empty-object Update through; the controller
+  # then fills the real endpoint (network.gateway hostname:443) on the next pass
+  # and everything proceeds. Upstream bug (present through v0.20.0 + master):
+  # the field needs `omitzero`/a pointer, or the finalizer needs a Patch not a
+  # full Update. Remove this patch once a fixed provider release ships.
+  #
+  # Uses `patches` (RFC6902 JSON patch, precise on arrays) — NOT `manifestPatches`
+  # (RFC7396 merge, which replaces the whole `versions` array and can't null a
+  # nested field). The operator re-applies this on every reconcile, so it's
+  # durable against the operator re-rendering the CRD from the release.
+  patches:
+    - target:
+        kind: CustomResourceDefinition
+        name: kamajicontrolplanes.controlplane.cluster.x-k8s.io
+      patch: |
+        - op: remove
+          path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/controlPlaneEndpoint/minProperties

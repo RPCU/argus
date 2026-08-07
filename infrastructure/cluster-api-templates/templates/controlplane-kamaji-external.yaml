@@ -1,0 +1,85 @@
+# -----------------------------------------------------------------------------
+# Control plane template (KamajiControlPlaneTemplate) — external
+#
+# Based on v7 but adds externalClusterReference + network.gateway for hosting
+# the tenant control plane on an EXTERNAL cluster (not the mgmt cluster).
+#
+# Key differences from v7:
+#   - deployment.externalClusterReference: deploys TCP components to a remote
+#     cluster via its kubeconfig secret (ExternalClusterReference feature gate
+#     required on the Kamaji controller).
+#   - network.serviceType: ClusterIP (not LoadBalancer) — the API server is
+#     exposed via a Gateway API TLSRoute, not a cloud LB.
+#   - network.gateway: configures the TLSRoute to attach to a Gateway listener.
+#
+# The externalClusterReference fields are patched per-cluster by the
+# ClusterClass: kubeconfigSecretName defaults to <cluster-name>-kubeconfig,
+# deploymentNamespace defaults to kamaji-tenants, gateway reference defaults to
+# the "https" Gateway in kgateway-system with sectionName "kcp".
+# -----------------------------------------------------------------------------
+apiVersion: controlplane.cluster.x-k8s.io/v1alpha2
+kind: KamajiControlPlaneTemplate
+metadata:
+  name: openstack-kamaji-control-plane-external
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      dataStoreName: default
+      deployment:
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchLabels:
+                      kamaji.clastix.io/component: deployment
+                  topologyKey: kubernetes.io/hostname
+        externalClusterReference:
+          deploymentNamespace: kamaji-tenants
+          kubeconfigSecretName: placeholder
+          kubeconfigSecretKey: value
+      apiServer:
+        extraArgs: []
+        resources:
+          requests:
+            cpu: 200m
+            memory: 1Gi
+      controllerManager:
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+      scheduler:
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+      kubelet:
+        preferredAddressTypes:
+          - InternalIP
+          - ExternalIP
+          - Hostname
+      network:
+        # ClusterIP (not LoadBalancer): the tenant API server + konnectivity are
+        # exposed via Gateway API TLSRoutes (SNI passthrough), NOT a per-tenant
+        # Octavia LB. Kamaji auto-creates the apiserver TLSRoute here and, since
+        # konnectivity is enabled, a second TLSRoute for the konnectivity-server
+        # (hardcoded listener name "konnectivity-server", port 8132) against the
+        # same gateway parentRefs — the Gateway MUST carry both listeners.
+        serviceType: ClusterIP
+        # certSANs: the external FQDN the tenant API server is reached by. The
+        # in-cluster kubernetes.default.svc path is steered by a Cilium Local
+        # Redirect Policy to a node-local SNI-rewrite proxy that forwards to the
+        # Gateway with SNI=<this FQDN>; the served apiserver cert must therefore
+        # be valid for it. Patched per-cluster from the gatewayHostname variable.
+        certSANs:
+          - placeholder.invalid
+        gateway:
+          name: https
+          namespace: kgateway-system
+          hostname: placeholder.invalid
+      addons:
+        coreDNS: {}
+        konnectivity: {}

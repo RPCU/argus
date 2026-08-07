@@ -13,6 +13,7 @@ resources:
   - templates/controlplane-kamaji-v5.yaml
   - templates/controlplane-kamaji-v6.yaml
   - templates/controlplane-kamaji-v7.yaml
+  - templates/controlplane-kamaji-external.yaml
   - templates/bootstrap.yaml
   - templates/bootstrap-v2.yaml
   - templates/bootstrap-v3.yaml

@@ -17,6 +17,7 @@ serviceAccount:
 sources:
   - ingress
   - gateway-httproute
+  - gateway-tlsroute
 
 # The in-tree Designate provider was removed from external-dns. Use the inovex
 # webhook (github.com/inovex/external-dns-openstack-webhook) as a sidecar

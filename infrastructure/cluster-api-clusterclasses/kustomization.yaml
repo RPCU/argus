@@ -27,3 +27,4 @@ resources:
   - clusterclass-v1.yaml
   - clusterclass-kamaji.yaml
   - clusterclass-kamaji-v1.yaml
+  - clusterclass-kamaji-external.yaml

@@ -59,6 +59,12 @@ spec:
         k8sServiceHost: "{{ .Cluster.spec.controlPlaneEndpoint.host }}"
         k8sServicePort: "{{ .Cluster.spec.controlPlaneEndpoint.port }}"
         kubeProxyReplacement: true
+        # CiliumLocalRedirectPolicy: redirect in-cluster kubernetes.default.svc
+        # to a node-local SNI-rewrite proxy when the tenant API server is fronted
+        # by a shared SNI Gateway (Kamaji externalClusterReference). See the
+        # kamaji-apiserver-proxy ClusterProfile. Harmless where unused.
+        localRedirectPolicies:
+          enabled: true
         pmtuDiscovery:
           enabled: true
           packetizationLayerPMTUDMode: "always"

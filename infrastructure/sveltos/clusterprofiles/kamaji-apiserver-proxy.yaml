@@ -1,0 +1,167 @@
+# Kamaji tenant API server in-cluster reachability — Cilium Local Redirect
+# Policy + node-local SNI-rewrite proxy.
+#
+# PROBLEM. With the openstack-kamaji-external ClusterClass the tenant API server
+# runs as pods on the PRODUCTION cluster and is exposed to the outside world via
+# a shared SNI Gateway (TLS Passthrough, hostname <tenant>.<cluster>.rpcu.lan).
+# External clients (kubeconfig, worker kubelets joining, konnectivity agents)
+# send that FQDN as TLS SNI, so the Gateway routes them correctly.
+#
+# But IN-CLUSTER clients reach the API server via kubernetes.default.svc:443.
+# kube-proxy/socket-LB does L4 routing with NO SNI, so if that traffic hit the
+# shared Gateway it would carry SNI=kubernetes.default.svc (or none) and the
+# Gateway could not tell which tenant to route to. This is exactly the problem
+# the Kamaji enterprise "ingress addon" solves with an in-tenant tcp-proxy +
+# a controller-managed kubernetes EndpointSlice.
+#
+# SOLUTION (as-code, no controller, no enterprise addon). Replicate it with
+# Cilium primitives that tenant clusters already run:
+#   1. A CiliumLocalRedirectPolicy (ServiceMatcher on default/kubernetes) steers
+#      all in-cluster API traffic to a NODE-LOCAL backend pod via eBPF — before
+#      the socket-LB — with zero EndpointSlice surgery and no apiserver flag.
+#   2. That backend is a small SNI-rewrite proxy DaemonSet (one pod per node, as
+#      LRP requires node-local backends). It parses the TLS ClientHello, rewrites
+#      SNI to <tenant>.<cluster>.rpcu.lan, and forwards RAW (passthrough — it does
+#      NOT terminate, so client-cert auth for kubelets is preserved) to the
+#      Gateway. The Gateway then routes on the rewritten SNI to the tenant API
+#      server. The served apiserver cert is valid for the FQDN (network.certSANs
+#      in the external ClusterClass) AND for kubernetes.default.svc (always), so
+#      the in-cluster client's verification of the name it dialed still passes.
+#
+# Requires Cilium localRedirectPolicies.enabled: true (set in the cilium base +
+# the cilium Sveltos profile) and kubeProxyReplacement: true (already on).
+#
+# Gated by the opt-in label sveltos.argus.rpcu.io/kamaji-apiserver-proxy: enabled
+# (set on tenant clusters created with the openstack-kamaji-external class).
+#
+# dependsOn cilium: the CiliumLocalRedirectPolicy CRD + LRP feature must exist.
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: kamaji-apiserver-proxy
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  dependsOn:
+    - cilium
+  clusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/kamaji-apiserver-proxy: enabled
+  policyRefs:
+    - name: kamaji-apiserver-proxy-resources
+      namespace: projectsveltos
+      kind: ConfigMap
+---
+# Templated per-cluster: {{ .Cluster.spec.controlPlaneEndpoint.host }} is the
+# tenant API server FQDN (e.g. test.production.rpcu.lan) and doubles as both the
+# proxy's upstream host (DNS-resolves to the Gateway LB IP) and the SNI value it
+# rewrites to. :443 is the Gateway kcp listener (TLS Passthrough).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kamaji-apiserver-proxy-resources
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/template: "true"
+data:
+  namespace.yaml: |
+    apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: kamaji-apiserver-proxy
+  proxy-config.yaml: |
+    # SNI-rewrite proxy config. Upstream = the tenant API server FQDN reached
+    # through the shared SNI Gateway on 443; SNI is rewritten to that FQDN so the
+    # Gateway routes to the correct tenant. Passthrough (no TLS termination).
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: kamaji-apiserver-proxy
+      namespace: kamaji-apiserver-proxy
+    data:
+      UPSTREAM_HOST: "{{ .Cluster.spec.controlPlaneEndpoint.host }}"
+      UPSTREAM_PORT: "{{ .Cluster.spec.controlPlaneEndpoint.port }}"
+      SNI: "{{ .Cluster.spec.controlPlaneEndpoint.host }}"
+      LISTEN_PORT: "6443"
+  daemonset.yaml: |
+    # Node-local SNI-rewrite proxy. One pod per node (LRP backends must be
+    # node-local). clastix/tcp-proxy is the purpose-built, public image the
+    # enterprise ingress addon itself uses (docker.io/clastix/tcp-proxy); it
+    # parses the ClientHello, rewrites SNI, and forwards raw. Swap the image via
+    # this manifest if you standardise on a different SNI-rewrite proxy.
+    apiVersion: apps/v1
+    kind: DaemonSet
+    metadata:
+      name: kamaji-apiserver-proxy
+      namespace: kamaji-apiserver-proxy
+      labels:
+        app.kubernetes.io/name: kamaji-apiserver-proxy
+    spec:
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: kamaji-apiserver-proxy
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: kamaji-apiserver-proxy
+        spec:
+          priorityClassName: system-node-critical
+          # Tolerate the not-ready taint: this proxy is what makes the API server
+          # reachable in-cluster, so it must schedule on nodes that are still
+          # NotReady during bootstrap (chicken/egg with kubernetes.default.svc).
+          tolerations:
+            - operator: Exists
+          containers:
+            - name: proxy
+              image: docker.io/clastix/tcp-proxy:latest
+              args:
+                - --listen-port=$(LISTEN_PORT)
+                - --upstream-host=$(UPSTREAM_HOST)
+                - --upstream-port=$(UPSTREAM_PORT)
+                - --sni=$(SNI)
+              envFrom:
+                - configMapRef:
+                    name: kamaji-apiserver-proxy
+              ports:
+                - name: apiserver
+                  containerPort: 6443
+                  protocol: TCP
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 32Mi
+                limits:
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+  local-redirect-policy.yaml: |
+    # Redirect in-cluster kubernetes.default.svc traffic to the node-local proxy.
+    # ServiceMatcher replaces the default/kubernetes ClusterIP service entry with
+    # a LocalRedirect entry whose backends are this node's proxy pod. Traffic then
+    # flows: pod -> kubernetes.default.svc:443 -> (eBPF LRP) -> local proxy:6443
+    # -> (SNI rewrite) -> Gateway:443 -> tenant API server.
+    #
+    # NOTE: LRP updates are not supported by Cilium (delete+recreate). Flux/Sveltos
+    # drift correction recreates it, which is fine.
+    apiVersion: cilium.io/v2
+    kind: CiliumLocalRedirectPolicy
+    metadata:
+      name: kamaji-apiserver
+      namespace: kamaji-apiserver-proxy
+    spec:
+      redirectFrontend:
+        serviceMatcher:
+          serviceName: kubernetes
+          namespace: default
+      redirectBackend:
+        localEndpointSelector:
+          matchLabels:
+            app.kubernetes.io/name: kamaji-apiserver-proxy
+        toPorts:
+          - port: "6443"
+            protocol: TCP

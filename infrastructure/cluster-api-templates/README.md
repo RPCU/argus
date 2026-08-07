@@ -295,6 +295,7 @@ This keeps the change explicit, auditable, and safely rolled out via GitOps.
     `-v6`, which triggers a control-plane roll (the `KubeadmControlPlaneTemplate`
     spec is immutable once referenced).
 - The current Kamaji ClusterClass points at
-  `openstack-kamaji-control-plane-v7`. `openstack-kamaji-control-plane-v8` is
-  prepared but **not yet referenced** — it carries the same apiserver tuning
-  flags. Bump `clusterclass-kamaji.yaml` when ready to rotate.
+  `openstack-kamaji-control-plane-v7`.
+  `openstack-kamaji-control-plane-external` is a separate (non-iterative)
+  template for hosting the tenant control plane on an external cluster via
+  `externalClusterReference` + Gateway API. Used by `clusterclass-kamaji-external`.

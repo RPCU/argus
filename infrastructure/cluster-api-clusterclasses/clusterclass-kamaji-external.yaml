@@ -429,7 +429,7 @@ spec:
               path: /spec/template/spec/deployment/externalClusterReference/kubeconfigSecretName
               valueFrom:
                 template: |
-                  {{ if .externalKubeconfigSecretName }}{{ .externalKubeconfigSecretName }}{{ else }}{{ .cluster.name }}-kubeconfig{{ end }}
+                  {{ if .externalKubeconfigSecretName }}{{ .externalKubeconfigSecretName }}{{ else }}{{ .builtin.cluster.name }}-kubeconfig{{ end }}
 
     # ---------------------------------------------------------------------------
     # Gateway API patches — expose API server via TLSRoute

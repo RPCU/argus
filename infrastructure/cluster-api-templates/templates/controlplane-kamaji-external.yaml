@@ -80,6 +80,11 @@ spec:
           name: https
           namespace: kgateway-system
           hostname: placeholder.invalid
+          # Attach the apiserver TLSRoute to the kcp listener, which serves on
+          # 6443 (see the Sveltos gateway-api profile) — Kamaji advertises
+          # networkProfile.port (6443) in kubeconfigs and has no advertised-port
+          # override, so the listener + parentRef port must both be 6443.
+          port: 6443
       addons:
         coreDNS: {}
         konnectivity: {}

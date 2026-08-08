@@ -322,6 +322,7 @@ data:
           type: string
           default: "{{ chihiro.field.name }}.kcp.production.rpcu.lan"
           editable: true
+          path: "spec.topology.variables[5].value"
         gatewayName:
           label: "Gateway Name"
           description: "Which Gateway to attach the API server TLSRoute to. NOTE: when switching to 'https-external', also update the API Gateway Hostname to <cluster>.kcp.rpcu.io"
@@ -332,7 +333,8 @@ data:
             - value: "https-external"
               label: "https-external (public — *.kcp.<cluster>.rpcu.io)"
           default: "https"
-          editable: false
+          editable: true
+          path: "spec.topology.variables[6].value"
         externalKubeconfig:
           label: "External Cluster Kubeconfig Secret"
           description: "Secret (in mgmt namespace) containing the kubeconfig for the production cluster where tenant control planes are hosted"

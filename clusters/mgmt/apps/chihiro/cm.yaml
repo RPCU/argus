@@ -318,10 +318,10 @@ data:
         # ── External Kamaji cluster options ──────────────────────────────────
         gatewayHostname:
           label: "API Gateway Hostname"
-          description: "FQDN for the tenant API server TLSRoute. Must match the kcp Gateway listener hostname pattern: <cluster>.kcp.production.rpcu.lan for 'https' gateway, <cluster>.kcp.rpcu.io for 'https-external'. If changing the gateway, update this hostname too."
+          description: "FQDN for the tenant API server TLSRoute. Must match the kcp Gateway listener hostname pattern: <cluster>.kcp.production.rpcu.lan for the 'https' gateway, <cluster>.kcp.rpcu.io for 'https-external'."
           type: string
-          default: "{{ chihiro.clusterName }}.kcp.production.rpcu.lan"
-          editable: false
+          default: "{{ chihiro.field.name }}.kcp.production.rpcu.lan"
+          editable: true
         gatewayName:
           label: "Gateway Name"
           description: "Which Gateway to attach the API server TLSRoute to. NOTE: when switching to 'https-external', also update the API Gateway Hostname to <cluster>.kcp.rpcu.io"

@@ -316,16 +316,17 @@ data:
           editable: true
           path: "metadata.labels.'sveltos.argus.rpcu.io/monitoring'"
         # ── External Kamaji cluster options ──────────────────────────────────
-        gatewayHostname:
-          label: "API Gateway Hostname"
-          description: "FQDN for the tenant API server TLSRoute. Must match the kcp Gateway listener hostname pattern: <cluster>.kcp.production.rpcu.lan for the 'https' gateway, <cluster>.kcp.rpcu.io for 'https-external'."
-          type: string
-          default: "{{ chihiro.field.name }}.kcp.production.rpcu.lan"
-          editable: true
-          path: "spec.topology.variables[5].value"
+        # gatewayName selects which Gateway the tenant API server TLSRoute
+        # attaches to. gatewayHostname is a CONSTRAINED select: each option is
+        # tied (via `constrain`) to a gatewayName value, so picking the gateway
+        # auto-selects the matching domain (rpcu.lan for the internal gateway,
+        # rpcu.io for the public one). This keeps the advertised API endpoint
+        # domain coherent with the chosen gateway at create AND edit time —
+        # chihiro's constraint engine re-resolves gatewayHostname whenever
+        # gatewayName changes (recompute.go optionCompatible/resolveConstrainedDefault).
         gatewayName:
           label: "Gateway Name"
-          description: "Which Gateway to attach the API server TLSRoute to. NOTE: when switching to 'https-external', also update the API Gateway Hostname to <cluster>.kcp.rpcu.io"
+          description: "Which Gateway to attach the tenant API server TLSRoute to. Selecting this auto-sets the API Gateway Hostname domain."
           type: select
           options:
             - value: "https"
@@ -335,18 +336,26 @@ data:
           default: "https"
           editable: true
           path: "spec.topology.variables[6].value"
+        gatewayHostname:
+          label: "API Gateway Hostname"
+          description: "FQDN for the tenant API server TLSRoute. Auto-selected from the Gateway Name: <cluster>.kcp.production.rpcu.lan for 'https', <cluster>.kcp.rpcu.io for 'https-external'."
+          type: select
+          options:
+            - value: "{{ chihiro.name }}.kcp.production.rpcu.lan"
+              label: "<cluster>.kcp.production.rpcu.lan (internal)"
+              constrain:
+                gatewayName: ["https"]
+            - value: "{{ chihiro.name }}.kcp.rpcu.io"
+              label: "<cluster>.kcp.rpcu.io (public)"
+              constrain:
+                gatewayName: ["https-external"]
+          default: "{{ chihiro.name }}.kcp.production.rpcu.lan"
+          editable: true
+          path: "spec.topology.variables[5].value"
+          recomputeOn: ["gatewayName"]
         externalKubeconfig:
           label: "External Cluster Kubeconfig Secret"
           description: "Secret (in mgmt namespace) containing the kubeconfig for the production cluster where tenant control planes are hosted"
           type: string
           default: "production-kubeconfig"
           editable: false
-        kamajiApiserverProxy:
-          label: "Kamaji API Server Proxy"
-          description: "Enable the Cilium LRP + SNI-rewrite proxy so in-cluster pods can reach the tenant API server via kubernetes.default.svc:443"
-          type: boolean
-          default: false
-          true_value: enabled
-          false_value: disabled
-          editable: true
-          path: "metadata.labels.'sveltos.argus.rpcu.io/kamaji-apiserver-proxy'"

@@ -221,66 +221,6 @@ spec:
             refId: C
 
     # ---------------------------------------------------------------------
-    # An Octavia load balancer is not ONLINE (operating_status value != 0) while
-    # it is provisioned ACTIVE. On this cloud LBs front the CAPI clusters'
-    # kube-apiservers and every gateway, so a non-ONLINE LB breaks real ingress.
-    # for:10m — Octavia briefly reports non-ONLINE during member rewiring.
-    # ---------------------------------------------------------------------
-    - uid: argus-os-lb-not-online
-      title: OctaviaLoadBalancerNotOnline
-      condition: C
-      for: "10m"
-      noDataState: OK
-      execErrState: Error
-      labels:
-        severity: warning
-        component: openstack
-      annotations:
-        __dashboardUid__: openstack-control-plane
-        __panelId__: "42"
-        summary: "Octavia LB not ONLINE: {{ $labels.name }}"
-        description: "Load balancer {{ $labels.name }} (VIP {{ $labels.vip_address }}) has a non-ONLINE operating status for 10m. Whatever sits behind it (a kube-apiserver or gateway) may be unreachable."
-      data:
-        - refId: A
-          relativeTimeRange: { from: 600, to: 0 }
-          datasourceUid: Mimir
-          model:
-            datasource: { type: prometheus, uid: Mimir }
-            editorMode: code
-            expr: max by (name, vip_address) (openstack_loadbalancer_loadbalancer_status{cluster="openstack",provisioning_status="ACTIVE"} > 0)
-            instant: true
-            range: false
-            intervalMs: 1000
-            maxDataPoints: 43200
-            legendFormat: __auto
-            refId: A
-        - refId: B
-          datasourceUid: __expr__
-          model:
-            datasource: { type: __expr__, uid: __expr__ }
-            expression: A
-            reducer: last
-            type: reduce
-            intervalMs: 1000
-            maxDataPoints: 43200
-            refId: B
-        - refId: C
-          datasourceUid: __expr__
-          model:
-            datasource: { type: __expr__, uid: __expr__ }
-            expression: B
-            type: threshold
-            conditions:
-              - evaluator: { type: gt, params: [0] }
-                operator: { type: and }
-                query: { params: [C] }
-                reducer: { type: last, params: [] }
-                type: query
-            intervalMs: 1000
-            maxDataPoints: 43200
-            refId: C
-
-    # ---------------------------------------------------------------------
     # A Ceph OSD's commit (write) latency is sustained-high. This is the REAL
     # storage-latency alert (replaces the removed node-exporter disk-latency
     # rules). ceph_osd_commit_latency_ms is the OSD's own write-path latency as

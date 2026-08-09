@@ -16,10 +16,11 @@ image:
 replicaCount: 1
 resources:
   requests:
-    # Kamaji CONTROLLER manager (not etcd). Per-pod measured 0-2m CPU over 3d
-    # (Mimir); it's a low-churn reconciler. Trimmed 200m -> 50m (x3 replicas)
-    # to hand CPU budget to etcd + the tenant control planes, which matter more
-    # on the 2-worker mgmt fleet. Limit kept at 1 core for burst headroom.
+    # Kamaji CONTROLLER manager (not etcd). replicaCount: 1 (single reconciler).
+    # Per-pod measured 0-2m CPU over 3d (Mimir); it's a low-churn reconciler.
+    # Trimmed 200m -> 50m to hand CPU budget to etcd + the tenant control planes,
+    # which matter more on the 2-worker mgmt fleet. Limit kept at 1 core for
+    # burst headroom.
     cpu: 50m
     memory: 256Mi
   limits:

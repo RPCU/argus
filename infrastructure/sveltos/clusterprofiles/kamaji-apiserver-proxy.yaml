@@ -315,6 +315,13 @@ data:
             spec:
               restartPolicy: Never
               serviceAccountName: kamaji-apiserver-lrp-reconcile
+              # hostNetwork: the pod needs kubectl to reach the API server
+              # (to exec into Cilium pods), but the API server ClusterIP
+              # (10.107.0.1) is only reachable if the LRP is programmed.
+              # With hostNetwork the pod shares the node's network stack
+              # where Cilium kube-proxy replacement routes the ClusterIP.
+              hostNetwork: true
+              dnsPolicy: ClusterFirstWithHostNet
               tolerations:
                 - operator: Exists
               containers:
@@ -326,19 +333,17 @@ data:
                     - -ec
                     - |
                       API="{{ $apiServerIP }}"
-                      # Wait for Caddy proxy DaemonSet to be Ready before
-                      # probing — restarting Cilium before the LRP backend
-                      # exists is pointless.
-                      ready=$(kubectl get ds kamaji-apiserver-proxy \
-                        -n kamaji-apiserver-proxy \
-                        -o jsonpath='{.status.numberReady}' 2>/dev/null || echo 0)
-                      if [ "${ready:-0}" -lt 1 ]; then
-                        echo "caddy proxy not Ready yet (numberReady=${ready}); skipping"
+                      # Quick reachability check before doing heavy kubectl work.
+                      # If the API server is unreachable, we can't determine LRP
+                      # state and must not restart Cilium blindly.
+                      if ! wget -q -T 5 -O /dev/null --no-check-certificate \
+                        "https://${API}:443/healthz" 2>/dev/null; then
+                        echo "API server ${API} unreachable — cannot determine LRP state, skipping"
                         exit 0
                       fi
                       # Check the LRP on EVERY node by exec-ing into each
-                      # Cilium agent pod. Only restart agents on nodes where
-                      # the LRP is not programmed.
+                      # Cilium agent pod. Only restart agents where LRP is
+                      # confirmed NOT programmed. On error/unknown, skip.
                       NEEDS_RESTART=false
                       while IFS= read -r line; do
                         cilium_pod=$(echo "$line" | awk '{print $1}')
@@ -347,22 +352,19 @@ data:
                         svc_type=$(kubectl exec -n kube-system "$cilium_pod" -- \
                           cilium-dbg service list -o json 2>/dev/null \
                           | jq -r '.[] | select(.spec."frontend-address".ip=="'"${API}"'" and .spec."frontend-address".port==443) | .spec.flags.type' \
-                          2>/dev/null || echo "error")
-                        if [ "${svc_type}" != "LocalRedirect" ]; then
+                          2>/dev/null)
+                        if [ "${svc_type}" = "LocalRedirect" ]; then
+                          echo "node ${node}: LocalRedirect OK"
+                        elif [ -z "${svc_type}" ]; then
+                          echo "node ${node}: service not found in Cilium — skipping (cannot determine)"
+                        else
                           echo "node ${node}: service type=${svc_type} — restarting Cilium agent"
                           kubectl delete pod -n kube-system "$cilium_pod" --wait=false
                           NEEDS_RESTART=true
-                        else
-                          echo "node ${node}: LocalRedirect OK"
                         fi
-                      done < <(kubectl get pods -n kube-system -l k8s-app=cilium -o custom-columns='POD:.metadata.name,NODE:.spec.nodeName' --no-headers | sed 's/  */ /g')
+                      done < <(kubectl get pods -n kube-system -l k8s-app=cilium -o custom-columns='POD:.metadata.name,NODE:.spec.nodeName' --no-headers 2>/dev/null | sed 's/  */ /g')
                       if [ "${NEEDS_RESTART}" = false ]; then
-                        echo "LRP verified on all nodes; nothing to do"
-                      else
-                        echo "restarted broken Cilium agent(s); next schedule will re-probe"
-                      fi
-                      if [ "${NEEDS_RESTART}" = false ]; then
-                        echo "LRP verified on all nodes; nothing to do"
+                        echo "LRP verified on all reachable nodes; nothing to do"
                       else
                         echo "restarted broken Cilium agent(s); next schedule will re-probe"
                       fi

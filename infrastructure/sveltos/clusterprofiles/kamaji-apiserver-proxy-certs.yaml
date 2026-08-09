@@ -146,6 +146,7 @@ metadata:
   name: kamaji-tcp-cert-deploy
   namespace: projectsveltos
   annotations:
+    projectsveltos.io/instantiate: "true"
     projectsveltos.io/template: "true"
 data:
   cert-secret.yaml: |
@@ -156,8 +157,8 @@ data:
       namespace: kamaji-apiserver-proxy
     type: kubernetes.io/tls
     data:
-      cert.pem: {{ index .Resource.data "apiserver.crt" }}
-      key.pem: {{ index .Resource.data "apiserver.key" }}
+      cert.pem: {{ index (index .Resources 0).data "apiserver.crt" }}
+      key.pem: {{ index (index .Resources 0).data "apiserver.key" }}
 ---
 # ConfigMap template: deploys the TCP CA Secret to the workload cluster.
 # Maps ca.crt → ca.pem for Caddy's trusted CA bundle.
@@ -167,6 +168,7 @@ metadata:
   name: kamaji-tcp-ca-deploy
   namespace: projectsveltos
   annotations:
+    projectsveltos.io/instantiate: "true"
     projectsveltos.io/template: "true"
 data:
   ca-secret.yaml: |
@@ -176,4 +178,4 @@ data:
       name: kamaji-apiserver-proxy-ca
       namespace: kamaji-apiserver-proxy
     data:
-      ca.pem: {{ index .Resource.data "ca.crt" }}
+      ca.pem: {{ index (index .Resources 0).data "ca.crt" }}

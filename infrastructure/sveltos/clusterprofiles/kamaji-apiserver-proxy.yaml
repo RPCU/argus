@@ -339,11 +339,11 @@ data:
                       # Check the LRP on EVERY node by exec-ing into each
                       # Cilium agent pod. Only restart agents on nodes where
                       # the LRP is not programmed.
-                      RESTARTED=0
-                      for pod in $(kubectl get pods -n kube-system -l k8s-app=cilium \
-                        -o jsonpath='{range .items[*]}{.metadata.name} {.spec.nodeName}{"\n"}{end}'); do
-                        cilium_pod=$(echo "$pod" | awk '{print $1}')
-                        node=$(echo "$pod" | awk '{print $2}')
+                      NEEDS_RESTART=false
+                      while IFS= read -r line; do
+                        cilium_pod=$(echo "$line" | awk '{print $1}')
+                        node=$(echo "$line" | awk '{print $2}')
+                        [ -z "$cilium_pod" ] && continue
                         svc_type=$(kubectl exec -n kube-system "$cilium_pod" -- \
                           cilium-dbg service list -o json 2>/dev/null \
                           | jq -r ".[] | select(.frontend.ip==\"${API}\" and .frontend.port==443) | .type" \
@@ -351,11 +351,16 @@ data:
                         if [ "${svc_type}" != "LocalRedirect" ]; then
                           echo "node ${node}: service type=${svc_type} — restarting Cilium agent"
                           kubectl delete pod -n kube-system "$cilium_pod" --wait=false
-                          RESTARTED=$((RESTARTED + 1))
+                          NEEDS_RESTART=true
                         else
                           echo "node ${node}: LocalRedirect OK"
                         fi
-                      done
+                      done < <(kubectl get pods -n kube-system -l k8s-app=cilium -o custom-columns='POD:.metadata.name,NODE:.spec.nodeName' --no-headers | sed 's/  */ /g')
+                      if [ "${NEEDS_RESTART}" = false ]; then
+                        echo "LRP verified on all nodes; nothing to do"
+                      else
+                        echo "restarted broken Cilium agent(s); next schedule will re-probe"
+                      fi
                       if [ "${RESTARTED}" -eq 0 ]; then
                         echo "LRP verified on all nodes; nothing to do"
                       else

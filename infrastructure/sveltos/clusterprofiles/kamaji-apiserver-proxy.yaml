@@ -265,15 +265,12 @@ data:
     metadata:
       name: kamaji-apiserver-lrp-reconcile
     rules:
-      - apiGroups: ["apps"]
-        resources: ["daemonsets"]
-        verbs: ["get", "patch"]
       - apiGroups: [""]
         resources: ["services"]
         verbs: ["get"]
       - apiGroups: [""]
         resources: ["pods"]
-        verbs: ["get", "list"]
+        verbs: ["get", "list", "delete"]
       - apiGroups: [""]
         resources: ["pods/exec"]
         verbs: ["create"]
@@ -337,8 +334,9 @@ data:
                         exit 0
                       fi
                       # Check the LRP on EVERY node by exec-ing into each
-                      # Cilium agent pod and reading its service list.
-                      NEEDS_ROLL=false
+                      # Cilium agent pod. Only restart agents on nodes where
+                      # the LRP is not programmed.
+                      RESTARTED=0
                       for pod in $(kubectl get pods -n kube-system -l k8s-app=cilium \
                         -o jsonpath='{range .items[*]}{.metadata.name} {.spec.nodeName}{"\n"}{end}'); do
                         cilium_pod=$(echo "$pod" | awk '{print $1}')
@@ -348,16 +346,15 @@ data:
                           | jq -r ".[] | select(.frontend.ip==\"${API}\" and .frontend.port==443) | .type" \
                           2>/dev/null || echo "error")
                         if [ "${svc_type}" != "LocalRedirect" ]; then
-                          echo "node ${node}: service type=${svc_type} (NOT LocalRedirect)"
-                          NEEDS_ROLL=true
+                          echo "node ${node}: service type=${svc_type} — restarting Cilium agent"
+                          kubectl delete pod -n kube-system "$cilium_pod" --wait=false
+                          RESTARTED=$((RESTARTED + 1))
                         else
                           echo "node ${node}: LocalRedirect OK"
                         fi
                       done
-                      if [ "${NEEDS_ROLL}" = false ]; then
+                      if [ "${RESTARTED}" -eq 0 ]; then
                         echo "LRP verified on all nodes; nothing to do"
-                        exit 0
+                      else
+                        echo "restarted ${RESTARTED} Cilium agent(s); next schedule will re-probe"
                       fi
-                      echo "LRP not programmed on some nodes — rolling entire Cilium DaemonSet"
-                      kubectl rollout restart daemonset/cilium -n kube-system
-                      echo "cilium DaemonSet restarted; next schedule will re-probe"

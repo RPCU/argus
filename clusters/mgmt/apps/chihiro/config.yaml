@@ -57,7 +57,7 @@ cluster:
       label: "Replicas"
       type: number
       default: "1"
-      min: 1
+      min: 0
       max: 10
       order: 3
   # YAML template for ONE machineDeployment entry, rendered once per worker
@@ -208,7 +208,7 @@ cluster:
       label: "Openstack Integration"
       description: "Enable Service Type LB using Octavia and CSI using Cinder"
       type: boolean
-      default: true
+      default: false
       true_value: enabled
       false_value: disabled
       editable: true
@@ -217,7 +217,7 @@ cluster:
       label: "Management Cluster"
       description: "Enable CAPI Operator and make this a Cluster Generator"
       type: boolean
-      default: true
+      default: false
       true_value: enabled
       false_value: disabled
       editable: true
@@ -249,7 +249,7 @@ cluster:
       label: "Vault Secret Integration"
       description: "Enable Vault Secret store"
       type: boolean
-      default: true
+      default: false
       true_value: enabled
       false_value: disabled
       editable: true
@@ -258,7 +258,7 @@ cluster:
       label: "Cert-Manager Vault Issuer"
       description: "Enable cert-manager + a vault-issuer ClusterIssuer backed by the shared mgmt Vault PKI (subdomain-isolated to <cluster>.rpcu.lan)"
       type: boolean
-      default: true
+      default: false
       true_value: enabled
       false_value: disabled
       editable: true
@@ -267,7 +267,7 @@ cluster:
       label: "External DNS"
       description: "Enable InternalDNS addon via Sveltos"
       type: boolean
-      default: true
+      default: false
       true_value: enabled
       false_value: disabled
       editable: true
@@ -276,7 +276,7 @@ cluster:
       label: "Gateway API"
       description: "Enable Gateway API and kgateway addon via Sveltos"
       type: boolean
-      default: true
+      default: false
       true_value: enabled
       false_value: disabled
       editable: true
@@ -297,13 +297,13 @@ cluster:
       default: false
       true_value: enabled
       false_value: disabled
-      editable: true
+      editable: false
       path: "metadata.labels.'sveltos.argus.rpcu.io/dragonfly'"
     monitoring:
       label: "Monitoring"
       description: "Enable kube-prometheus-stack via Sveltos, remote_writing metrics to the central Mimir on mgmt (https://mimir.mgmt.rpcu.lan)"
       type: boolean
-      default: true
+      default: false
       true_value: enabled
       false_value: disabled
       editable: true

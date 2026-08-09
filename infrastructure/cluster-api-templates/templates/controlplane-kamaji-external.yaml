@@ -59,17 +59,20 @@ spec:
           - --endpoint-reconciler-type=none
         resources:
           requests:
-            cpu: 200m
+            # Idle apiserver measured ~48m; keep headroom for init/TLS bursts.
+            cpu: 100m
             memory: 1Gi
       controllerManager:
         resources:
           requests:
-            cpu: 100m
+            # Idle ~13m.
+            cpu: 50m
             memory: 256Mi
       scheduler:
         resources:
           requests:
-            cpu: 50m
+            # Idle ~2m.
+            cpu: 25m
             memory: 128Mi
       kubelet:
         preferredAddressTypes:

@@ -221,6 +221,21 @@ spec:
             Section name of the Gateway listener that the TLSRoute will
             attach to (maps to ParentReference.SectionName).
 
+    - name: gatewayPort
+      required: false
+      schema:
+        openAPIV3Schema:
+          type: integer
+          default: 6443
+          description: >-
+            Port of the Gateway listener the API server is exposed on. Used
+            twice, and both uses are required: as gateway.port (the TLSRoute
+            ParentReference.Port) and as the ":<port>" suffix on
+            gateway.hostname, which is the ONLY thing the Kamaji CAPI provider
+            reads when it writes Cluster.spec.controlPlaneEndpoint — a bare
+            hostname makes it hardcode 443. Must match the listener port of
+            gatewaySectionName on the target Gateway.
+
     - name: oidc
       required: false
       schema:
@@ -446,10 +461,20 @@ spec:
             matchResources:
               controlPlane: true
           jsonPatches:
+            # hostname MUST carry the ":<port>" suffix. The Kamaji CAPI provider
+            # derives Cluster.spec.controlPlaneEndpoint from this field alone and
+            # IGNORES gateway.port (which only becomes the TLSRoute
+            # ParentReference.Port). With a bare FQDN it hardcodes ":443"
+            # (controllers/kamajicontrolplane_controller_cluster_patch.go), so
+            # every generated kubeconfig points at :443 — the HTTPS Terminate
+            # listener, which serves the *.rpcu.io wildcard and therefore fails
+            # hostname verification for <cluster>.kcp.rpcu.io.
+            # The provider splits host:port before using it for the TLSRoute
+            # hostname and the cert SANs, so the suffix does not leak into either.
             - op: replace
               path: /spec/template/spec/network/gateway/hostname
               valueFrom:
-                variable: gatewayHostname
+                template: "{{ .gatewayHostname }}:{{ .gatewayPort }}"
             - op: replace
               path: /spec/template/spec/network/gateway/name
               valueFrom:
@@ -462,6 +487,10 @@ spec:
               path: /spec/template/spec/network/gateway/sectionName
               valueFrom:
                 variable: gatewaySectionName
+            - op: replace
+              path: /spec/template/spec/network/gateway/port
+              valueFrom:
+                variable: gatewayPort
             # certSANs = the external FQDN, so the served apiserver cert is
             # valid when in-cluster clients reach it through the SNI-rewrite
             # proxy (SNI=gatewayHostname). The template wraps the string in a

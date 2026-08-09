@@ -79,11 +79,15 @@ spec:
         gateway:
           name: https
           namespace: kgateway-system
+          # Patched to "<fqdn>:<port>" by the ClusterClass. The port suffix is
+          # mandatory: the Kamaji CAPI provider builds
+          # Cluster.spec.controlPlaneEndpoint from this field only, defaulting to
+          # 443 when no port is present, and that endpoint is what ends up in
+          # every generated kubeconfig. It strips the suffix before using the
+          # value for the TLSRoute hostname and the apiserver cert SANs.
           hostname: placeholder.invalid
-          # Attach the apiserver TLSRoute to the kcp listener, which serves on
-          # 6443 (see the Sveltos gateway-api profile) — Kamaji advertises
-          # networkProfile.port (6443) in kubeconfigs and has no advertised-port
-          # override, so the listener + parentRef port must both be 6443.
+          # TLSRoute ParentReference.Port — must equal the kcp listener port on
+          # the target Gateway (see the Sveltos gateway-api profile).
           port: 6443
       addons:
         coreDNS: {}

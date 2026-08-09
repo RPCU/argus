@@ -265,18 +265,15 @@ data:
     metadata:
       name: kamaji-apiserver-lrp-reconcile
     rules:
+      - apiGroups: ["cilium.io"]
+        resources: ["ciliumlocalredirectpolicies"]
+        verbs: ["get", "list"]
       - apiGroups: ["apps"]
         resources: ["daemonsets"]
-        verbs: ["get"]
+        verbs: ["get", "patch"]
       - apiGroups: [""]
         resources: ["services"]
         verbs: ["get"]
-      - apiGroups: [""]
-        resources: ["pods"]
-        verbs: ["get", "list", "delete"]
-      - apiGroups: [""]
-        resources: ["pods/exec"]
-        verbs: ["create"]
     ---
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
@@ -290,81 +287,49 @@ data:
       - kind: ServiceAccount
         name: kamaji-apiserver-lrp-reconcile
         namespace: kamaji-apiserver-proxy
-  lrp-reconcile-cronjob.yaml: |
-    {{- $svcCidr := (index .Cluster.spec.clusterNetwork.services.cidrBlocks 0) }}
-    {{- $octets := splitList "." (first (splitList "/" $svcCidr)) }}
-    {{- $apiServerIP := printf "%s.%s.%s.1" (index $octets 0) (index $octets 1) (index $octets 2) }}
+  lrp-reconcile-job.yaml: |
+    # One-shot bootstrap Job: waits for the CiliumLocalRedirectPolicy to
+    # exist AND the Caddy proxy DaemonSet to be Ready, then rolls Cilium
+    # once so the agents sync with the LRP present. After that the LRP
+    # stays programmed and this Job is never needed again.
     apiVersion: batch/v1
-    kind: CronJob
+    kind: Job
     metadata:
       name: kamaji-apiserver-lrp-reconcile
       namespace: kamaji-apiserver-proxy
     spec:
-      schedule: "*/2 * * * *"
-      concurrencyPolicy: Forbid
-      successfulJobsHistoryLimit: 1
-      failedJobsHistoryLimit: 1
-      jobTemplate:
+      backoffLimit: 0
+      activeDeadlineSeconds: 600
+      template:
+        metadata:
+          labels:
+            app: kamaji-apiserver-lrp-reconcile
         spec:
-          activeDeadlineSeconds: 90
-          backoffLimit: 0
-          template:
-            metadata:
-              labels:
-                app: kamaji-apiserver-lrp-reconcile
-            spec:
-              restartPolicy: Never
-              serviceAccountName: kamaji-apiserver-lrp-reconcile
-              # hostNetwork: the pod needs kubectl to reach the API server
-              # (to exec into Cilium pods), but the API server ClusterIP
-              # (10.107.0.1) is only reachable if the LRP is programmed.
-              # With hostNetwork the pod shares the node's network stack
-              # where Cilium kube-proxy replacement routes the ClusterIP.
-              hostNetwork: true
-              dnsPolicy: ClusterFirstWithHostNet
-              tolerations:
-                - operator: Exists
-              containers:
-                - name: reconcile
-                  image: docker.io/alpine/k8s:1.36.1
-                  imagePullPolicy: IfNotPresent
-                  command:
-                    - /bin/sh
-                    - -ec
-                    - |
-                      API="{{ $apiServerIP }}"
-                      # Quick reachability check before doing heavy kubectl work.
-                      # If the API server is unreachable, we can't determine LRP
-                      # state and must not restart Cilium blindly.
-                      if ! wget -q -T 5 -O /dev/null --no-check-certificate \
-                        "https://${API}:443/healthz" 2>/dev/null; then
-                        echo "API server ${API} unreachable — cannot determine LRP state, skipping"
-                        exit 0
-                      fi
-                      # Check the LRP on EVERY node by exec-ing into each
-                      # Cilium agent pod. Only restart agents where LRP is
-                      # confirmed NOT programmed. On error/unknown, skip.
-                      NEEDS_RESTART=false
-                      while IFS= read -r line; do
-                        cilium_pod=$(echo "$line" | awk '{print $1}')
-                        node=$(echo "$line" | awk '{print $2}')
-                        [ -z "$cilium_pod" ] && continue
-                        svc_type=$(kubectl exec -n kube-system "$cilium_pod" -- \
-                          cilium-dbg service list -o json 2>/dev/null \
-                          | jq -r '.[] | select(.spec."frontend-address".ip=="'"${API}"'" and .spec."frontend-address".port==443) | .spec.flags.type' \
-                          2>/dev/null)
-                        if [ "${svc_type}" = "LocalRedirect" ]; then
-                          echo "node ${node}: LocalRedirect OK"
-                        elif [ -z "${svc_type}" ]; then
-                          echo "node ${node}: service not found in Cilium — skipping (cannot determine)"
-                        else
-                          echo "node ${node}: service type=${svc_type} — restarting Cilium agent"
-                          kubectl delete pod -n kube-system "$cilium_pod" --wait=false
-                          NEEDS_RESTART=true
-                        fi
-                      done < <(kubectl get pods -n kube-system -l k8s-app=cilium -o custom-columns='POD:.metadata.name,NODE:.spec.nodeName' --no-headers 2>/dev/null | sed 's/  */ /g')
-                      if [ "${NEEDS_RESTART}" = false ]; then
-                        echo "LRP verified on all reachable nodes; nothing to do"
-                      else
-                        echo "restarted broken Cilium agent(s); next schedule will re-probe"
-                      fi
+          restartPolicy: Never
+          serviceAccountName: kamaji-apiserver-lrp-reconcile
+          hostNetwork: true
+          dnsPolicy: ClusterFirstWithHostNet
+          tolerations:
+            - operator: Exists
+          containers:
+            - name: reconcile
+              image: docker.io/alpine/k8s:1.36.1
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  echo "Waiting for CiliumLocalRedirectPolicy to exist..."
+                  until kubectl get ciliumlocalredirectpolicy -n kamaji-apiserver-proxy \
+                    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null | grep -q .; do
+                    sleep 5
+                  done
+                  echo "LRP found. Waiting for Caddy proxy DaemonSet to be Ready..."
+                  until [ "$(kubectl get ds kamaji-apiserver-proxy \
+                    -n kamaji-apiserver-proxy \
+                    -o jsonpath='{.status.numberReady}' 2>/dev/null)" -ge 1 ] 2>/dev/null; do
+                    sleep 5
+                  done
+                  echo "Caddy proxy Ready. Rolling Cilium DaemonSet..."
+                  kubectl rollout restart daemonset/cilium -n kube-system
+                  echo "Done. Cilium agents will re-sync with the LRP present."

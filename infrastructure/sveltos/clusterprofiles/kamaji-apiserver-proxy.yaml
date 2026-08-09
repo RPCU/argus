@@ -55,9 +55,10 @@ spec:
       kind: ConfigMap
 ---
 # Templated per-cluster: {{ .Cluster.spec.controlPlaneEndpoint.host }} is the
-# tenant API server FQDN (e.g. test.production.rpcu.lan) and doubles as both the
+# tenant API server FQDN (e.g. test.kcp.rpcu.io) and doubles as both the
 # proxy's upstream host (DNS-resolves to the Gateway LB IP) and the SNI value it
-# rewrites to. :443 is the Gateway kcp listener (TLS Passthrough).
+# rewrites to. The upstream port is the Gateway kcp listener (TLS Passthrough,
+# always 6443 — must match the kcp section in the Sveltos gateway-api profile).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -140,6 +141,12 @@ data:
                 capabilities:
                   drop:
                     - ALL
+              volumeMounts:
+                - name: proxy-tmp
+                  mountPath: /tcp-proxy
+          volumes:
+            - name: proxy-tmp
+              emptyDir: {}
   local-redirect-policy.yaml: |
     # Redirect in-cluster kubernetes.default.svc traffic to the node-local proxy.
     # ServiceMatcher replaces the default/kubernetes ClusterIP service entry with

@@ -419,6 +419,25 @@ Dragonfly` CRD) via a Flux takeover of the SAME base mgmt uses,
 operator).`capo-variables` is created **manually** (README). ORC is a hard
   CAPO dependency but is a plain Flux Kustomization, NOT a provider CR.
 - **orc/** (v2.5.0) — standalone, fetched by URL (CAPO image resolution).
+- **kamaji/** (chart `0.0.0+latest`, image `clastix/kamaji:26.8.2-edge`, ns
+  kamaji-system) — hosted control-plane manager. `helmrelease-crds.yaml`
+  (`kamaji-crds` chart, owns the 3 CRDs) → `helmrelease.yaml`
+  (`dependsOn: kamaji-crds`); values via the `kamaji-values` ConfigMap
+  (`configMapGenerator`, `disableNameSuffixHash`). Consumed by mgmt AND by
+  workload clusters that reconcile this same path — **atlas**
+  `clusters/production/kamaji.yaml` sources it from the argus GitRepository and
+  patches ONLY `kamaji-etcd.clusterDomain: production.local`, inheriting
+  everything else (Helm merges `valuesFrom` first, then inline `values`).
+  ⚠️ **Everything etcd/datastore-related lives under the `kamaji-etcd:` SUBCHART
+  key** (Chart.yaml `condition: kamaji-etcd.deploy`). Top-level `etcd:`,
+  `datastore:` and `gatewayAPI:` are NOT chart keys — Helm ignores unknown
+  top-level keys **silently**. `values.yaml` carried all three as dead blocks
+  until 2026-08-09; verify with `helm show values kamaji/kamaji` before adding.
+  `kamaji-etcd.persistentVolumeClaim.storageClassName` is deliberately left
+  UNSET: StatefulSet `volumeClaimTemplates` are immutable and the live etcd
+  StatefulSets on mgmt + production were both created without it (inheriting the
+  default Cinder SC), so setting it now would fail every upgrade with
+  `updates to statefulset spec ... are forbidden`. See §8 "Kamaji".
 - **cluster-api-templates/** — versioned base templates (`OpenStackClusterTemplate`
   / `KubeadmControlPlaneTemplate` / `KubeadmConfigTemplate` / `OpenStackMachineTemplate`),
   split per-component with `-vN` suffixes; per-cluster values are ClusterClass
@@ -944,6 +963,33 @@ hyperconverged nodes → probe timeouts → restart loops.
   tunable in 1.12.7). Not editable here: kube-apiserver/etcd static pods, Kamaji
   tenant CPs.
 
+### Kamaji
+
+- **Top-level `etcd:`/`datastore:`/`gatewayAPI:` in `infrastructure/kamaji/values.yaml`
+  did nothing** (fixed 2026-08-09). The kamaji chart's only etcd-related
+  top-level key is the `kamaji-etcd:` subchart; Helm ignores unknown top-level
+  keys without warning, so `etcd.persistence.storageClassName:
+csi-cinder-sc-delete` never rendered (the etcd PVCs land on Cinder only because
+  it is the cluster-default SC on both clusters) and `datastore.enabled/name`
+  only worked because the chart's own defaults already say `enabled: true` /
+  `name: default`. Verify a key exists before trusting it.
+- **`DataStore/default` finalizer deadlock** (production, 2026-08-09). Tearing
+  the kamaji HelmRelease down can delete the kamaji controller while
+  `DataStore/default` still holds kamaji's finalizer → the object hangs in
+  `Terminating` with nothing left to clear it. A later install then **adopts**
+  the terminating object (matching `meta.helm.sh/release-name`) instead of
+  creating a fresh one; the moment the new controller boots and drops the
+  finalizer the object is GC'd, and Helm's `--wait` fails with
+  `timeout waiting for: [DataStore/default status: 'NotFound']`. Break-glass:
+  `kubectl patch datastore default --type=merge -p '{"metadata":{"finalizers":null}}'`.
+- **A failed kamaji install used to stall forever.** `spec.install.remediation`
+  was unset → `retries: 0` → `Stalled`/`RetriesExceeded` with
+  `terminal error: ... cannot remediate failed release`, recoverable only by a
+  human `flux reconcile helmrelease kamaji --force`. `helmrelease.yaml` now sets
+  `install`/`upgrade` `remediation.retries: 3` + `timeout: 10m`.
+  `install.remediation` only fires when no release is deployed yet (fresh
+  bootstrap), so it cannot uninstall a healthy mgmt kamaji.
+
 ---
 
 ## 9. Summary
@@ -958,7 +1004,23 @@ env; pre-commit quality gates; 1-minute Git sync.
 
 ---
 
-**Last Updated**: August 2026 — **Split the ClusterClasses out of the
+**Last Updated**: August 2026 — **Fixed three dead top-level keys in
+`infrastructure/kamaji/values.yaml`** (`etcd:`, `datastore:`, `gatewayAPI:`).
+None of them are kamaji chart keys — verified against the chart embedded in the
+live Helm release secret, `clastix/kamaji@master` + `clastix/kamaji-etcd@master`
+on GitHub, and a `.Values.*` template grep (0 references each). They rendered
+nothing: the etcd PVC StorageClass was never applied (works only because Cinder
+is the cluster default) and the DataStore existed purely on chart defaults.
+Moved `deploy` + `datastore.{enabled,name}` under `kamaji-etcd:` (their real
+home) and dropped `gatewayAPI`; `helm template` output is **byte-identical**
+before/after for both the mgmt base and the atlas production overlay, so this is
+a no-op refactor. Left `kamaji-etcd.persistentVolumeClaim.storageClassName`
+unset on purpose (immutable `volumeClaimTemplates` — see §1/§8). Also added
+`install`/`upgrade` `remediation.retries: 3` + `timeout: 10m` to
+`infrastructure/kamaji/helmrelease.yaml`: a failed install previously stalled
+forever needing a manual `flux reconcile --force` (hit on production 2026-08-09
+via the `DataStore/default` finalizer deadlock, both now documented in §8
+"Kamaji"). — Prior: **Split the ClusterClasses out of the
 `cluster-api-templates` Flux Kustomization** into a new
 `cluster-api-clusterclasses` one (`infrastructure/cluster-api-clusterclasses/` +
 the second Kustomization object in `clusters/mgmt/cluster-api-templates.yaml`,

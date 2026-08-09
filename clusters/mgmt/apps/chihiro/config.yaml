@@ -43,7 +43,6 @@ cluster:
       label: "Flavor"
       type: select
       options:
-        - small
         - medium
         - xmedium
         - large

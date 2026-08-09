@@ -346,7 +346,7 @@ data:
                         [ -z "$cilium_pod" ] && continue
                         svc_type=$(kubectl exec -n kube-system "$cilium_pod" -- \
                           cilium-dbg service list -o json 2>/dev/null \
-                          | jq -r ".[] | select(.frontend.ip==\"${API}\" and .frontend.port==443) | .type" \
+                          | jq -r ".[] | select(.spec.frontend-address.ip==\"${API}\" and .spec.frontend-address.port==443) | .spec.flags.type" \
                           2>/dev/null || echo "error")
                         if [ "${svc_type}" != "LocalRedirect" ]; then
                           echo "node ${node}: service type=${svc_type} — restarting Cilium agent"
@@ -361,8 +361,8 @@ data:
                       else
                         echo "restarted broken Cilium agent(s); next schedule will re-probe"
                       fi
-                      if [ "${RESTARTED}" -eq 0 ]; then
+                      if [ "${NEEDS_RESTART}" = false ]; then
                         echo "LRP verified on all nodes; nothing to do"
                       else
-                        echo "restarted ${RESTARTED} Cilium agent(s); next schedule will re-probe"
+                        echo "restarted broken Cilium agent(s); next schedule will re-probe"
                       fi

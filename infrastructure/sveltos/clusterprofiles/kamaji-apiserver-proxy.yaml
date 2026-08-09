@@ -48,6 +48,7 @@ spec:
     matchLabels:
       type: workload
       sveltos.argus.rpcu.io/kamaji-apiserver-proxy: enabled
+      sveltos.argus.rpcu.io/cilium: enabled
   policyRefs:
     - name: kamaji-apiserver-proxy-resources
       namespace: projectsveltos

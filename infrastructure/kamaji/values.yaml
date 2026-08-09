@@ -1,7 +1,15 @@
-etcd:
-  deploy: true
-  persistence:
-    storageClassName: csi-cinder-sc-delete
+# Kamaji chart values.
+#
+# ⚠️ The kamaji chart has NO top-level `etcd:`, `datastore:` or `gatewayAPI:`
+# keys — everything etcd/datastore related lives under the `kamaji-etcd:`
+# SUBCHART (see `condition: kamaji-etcd.deploy` in the chart's Chart.yaml).
+# Helm silently ignores unknown top-level keys, so this file used to carry
+# three dead blocks that looked authoritative but rendered nothing:
+#   etcd.deploy                     -> kamaji-etcd.deploy
+#   etcd.persistence.storageClassName -> kamaji-etcd.persistentVolumeClaim.storageClassName
+#   datastore.{enabled,name}        -> kamaji-etcd.datastore.{enabled,name}
+#   gatewayAPI.enabled              -> does not exist in this chart at all
+# Always check `helm show values kamaji/kamaji` before adding a key here.
 image:
   # renovate: datasource=docker depName=docker.io/clastix/kamaji
   tag: 26.8.2-edge
@@ -18,7 +26,27 @@ resources:
     cpu: "1"
     memory: 512Mi
 kamaji-etcd:
+  deploy: true
   clusterDomain: "mgmt.local"
+  # The `default` DataStore CR the tenant control planes bind to. Matches the
+  # parent chart's `defaultDatastoreName`. NOTE: this object gets a kamaji
+  # finalizer, so tearing the HelmRelease down leaves it stuck Terminating
+  # (no controller left to clear the finalizer). A later reinstall then ADOPTS
+  # the terminating object and Helm's --wait fails with
+  # "timeout waiting for: [DataStore/default status: 'NotFound']".
+  # Recovery: `kubectl patch datastore default --type=merge -p
+  # '{"metadata":{"finalizers":null}}'` then force-reconcile the HelmRelease.
+  datastore:
+    enabled: true
+    name: default
+  # persistentVolumeClaim.storageClassName is DELIBERATELY left unset.
+  # A StatefulSet's volumeClaimTemplates are IMMUTABLE, and the live
+  # kamaji-etcd StatefulSets on BOTH mgmt and production were created without
+  # it (they inherit the cluster-default SC, csi-cinder-sc-delete). Setting it
+  # now would make every Helm upgrade fail with "updates to statefulset spec
+  # for fields other than 'replicas', ... are forbidden" — and mgmt's etcd
+  # holds every tenant control plane's data, including production's own.
+  # Only set it when bootstrapping a cluster whose default SC is not Cinder.
   resources:
     requests:
       # Measured P95 ~115m / peak ~124m CPU per member over 3d (Mimir).
@@ -47,8 +75,3 @@ kamaji-etcd:
                   values:
                     - kamaji-etcd
             topologyKey: "kubernetes.io/hostname"
-gatewayAPI:
-  enabled: false
-datastore:
-  enabled: true
-  name: default

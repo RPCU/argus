@@ -1,7 +1,6 @@
 namespace: chihiro-system
 resources:
   - namespace.yaml
-  - cm.yaml
   - deploy.yaml
   - svc.yaml
   - httproute.yaml
@@ -9,3 +8,18 @@ resources:
   - dragonfly.yaml
   - session-key.yaml
   - oidc.yaml
+
+# chihiro-config is generated from the standalone config.yaml rather than being
+# embedded as a block scalar in a ConfigMap, so the file is real YAML (editor,
+# yamllint and prettier all see it) instead of an opaque indented string.
+#
+# The generated name carries a content hash and kustomize rewrites the
+# Deployment's volumes[].configMap.name to match. That is load-bearing here:
+# the config is mounted with `subPath`, and subPath mounts NEVER receive
+# ConfigMap updates. Without the hash a config change would sit in the
+# ConfigMap while pods kept serving the old file until manually restarted.
+# The hash makes the Deployment spec change, so Flux rolls the pods.
+configMapGenerator:
+  - name: chihiro-config
+    files:
+      - config.yaml

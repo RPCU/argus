@@ -265,15 +265,18 @@ data:
     metadata:
       name: kamaji-apiserver-lrp-reconcile
     rules:
-      - apiGroups: [""]
-        resources: ["pods"]
-        verbs: ["get", "list", "delete"]
       - apiGroups: ["apps"]
         resources: ["daemonsets"]
-        verbs: ["get"]
+        verbs: ["get", "patch"]
       - apiGroups: [""]
         resources: ["services"]
         verbs: ["get"]
+      - apiGroups: [""]
+        resources: ["pods"]
+        verbs: ["get", "list"]
+      - apiGroups: [""]
+        resources: ["pods/exec"]
+        verbs: ["create"]
     ---
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
@@ -323,9 +326,9 @@ data:
                     - -ec
                     - |
                       API="{{ $apiServerIP }}"
-                      # Wait for the Caddy proxy DaemonSet to be Ready before
-                      # probing — restarting Cilium before the LRP backend exists
-                      # is pointless.
+                      # Wait for Caddy proxy DaemonSet to be Ready before
+                      # probing — restarting Cilium before the LRP backend
+                      # exists is pointless.
                       ready=$(kubectl get ds kamaji-apiserver-proxy \
                         -n kamaji-apiserver-proxy \
                         -o jsonpath='{.status.numberReady}' 2>/dev/null || echo 0)
@@ -333,22 +336,28 @@ data:
                         echo "caddy proxy not Ready yet (numberReady=${ready}); skipping"
                         exit 0
                       fi
-                      # Probe the apiserver via the ClusterIP. A working LRP
-                      # returns TLS/HTTP (200/401/403). A blackholed ClusterIP
-                      # times out after the wget timeout.
-                      code=$(wget -q -T 8 -O /dev/null \
-                        --no-check-certificate \
-                        -S "https://${API}:443/healthz" 2>&1 \
-                        | awk '/HTTP\//{print $2; exit}')
-                      case "${code}" in
-                        200|401|403)
-                          echo "apiserver ClusterIP ${API} reachable (HTTP ${code}); LRP OK, nothing to do"
-                          exit 0
-                          ;;
-                      esac
-                      echo "apiserver ClusterIP ${API} NOT reachable (probe='${code:-timeout}') — rolling Cilium so the LRP is re-synced"
-                      # Delete the Cilium agent pods (DaemonSet recreates them).
-                      # Each fresh agent syncs the kubernetes Service WITH the
-                      # LRP present -> LocalRedirect.
-                      kubectl delete pod -n kube-system -l k8s-app=cilium --wait=false
-                      echo "cilium agents deleted; next schedule will re-probe"
+                      # Check the LRP on EVERY node by exec-ing into each
+                      # Cilium agent pod and reading its service list.
+                      NEEDS_ROLL=false
+                      for pod in $(kubectl get pods -n kube-system -l k8s-app=cilium \
+                        -o jsonpath='{range .items[*]}{.metadata.name} {.spec.nodeName}{"\n"}{end}'); do
+                        cilium_pod=$(echo "$pod" | awk '{print $1}')
+                        node=$(echo "$pod" | awk '{print $2}')
+                        svc_type=$(kubectl exec -n kube-system "$cilium_pod" -- \
+                          cilium-dbg service list -o json 2>/dev/null \
+                          | jq -r ".[] | select(.frontend.ip==\"${API}\" and .frontend.port==443) | .type" \
+                          2>/dev/null || echo "error")
+                        if [ "${svc_type}" != "LocalRedirect" ]; then
+                          echo "node ${node}: service type=${svc_type} (NOT LocalRedirect)"
+                          NEEDS_ROLL=true
+                        else
+                          echo "node ${node}: LocalRedirect OK"
+                        fi
+                      done
+                      if [ "${NEEDS_ROLL}" = false ]; then
+                        echo "LRP verified on all nodes; nothing to do"
+                        exit 0
+                      fi
+                      echo "LRP not programmed on some nodes — rolling entire Cilium DaemonSet"
+                      kubectl rollout restart daemonset/cilium -n kube-system
+                      echo "cilium DaemonSet restarted; next schedule will re-probe"

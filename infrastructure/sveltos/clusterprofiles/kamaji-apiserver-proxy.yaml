@@ -265,6 +265,9 @@ data:
     metadata:
       name: kamaji-apiserver-lrp-reconcile
     rules:
+      - apiGroups: ["apps"]
+        resources: ["daemonsets"]
+        verbs: ["get"]
       - apiGroups: [""]
         resources: ["services"]
         verbs: ["get"]

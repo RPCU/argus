@@ -157,7 +157,7 @@ data:
     metadata:
       name: kamaji-apiserver-proxy-tls
       namespace: kamaji-apiserver-proxy
-    type: kubernetes.io/tls
+    type: Opaque
     data:
       cert.pem: {{ index .Resource.data "apiserver.crt" }}
       key.pem: {{ index .Resource.data "apiserver.key" }}

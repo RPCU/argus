@@ -292,6 +292,13 @@ data:
     # exist AND the Caddy proxy DaemonSet to be Ready, then rolls Cilium
     # once so the agents sync with the LRP present. After that the LRP
     # stays programmed and this Job is never needed again.
+    #
+    # Uses the external API server FQDN (via --server/--insecure-skip-tls-verify)
+    # because kubectl's default in-cluster config talks to kubernetes.default.svc
+    # (ClusterIP), which is unreachable when the LRP isn't programmed yet.
+    {{- $svcCidr := (index .Cluster.spec.clusterNetwork.services.cidrBlocks 0) }}
+    {{- $octets := splitList "." (first (splitList "/" $svcCidr)) }}
+    {{- $apiServerIP := printf "%s.%s.%s.1" (index $octets 0) (index $octets 1) (index $octets 2) }}
     apiVersion: batch/v1
     kind: Job
     metadata:
@@ -308,28 +315,35 @@ data:
           restartPolicy: Never
           serviceAccountName: kamaji-apiserver-lrp-reconcile
           hostNetwork: true
-          dnsPolicy: ClusterFirstWithHostNet
+          dnsPolicy: Default
           tolerations:
             - operator: Exists
           containers:
             - name: reconcile
               image: docker.io/alpine/k8s:1.36.1
               imagePullPolicy: IfNotPresent
+              env:
+                - name: APISERVER
+                  value: "https://{{ .Cluster.spec.controlPlaneEndpoint.host }}:{{ .Cluster.spec.controlPlaneEndpoint.port }}"
+                - name: KUBECONFIG
+                  value: "/dev/null"
               command:
                 - /bin/sh
                 - -ec
                 - |
-                  echo "Waiting for CiliumLocalRedirectPolicy to exist..."
-                  until kubectl get ciliumlocalredirectpolicy -n kamaji-apiserver-proxy \
+                  TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+                  K="kubectl --server=${APISERVER} --insecure-skip-tls-verify=true --token=${TOKEN}"
+                  echo "Waiting for CiliumLocalRedirectPolicy to exist (via ${APISERVER})..."
+                  until $K get ciliumlocalredirectpolicy -n kamaji-apiserver-proxy \
                     -o jsonpath='{.items[0].metadata.name}' 2>/dev/null | grep -q .; do
                     sleep 5
                   done
                   echo "LRP found. Waiting for Caddy proxy DaemonSet to be Ready..."
-                  until [ "$(kubectl get ds kamaji-apiserver-proxy \
+                  until [ "$($K get ds kamaji-apiserver-proxy \
                     -n kamaji-apiserver-proxy \
                     -o jsonpath='{.status.numberReady}' 2>/dev/null)" -ge 1 ] 2>/dev/null; do
                     sleep 5
                   done
                   echo "Caddy proxy Ready. Rolling Cilium DaemonSet..."
-                  kubectl rollout restart daemonset/cilium -n kube-system
+                  $K rollout restart daemonset/cilium -n kube-system
                   echo "Done. Cilium agents will re-sync with the LRP present."

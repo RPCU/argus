@@ -115,6 +115,15 @@ data:
             app.kubernetes.io/name: kamaji-apiserver-proxy
         spec:
           priorityClassName: system-node-critical
+          # Use the NODE's resolv.conf, NOT cluster CoreDNS. Caddy's upstream is
+          # the DNS name {{ .Cluster.spec.controlPlaneEndpoint.host }}, which must
+          # be resolvable to bootstrap the cluster. But CoreDNS itself depends on
+          # this proxy to reach the API server (kubernetes.default), so resolving
+          # the upstream via CoreDNS would deadlock: CoreDNS NotReady -> proxy 502
+          # -> API server unreachable -> CoreDNS stays NotReady. dnsPolicy: Default
+          # inherits the node resolver (populated by ExternalDNS/Designate), which
+          # resolves the control-plane FQDN without any in-cluster dependency.
+          dnsPolicy: Default
           # Tolerate all taints: this proxy is what makes the API server
           # reachable in-cluster, so it must schedule on nodes that are still
           # NotReady during bootstrap.
@@ -156,6 +165,13 @@ data:
                 capabilities:
                   drop:
                     - ALL
+                  # The caddy binary carries the file capability
+                  # cap_net_bind_service=ep. Dropping ALL without re-adding it
+                  # makes the kernel refuse to exec the binary (file-permitted
+                  # caps not in the bounding set) → "exec /usr/bin/caddy:
+                  # operation not permitted" → exit 255 CrashLoopBackOff.
+                  add:
+                    - NET_BIND_SERVICE
           volumes:
             - name: caddyfile
               configMap:
@@ -173,13 +189,27 @@ data:
             - name: data
               emptyDir: {}
   local-redirect-policy.yaml: |
-    # Redirect in-cluster kubernetes.default.svc traffic to the node-local Caddy
-    # proxy. Traffic flows: pod -> kubernetes.default.svc:443 -> (eBPF LRP) ->
+    # Redirect in-cluster API server traffic to the node-local Caddy proxy.
+    # Traffic flows: pod -> kubernetes.default ClusterIP:443 -> (eBPF LRP) ->
     # local Caddy:6443 -> (TLS termination + reverse_proxy) -> Gateway:6443 ->
     # TLSRoute -> TCP's kube-apiserver.
     #
+    # MUST use addressMatcher, NOT serviceMatcher. Cilium silently refuses to
+    # program an LRP whose serviceMatcher targets the special kubernetes.default
+    # service (the apiserver-managed ClusterIP): `cilium-dbg lrp list` shows the
+    # policy but no matching service, and the ClusterIP keeps routing to the
+    # unreachable Kamaji endpoint. addressMatcher on the raw ClusterIP works.
+    #
+    # The kubernetes.default ClusterIP is ALWAYS the first host of the service
+    # CIDR (network address + 1), so we derive it from the Cluster's
+    # clusterNetwork.services.cidrBlocks[0] instead of hardcoding it — this stays
+    # correct for any tenant cluster regardless of its service CIDR.
+    #
     # NOTE: LRP updates are not supported by Cilium (delete+recreate). Sveltos
     # drift correction recreates it, which is fine.
+    {{- $svcCidr := (index .Cluster.spec.clusterNetwork.services.cidrBlocks 0) }}
+    {{- $octets := splitList "." (first (splitList "/" $svcCidr)) }}
+    {{- $apiServerIP := printf "%s.%s.%s.1" (index $octets 0) (index $octets 1) (index $octets 2) }}
     apiVersion: cilium.io/v2
     kind: CiliumLocalRedirectPolicy
     metadata:
@@ -187,9 +217,11 @@ data:
       namespace: kamaji-apiserver-proxy
     spec:
       redirectFrontend:
-        serviceMatcher:
-          serviceName: kubernetes
-          namespace: default
+        addressMatcher:
+          ip: "{{ $apiServerIP }}"
+          toPorts:
+            - port: "443"
+              protocol: TCP
       redirectBackend:
         localEndpointSelector:
           matchLabels:

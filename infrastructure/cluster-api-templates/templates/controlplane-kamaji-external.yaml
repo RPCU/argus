@@ -41,7 +41,22 @@ spec:
           kubeconfigSecretName: placeholder
           kubeconfigSecretKey: value
       apiServer:
-        extraArgs: []
+        extraArgs:
+          # Stop the apiserver from reconciling the kubernetes.default Service
+          # endpoint. On an external Kamaji control plane the apiserver advertises
+          # its own (in-tenant, unreachable-from-workers) address 10.x.x.x:6443 as
+          # the kubernetes.default endpoint. That endpoint is useless — workers
+          # reach the API server through the node-local Caddy proxy + Cilium LRP
+          # (see infrastructure/sveltos/clusterprofiles/kamaji-apiserver-proxy.yaml)
+          # — AND it actively breaks that proxy: Cilium syncs the apiserver-managed
+          # ClusterIP Service entry (10.x.x.x:6443 backend) before/independently of
+          # the LRP, and on any node that joins AFTER the LRP is created the agent
+          # keeps the ClusterIP backend instead of converting it to LocalRedirect,
+          # so kubernetes.default:443 blackholes there. With reconciler-type=none
+          # the Service carries no apiserver endpoint, leaving the LRP as the sole
+          # owner of the ClusterIP on every node (including late joiners).
+          # The ClusterClass oidc patch appends the --oidc-* flags after this.
+          - --endpoint-reconciler-type=none
         resources:
           requests:
             cpu: 200m

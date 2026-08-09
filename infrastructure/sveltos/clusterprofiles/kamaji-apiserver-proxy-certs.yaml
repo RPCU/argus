@@ -140,14 +140,16 @@ spec:
 # ConfigMap template: deploys the TCP API server cert Secret to the workload
 # cluster. The .Resource variable is the matched Secret from production.
 # Maps apiserver.crt → cert.pem, apiserver.key → key.pem for Caddy.
+# Annotation "projectsveltos.io/instantiate: ok" tells the EventTrigger to
+# process Go templates using event data. The addon controller does NOT
+# re-template — it deploys the already-instantiated content.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: kamaji-tcp-cert-deploy
   namespace: projectsveltos
   annotations:
-    projectsveltos.io/instantiate: "true"
-    projectsveltos.io/template: "true"
+    projectsveltos.io/instantiate: ok
 data:
   cert-secret.yaml: |
     apiVersion: v1
@@ -157,8 +159,8 @@ data:
       namespace: kamaji-apiserver-proxy
     type: kubernetes.io/tls
     data:
-      cert.pem: {{ index (index .Resources 0).data "apiserver.crt" }}
-      key.pem: {{ index (index .Resources 0).data "apiserver.key" }}
+      cert.pem: {{ index .Resource.data "apiserver.crt" }}
+      key.pem: {{ index .Resource.data "apiserver.key" }}
 ---
 # ConfigMap template: deploys the TCP CA Secret to the workload cluster.
 # Maps ca.crt → ca.pem for Caddy's trusted CA bundle.
@@ -168,8 +170,7 @@ metadata:
   name: kamaji-tcp-ca-deploy
   namespace: projectsveltos
   annotations:
-    projectsveltos.io/instantiate: "true"
-    projectsveltos.io/template: "true"
+    projectsveltos.io/instantiate: ok
 data:
   ca-secret.yaml: |
     apiVersion: v1
@@ -178,4 +179,4 @@ data:
       name: kamaji-apiserver-proxy-ca
       namespace: kamaji-apiserver-proxy
     data:
-      ca.pem: {{ index (index .Resources 0).data "ca.crt" }}
+      ca.pem: {{ index .Resource.data "ca.crt" }}

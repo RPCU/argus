@@ -229,3 +229,126 @@ data:
         toPorts:
           - port: "6443"
             protocol: TCP
+  # -------------------------------------------------------------------
+  # Cilium LRP bootstrap-ordering self-heal.
+  #
+  # Cilium does NOT re-evaluate an already-synced Service when a matching
+  # CiliumLocalRedirectPolicy is created LATER. On a fresh tenant cluster
+  # the Cilium agent syncs the kubernetes.default ClusterIP long before
+  # this profile's LRP lands (the Caddy backend depends on the
+  # Event-Framework cert sync, which waits on the external control plane).
+  # Result: the ClusterIP stays a plain (backend-less, since
+  # --endpoint-reconciler-type=none) ClusterIP service instead of a
+  # LocalRedirect, so kubernetes.default:443 blackholes until the Cilium
+  # agents are restarted by hand.
+  #
+  # This CronJob makes that restart automatic + idempotent: every 2 min
+  # it probes the apiserver ClusterIP; if the redirect is NOT working it
+  # rolls the Cilium agents ONCE so they re-sync with the LRP present,
+  # then re-probes. Once the redirect works it is a no-op (the probe
+  # succeeds and it exits without touching Cilium), so steady-state churn
+  # is zero. Self-heals late-joining nodes too (their agent started
+  # without the LRP -> same restart fixes them).
+  #
+  # NOTE: uses docker.io/alpine/k8s:1.36.1 (has kubectl + POSIX shell
+  # + wget). Distroless kubectl images have no shell (see
+  # nova-compute-ssh-fix).
+  lrp-reconcile-rbac.yaml: |
+    apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: kamaji-apiserver-lrp-reconcile
+      namespace: kamaji-apiserver-proxy
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    metadata:
+      name: kamaji-apiserver-lrp-reconcile
+    rules:
+      - apiGroups: [""]
+        resources: ["pods"]
+        verbs: ["get", "list", "delete"]
+      - apiGroups: ["apps"]
+        resources: ["daemonsets"]
+        verbs: ["get"]
+      - apiGroups: [""]
+        resources: ["services"]
+        verbs: ["get"]
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: kamaji-apiserver-lrp-reconcile
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: kamaji-apiserver-lrp-reconcile
+    subjects:
+      - kind: ServiceAccount
+        name: kamaji-apiserver-lrp-reconcile
+        namespace: kamaji-apiserver-proxy
+  lrp-reconcile-cronjob.yaml: |
+    {{- $svcCidr := (index .Cluster.spec.clusterNetwork.services.cidrBlocks 0) }}
+    {{- $octets := splitList "." (first (splitList "/" $svcCidr)) }}
+    {{- $apiServerIP := printf "%s.%s.%s.1" (index $octets 0) (index $octets 1) (index $octets 2) }}
+    apiVersion: batch/v1
+    kind: CronJob
+    metadata:
+      name: kamaji-apiserver-lrp-reconcile
+      namespace: kamaji-apiserver-proxy
+    spec:
+      schedule: "*/2 * * * *"
+      concurrencyPolicy: Forbid
+      successfulJobsHistoryLimit: 1
+      failedJobsHistoryLimit: 1
+      jobTemplate:
+        spec:
+          activeDeadlineSeconds: 90
+          backoffLimit: 0
+          template:
+            metadata:
+              labels:
+                app: kamaji-apiserver-lrp-reconcile
+            spec:
+              restartPolicy: Never
+              serviceAccountName: kamaji-apiserver-lrp-reconcile
+              tolerations:
+                - operator: Exists
+              containers:
+                - name: reconcile
+                  image: docker.io/alpine/k8s:1.36.1
+                  imagePullPolicy: IfNotPresent
+                  command:
+                    - /bin/sh
+                    - -ec
+                    - |
+                      API="{{ $apiServerIP }}"
+                      # Wait for the Caddy proxy DaemonSet to be Ready before
+                      # probing — restarting Cilium before the LRP backend exists
+                      # is pointless.
+                      ready=$(kubectl get ds kamaji-apiserver-proxy \
+                        -n kamaji-apiserver-proxy \
+                        -o jsonpath='{.status.numberReady}' 2>/dev/null || echo 0)
+                      if [ "${ready:-0}" -lt 1 ]; then
+                        echo "caddy proxy not Ready yet (numberReady=${ready}); skipping"
+                        exit 0
+                      fi
+                      # Probe the apiserver via the ClusterIP. A working LRP
+                      # returns TLS/HTTP (200/401/403). A blackholed ClusterIP
+                      # times out after the wget timeout.
+                      code=$(wget -q -T 8 -O /dev/null \
+                        --no-check-certificate \
+                        -S "https://${API}:443/healthz" 2>&1 \
+                        | awk '/HTTP\//{print $2; exit}')
+                      case "${code}" in
+                        200|401|403)
+                          echo "apiserver ClusterIP ${API} reachable (HTTP ${code}); LRP OK, nothing to do"
+                          exit 0
+                          ;;
+                      esac
+                      echo "apiserver ClusterIP ${API} NOT reachable (probe='${code:-timeout}') — rolling Cilium so the LRP is re-synced"
+                      # Delete the Cilium agent pods (DaemonSet recreates them).
+                      # Each fresh agent syncs the kubernetes Service WITH the
+                      # LRP present -> LocalRedirect.
+                      kubectl delete pod -n kube-system -l k8s-app=cilium --wait=false
+                      echo "cilium agents deleted; next schedule will re-probe"

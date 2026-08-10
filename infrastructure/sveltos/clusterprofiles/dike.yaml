@@ -121,7 +121,7 @@ data:
           containers:
             - name: manager
               # renovate: datasource=docker depName=zot.rpcu.io/public/dike
-              image: zot.rpcu.io/public/dike:v0.1.0
+              image: zot.rpcu.io/public/dike:v0.2.0
               imagePullPolicy: IfNotPresent
               command:
                 - /manager

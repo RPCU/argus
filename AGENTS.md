@@ -407,18 +407,6 @@ Dragonfly` CRD) via a Flux takeover of the SAME base mgmt uses,
     Kustomizations; `gateway-api-resources` (`dependsOn: gateway-api`) pushes the
     Gateway (`*.cluster.rpcu.lan`, `vault-issuer`), GatewayParameters, wildcard
     Certificate, HTTPRoute, HTTPListenerPolicy. Split so CRs land AFTER CRDs.
-  - `dike.yaml` (`dependsOn: cilium`, label `.../kamaji-apiserver-proxy`) —
-    companion controller (RPCU/dike, a kubebuilder operator) for the
-    kamaji-apiserver-proxy. Inline ConfigMap (NOT a Flux takeover — same pattern
-    as `kamaji-apiserver-proxy.yaml`; self-contained ns/SA/RBAC/Deployment, only
-    needs the Cilium CRDs) carrying dike's upstream `deploy.yaml`
-    (`zot.rpcu.io/public/dike`, public repo → no imagePullSecret; RBAC:
-    ciliumlocalredirectpolicies get/list/watch/update/patch + pods
-    get/list/watch/delete + pods/exec — it reconciles the LRP + Caddy pods the
-    proxy creates, working around Cilium's no-LRP-update limitation). Gated by the
-    SAME opt-in label as the proxy it complements, so a tenant cluster that gets
-    the proxy gets its controller too. Image pinned `v0.1.0` (Renovate marker
-    `# renovate: datasource=docker depName=zot.rpcu.io/public/dike`).
 
 - **cluster-api-operator/** (v0.27.0, ns capi-operator-system) — chart-managed
   cert-manager disabled; providers managed separately.
@@ -722,7 +710,7 @@ github-releases (external-snapshotter); (3) Crossplane packages → docker;
 (4) CAPI provider `version:` via inline `# renovate:` markers; (5) Sveltos inline
 `helmCharts chartVersion:`; (6) helm-values `tag:` without sibling repository
 (kamaji); (7) plain `image:` → docker (rook ceph pinned `v19.2.3`, grouped;
-chihiro; the dike Sveltos add-on `zot.rpcu.io/public/dike`).
+chihiro).
 
 **NOT Renovate-managed:** npins (`.github/workflows/npins-update.yaml`, 6h) and
 yaook OpenStack releases (`.github/workflows/yaook-releases.yaml`, weekly —
@@ -1016,20 +1004,12 @@ env; pre-commit quality gates; 1-minute Git sync.
 
 ---
 
-**Last Updated**: August 2026 — **Added the `dike` Sveltos add-on**
-(`infrastructure/sveltos/clusterprofiles/dike.yaml`, registered in that dir's
-`kustomization.yaml`): a companion controller (RPCU/dike) for the
-kamaji-apiserver-proxy, gated by the SAME opt-in label
-(`sveltos.argus.rpcu.io/kamaji-apiserver-proxy: enabled`) so any tenant cluster
-that gets the proxy gets its controller too. Delivered as an inline ConfigMap
-(NOT a Flux takeover — same pattern as `kamaji-apiserver-proxy.yaml`; dike is
-self-contained ns/SA/RBAC/Deployment and only needs the Cilium CRDs, so
-`dependsOn: cilium`). RBAC mirrors dike's upstream `deploy.yaml`
-(ciliumlocalredirectpolicies get/list/watch/update/patch + pods
-get/list/watch/delete + pods/exec — it reconciles the LRP + Caddy pods the proxy
-creates, working around Cilium's no-LRP-update limitation). Image
-`zot.rpcu.io/public/dike` pinned `v0.1.0` with a Renovate `datasource=docker`
-marker (tracked under the plain-`image:` regex manager). — Prior: **Fixed three
+**Last Updated**: August 2026 — **Removed the `dike` Sveltos add-on**
+(deleted `infrastructure/sveltos/clusterprofiles/dike.yaml` and its entry in that
+dir's `kustomization.yaml`; also dropped the corresponding §1 add-on entry and
+the Renovate plain-`image:` note for `zot.rpcu.io/public/dike`). The companion
+controller for the kamaji-apiserver-proxy didn't work, so it's gone.
+— Prior: **Fixed three
 dead top-level keys in `infrastructure/kamaji/values.yaml`** (`etcd:`,
 `datastore:`, `gatewayAPI:`).
 None of them are kamaji chart keys — verified against the chart embedded in the

@@ -16,7 +16,6 @@ resources:
   - gateway-api.yaml
   - kamaji-apiserver-proxy.yaml
   - kamaji-apiserver-proxy-certs.yaml
-  - dike.yaml
   - monitoring.yaml
 # Stamp every resource in this directory (ClusterProfiles + their backing
 # ConfigMaps/Secrets/EventSources/EventTriggers) with a common metadata label.

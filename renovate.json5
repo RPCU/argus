@@ -48,6 +48,28 @@
   dependencyDashboardTitle: "Renovate Dependency Dashboard",
 
   // ---------------------------------------------------------------------------
+  // Host rules: private-but-anonymous container registries.
+  // ---------------------------------------------------------------------------
+  // The `zot.rpcu.io` and `zot.bealv.io` OCI registries host our internally
+  // built images (chihiro, dike, capi-janitor-openstack-go). Their `/public/`
+  // repositories are anonymously readable, but Renovate still needs an explicit
+  // `hostRules` entry to treat each host as a valid docker datasource endpoint
+  // (otherwise the custom `image:` manager matches the tag and then fails the
+  // lookup). No credentials are stored here; if a registry later requires auth,
+  // add `username`/`password` (or `token`) sourced from a workflow secret env
+  // var rather than committing them.
+  hostRules: [
+    {
+      matchHost: "zot.rpcu.io",
+      hostType: "docker",
+    },
+    {
+      matchHost: "zot.bealv.io",
+      hostType: "docker",
+    },
+  ],
+
+  // ---------------------------------------------------------------------------
   // Built-in managers
   // ---------------------------------------------------------------------------
   // `flux` parses HelmRelease/HelmRepository (HTTP + OCI), Kustomization,
@@ -243,6 +265,20 @@
     {
       matchPackageNames: ["kamaji", "kamaji-crds"],
       matchManagers: ["flux"],
+      enabled: false,
+    },
+
+    // capi-janitor-openstack-go is published to zot.rpcu.io/public with a
+    // rolling `:latest` tag (built reproducibly by ../capo-janitor via Nix, see
+    // AGENTS.md). There is no semver to bump — a `:latest` pin can only ever be
+    // re-digested, not version-bumped — so disable it to avoid noisy no-op
+    // lookups. Re-enable (and pin a real tag) if the image starts publishing
+    // versioned tags.
+    {
+      matchPackageNames: [
+        "zot.rpcu.io/public/capi-janitor-openstack-go",
+        "/capi-janitor-openstack-go$/",
+      ],
       enabled: false,
     },
 

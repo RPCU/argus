@@ -37,6 +37,7 @@ spec:
     projectId: "370001231801746254"
     redirectUris:
       - https://chihiro.mgmt.rpcu.lan/auth/callback
+      - https://chihiro.rpcu.io/auth/callback
     responseTypes:
       - OIDC_RESPONSE_TYPE_CODE
     skipNativeAppSuccessPage: false

@@ -95,6 +95,7 @@ cluster:
         sveltos.argus.rpcu.io/dragonfly: {{ chihiro.dragonfly }}
         sveltos.argus.rpcu.io/monitoring: {{ chihiro.monitoring }}
         sveltos.argus.rpcu.io/kamaji-apiserver-proxy: "enabled"
+        dike.rpcu.io/enabled: "true"
         type: workload
     spec:
       clusterNetwork:

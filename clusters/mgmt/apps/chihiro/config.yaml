@@ -132,7 +132,7 @@ cluster:
           - name: gatewayName
             value: {{ chihiro.gatewayName }}
           - name: externalKubeconfigSecretName
-            value: {{ chihiro.externalKubeconfig }}
+            value: production-kubeconfig
         version: "0.0.0"
   parameters:
     cloudName:
@@ -355,9 +355,3 @@ cluster:
           constrain:
             gatewayName: ["https-external"]
       default: "{{ chihiro.name }}.kcp.production.rpcu.lan"
-    externalKubeconfig:
-      label: "External Cluster Kubeconfig Secret"
-      description: "Secret (in mgmt namespace) containing the kubeconfig for the production cluster where tenant control planes are hosted"
-      type: string
-      default: "production-kubeconfig"
-      editable: false

@@ -40,7 +40,7 @@ spec:
       - name: imageName
         value: hephaestus-kaas-26.05-v1.36.1
       - name: controlPlaneFlavor
-        value: duo-large
+        value: large
       - name: workerFlavor
         value: large
       - name: apiServerFloatingIP

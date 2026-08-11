@@ -75,6 +75,8 @@ spec:
               value: "10"
             - name: CHIHIRO_MAX_TOTAL_CP
               value: "9"
+            - name: CHIHIRO_ALLOWED_ORIGINS
+              value: "https://chihiro.rpcu.io"
           volumeMounts:
             - name: config
               mountPath: /config.yaml

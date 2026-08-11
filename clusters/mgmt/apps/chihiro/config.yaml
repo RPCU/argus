@@ -257,7 +257,7 @@ cluster:
       path: "metadata.labels.'sveltos.argus.rpcu.io/vault-auth'"
     certManager:
       label: "Cert-Manager Vault Issuer"
-      description: "Enable cert-manager + a vault-issuer ClusterIssuer backed by the shared mgmt Vault PKI (subdomain-isolated to <cluster>.rpcu.lan)"
+      description: "Enable cert-manager + a vault-issuer ClusterIssuer backed by the shared mgmt Vault PKI (subdomain-isolated to <cluster>.rpcu.lan). Prerequisite for Gateway API (its HTTPS listener needs the vault-issuer Certificate) — enable this whenever Gateway API is enabled."
       type: boolean
       default: false
       true_value: enabled
@@ -275,7 +275,7 @@ cluster:
       path: "metadata.labels.'sveltos.argus.rpcu.io/external-dns'"
     gatewayApi:
       label: "Gateway API"
-      description: "Enable Gateway API and kgateway addon via Sveltos"
+      description: "Enable Gateway API and kgateway addon via Sveltos. Requires Cert-Manager Vault Issuer (the Gateway HTTPS listener terminates TLS with a cert-manager Certificate signed by vault-issuer); gateway-api-resources dependsOn cert-manager."
       type: boolean
       default: false
       true_value: enabled

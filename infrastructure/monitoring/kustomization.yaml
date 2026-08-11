@@ -4,3 +4,7 @@ resources:
   - helmrepo.yaml
   - helmrelease.yaml
   - prometheus-adapter.yaml
+  # cert-manager ServiceMonitor is owned HERE (the monitoring add-on ships the
+  # Prometheus Operator CRDs), NOT by the cert-manager chart — see the file
+  # header for why this avoids the monitoring/cert-manager CRD deadlock.
+  - cert-manager-servicemonitor.yaml

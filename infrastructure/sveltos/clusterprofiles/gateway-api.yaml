@@ -42,12 +42,24 @@ spec:
       kind: ConfigMap
 ---
 # Workload resources (Gateway, GatewayParameters, Certificate, HTTPRoute,
-# HTTPListenerPolicy) live in a SEPARATE ClusterProfile that dependsOn the one
-# above. This orders them after the Flux Kustomizations that install the Gateway
+# HTTPListenerPolicy) live in a SEPARATE ClusterProfile that dependsOn the ones
+# below. This orders them after the Flux Kustomizations that install the Gateway
 # API + kgateway CRDs — deploying the Gateway/GatewayParameters CRs before their
 # CRDs exist fails with `no matches for kind "GatewayParameters"`. With
 # ContinuousWithDriftDetection + this dependency, Sveltos retries until the CRDs
 # land and then the CRs apply cleanly.
+#
+# dependsOn cert-manager: this profile pushes a `Certificate` (cert-manager.io/v1,
+# `wildcard-tls`, issuerRef `vault-issuer`) and a Gateway HTTPS listener that
+# terminates TLS with the secret cert-manager mints. Without cert-manager the
+# `Certificate` kind + the `vault-issuer` ClusterIssuer don't exist, so the CR
+# apply fails (`no matches for kind "Certificate"`) and the HTTPS listener has no
+# usable cert. NO CYCLE: cert-manager itself only dependsOn `gateway-api-crds`
+# (the always-on CRD-only profile), NOT this `gateway-api`/`gateway-api-resources`
+# pair, so the edges stay acyclic
+# (gateway-api-resources → {gateway-api → gateway-api-crds, cert-manager → gateway-api-crds}).
+# Enable the cert-manager add-on (chihiro "Cert-Manager Vault Issuer") on any
+# cluster that enables Gateway API.
 apiVersion: config.projectsveltos.io/v1beta1
 kind: ClusterProfile
 metadata:
@@ -57,6 +69,7 @@ spec:
   syncMode: ContinuousWithDriftDetection
   dependsOn:
     - gateway-api
+    - cert-manager
   clusterSelector:
     matchLabels:
       type: workload

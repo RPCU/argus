@@ -5,32 +5,22 @@ config:
   kind: ControllerConfiguration
   enableGatewayAPI: true
 prometheus:
+  # `prometheus.enabled: true` exposes the cert-manager metrics endpoint /
+  # Service (and adds prometheus.io/* scrape annotations). It does NOT create a
+  # ServiceMonitor here.
   enabled: true
-  # `prometheus.enabled: true` alone only adds prometheus.io/* scrape
-  # annotations to the Deployments — it does NOT create a ServiceMonitor.
-  # kube-prometheus-stack does not honour those pod annotations, so the
-  # ServiceMonitor sub-toggle is REQUIRED for the metrics to be scraped.
   servicemonitor:
-    # DEFAULT OFF. The ServiceMonitor kind is a Prometheus Operator CRD that
-    # only exists on clusters running kube-prometheus-stack (the `monitoring`
-    # add-on). This SHARED base is installed on mgmt, openstack, AND opt-in
-    # workload clusters via the cert-manager Sveltos ClusterProfile — many of
-    # which do NOT run monitoring. Enabling the ServiceMonitor here would
-    # hard-fail the HelmRelease on those clusters with
-    # `no matches for kind "ServiceMonitor"`.
+    # ALWAYS OFF in this SHARED base — do NOT re-enable it here or via per-cluster
+    # HelmRelease patches. The `ServiceMonitor` kind is a Prometheus Operator CRD
+    # that only exists on clusters running kube-prometheus-stack (the `monitoring`
+    # add-on). This base is installed on mgmt, openstack AND opt-in workload
+    # clusters (many WITHOUT monitoring), so a chart-rendered ServiceMonitor would
+    # hard-fail the HelmRelease on `no matches for kind "ServiceMonitor"`.
     #
-    # It is re-enabled (via an inline HelmRelease `values` patch, which Helm
-    # merges over this ConfigMap) ONLY where the CRD exists:
-    #   - mgmt      : clusters/mgmt/cert-manager.yaml
-    #   - openstack : clusters/openstack/cert-manager.yaml
-    #   - workload clusters with monitoring: gated on the
-    #     `sveltos.argus.rpcu.io/monitoring` Cluster label in the cert-manager
-    #     Sveltos ClusterProfile (infrastructure/sveltos/clusterprofiles/cert-manager.yaml).
+    # The cert-manager ServiceMonitor is instead OWNED BY THE MONITORING ADD-ON
+    # (infrastructure/monitoring/cert-manager-servicemonitor.yaml) — the component
+    # that actually ships the ServiceMonitor CRD. That removes the coupling that
+    # previously deadlocked clusters opting into BOTH add-ons (cert-manager needed
+    # the CRD; the CRD came only from monitoring; monitoring dependsOn
+    # cert-manager). See §8.
     enabled: false
-    # The mgmt Prometheus serviceMonitorSelector is
-    # matchLabels: {release: kube-prometheus-stack} (NOT the openstack
-    # cluster's allow-all NotIn selector), so the ServiceMonitor MUST carry
-    # this label or it is silently never scraped on mgmt. (Harmless while the
-    # ServiceMonitor is disabled; the re-enable patches keep it.)
-    labels:
-      release: kube-prometheus-stack

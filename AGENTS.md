@@ -143,19 +143,17 @@ Each component below is a directory with the usual `helmrepo.yaml` /
 `helmrelease.yaml` / `namespace.yaml` / `values.yaml` / `kustomization.yaml`
 unless noted. Only non-obvious specifics are listed.
 
-- **cert-manager/** (v1.19.2) — `values.yaml`: `prometheus.enabled: true` +
-  `prometheus.servicemonitor.enabled: FALSE` (default OFF) + `labels: {release:
-kube-prometheus-stack}`. The SM is **monitoring-gated**: this shared base is
-  pushed to mgmt, openstack AND opt-in workload clusters (many WITHOUT
-  kube-prometheus-stack), so enabling the SM in the base would hard-fail the
-  HelmRelease on `no matches for kind "ServiceMonitor"`. It is re-enabled via an
-  inline HelmRelease `values` patch (Helm merges over the ConfigMap, keeping the
-  `release:` label) ONLY where the CRD exists: `clusters/mgmt/cert-manager.yaml` +
-  `clusters/openstack/cert-manager.yaml` patches, and — for workload clusters —
-  the `cert-manager` Sveltos profile's `cert-manager-install` ConfigMap (now
-  `projectsveltos.io/template`) which appends the patch only when the Cluster
-  carries `sveltos.argus.rpcu.io/monitoring: enabled` (see §8 "monitoring-gated
-  ServiceMonitors"). Enabled alone still does NOT make a ServiceMonitor.
+- **cert-manager/** (v1.19.2) — `values.yaml`: `prometheus.enabled: true`
+  (exposes the metrics Service/endpoint) + `prometheus.servicemonitor.enabled:
+FALSE` **unconditionally**. The cert-manager base NEVER emits a ServiceMonitor
+  (this shared base reaches mgmt, openstack AND opt-in workload clusters, many
+  WITHOUT kube-prometheus-stack, so a chart-rendered SM would hard-fail the
+  HelmRelease on `no matches for kind "ServiceMonitor"`). The cert-manager
+  ServiceMonitor is instead **owned by the monitoring add-on**
+  (`infrastructure/monitoring/cert-manager-servicemonitor.yaml`) — the component
+  that ships the ServiceMonitor CRD, so it can never race itself. Do NOT re-enable
+  the chart SM via per-cluster HelmRelease patches; that reintroduced a
+  monitoring↔cert-manager CRD deadlock (see §8 "monitoring-gated ServiceMonitors").
 - **trust-manager/** (v0.18.0) — `setup/` (chart) + `configs/bundle.yaml` (RPCU root CA).
 - **cilium/** (v1.18.6) — `ciliumloadbalancerippool.yaml` (10.0.0.240-253),
   `ciliuml2announcementpolicy.yaml`, `values.yaml`.
@@ -174,6 +172,15 @@ kube-prometheus-stack}`. The SM is **monitoring-gated**: this shared base is
   lives under `kube-state-metrics.rbac.extraRules` (top-level), NOT the nested
   `customResourceState.rbac`. KSM resources under the hyphenated
   `kube-state-metrics:` key (192Mi/384Mi/25m), not `kubeStateMetrics.resources`.
+  **Owns the cert-manager ServiceMonitor** (`cert-manager-servicemonitor.yaml`, a
+  standalone SM in ns `monitoring`, label `release: kube-prometheus-stack`,
+  `namespaceSelector: [cert-manager]`) — this add-on ships the ServiceMonitor CRD,
+  so it can never race itself. The cert-manager chart SM is OFF everywhere (§8
+  "monitoring-gated ServiceMonitors"). `kube-prometheus-stack` installs the CRD
+  via `install/upgrade.crds: CreateReplace` and does NOT use cert-manager for its
+  admission webhooks, so the monitoring add-on has NO dependency on cert-manager
+  (the `monitoring` Sveltos profile must NOT `dependsOn: cert-manager` — that
+  deadlocked clusters opting into both, §8).
 - **openstack-exporter/** (image v1.6.0, openstack only) — **plain manifests**
   (upstream chart isn't published). Emits the ONLY `openstack_*` family. ESO
   `SecretStore` reads `keystone-admin` (ns yaook) → `clouds.yaml`
@@ -404,9 +411,16 @@ Dragonfly` CRD) via a Flux takeover of the SAME base mgmt uses,
     no opt-in) — Gateway API CRDs (cert-manager gateway-shim needs them).
   - `gateway-api.yaml` (label `.../gateway-api`) — TWO profiles: `gateway-api`
     (`dependsOn: gateway-api-crds`) pushes kgateway CRDs + controller Flux
-    Kustomizations; `gateway-api-resources` (`dependsOn: gateway-api`) pushes the
-    Gateway (`*.cluster.rpcu.lan`, `vault-issuer`), GatewayParameters, wildcard
-    Certificate, HTTPRoute, HTTPListenerPolicy. Split so CRs land AFTER CRDs.
+    Kustomizations; `gateway-api-resources` (`dependsOn: [gateway-api,
+cert-manager]`) pushes the Gateway (`*.cluster.rpcu.lan`, `vault-issuer`),
+    GatewayParameters, wildcard Certificate, HTTPRoute, HTTPListenerPolicy. Split
+    so CRs land AFTER CRDs. The `cert-manager` edge is REQUIRED: the resources push
+    a `Certificate` (cert-manager.io/v1, issuerRef `vault-issuer`) + an HTTPS
+    listener terminating TLS with the cert-manager-minted secret; without it the CR
+    apply fails `no matches for kind "Certificate"`. NO CYCLE — cert-manager only
+    `dependsOn: gateway-api-crds` (the always-on CRD-only profile), not
+    `gateway-api`/`gateway-api-resources`. Chihiro enforces this via the field
+    descriptions: enabling **Gateway API** requires **Cert-Manager Vault Issuer**.
 
 - **cluster-api-operator/** (v0.27.0, ns capi-operator-system) — chart-managed
   cert-manager disabled; providers managed separately.
@@ -800,6 +814,30 @@ Helpful: `fluxcd get kustomizations -A`; `ceph status`/`osd tree`/`pool ls`
   `packetizationLayerPMTUDMode: "always"` in `infrastructure/cilium/values.yaml`
   - `infrastructure/sveltos/clusterprofiles/cilium.yaml`. Check `helm show values`
     on Cilium bumps for new `pmtuDiscovery` defaults.
+- **CiliumLocalRedirectPolicy `addressMatcher` on a Service-owned IP is REFUSED
+  on Cilium ≥1.20** (kamaji-apiserver-proxy, 2026-08-11). The proxy LRP redirects
+  the `kubernetes.default` ClusterIP (`10.107.0.1:443`) to a node-local Caddy. On
+  1.18 an `addressMatcher` on that raw ClusterIP worked; on **1.20 Cilium hard-
+  refuses** it because the IP is owned by the `default/kubernetes` Service —
+  `level=error msg="LocalRedirectPolicy matches an address owned by an existing
+service => refusing to override"`. `cilium-dbg lrp list` STILL shows the mapping
+  (CR accepted) so it looks fine, but the eBPF LB map is never rewritten:
+  `cilium-dbg service list` shows the frontend as plain `ClusterIP` (non-routable,
+  0 backends), NEVER `LocalRedirect`, so in-cluster apiserver traffic black-holes.
+  **Restarting the agent cannot fix it** (the refusal is re-emitted every boot —
+  this is what wedged the (now-removed) dike controller into an infinite cilium-
+  agent restart loop). Fix: **`serviceMatcher` (serviceName `kubernetes`, ns
+  `default`)**, which is the supported way to redirect a Service-owned frontend
+  (Cilium swaps the ClusterIP entry for a `LocalRedirect` one). serviceMatcher
+  adds two hard namespace rules (both verified live): (1) the LRP must live in the
+  SAME namespace as the target Service (else "Rejecting malformed ... kubernetes
+  service namespace does not match with the CiliumLocalRedirectPolicy namespace");
+  (2) the LRP backend pods must live in the LRP's own namespace. So the ENTIRE
+  proxy stack (LRP + Caddy DaemonSet + Caddyfile ConfigMap + synced TLS/CA
+  Secrets) MUST be in `default` — the old dedicated `kamaji-apiserver-proxy`
+  namespace is gone. Verify: `cilium-dbg service list | grep LocalRedirect` shows
+  `10.107.0.1:443 LocalRedirect 1 => <node-local Caddy>:6443 (active)` on every
+  node. Do NOT revert to addressMatcher or a separate namespace.
 
 ### Ceph
 
@@ -909,23 +947,36 @@ hyperconverged nodes → probe timeouts → restart loops.
     mgmt/openstack `flux-operator.yaml` add a `flux-metrics` Kustomization
     (`dependsOn: monitoring`); the `monitoring` Sveltos profile pushes a
     `flux-metrics` Flux Kustomization to opt-in workload clusters.
-  - **cert-manager SM**: base `values.yaml` now defaults
-    `prometheus.servicemonitor.enabled: false`; re-enabled by an inline
-    HelmRelease `values` patch (Helm merges over the ConfigMap → keeps the
-    `release:` label) on mgmt + openstack `cert-manager.yaml`, and — for workload
-    clusters — a templated (`projectsveltos.io/template`) `cert-manager-install`
-    ConfigMap in the `cert-manager` Sveltos profile that appends the patch
-    `{{- if eq (index .Cluster.metadata.labels "sveltos.argus.rpcu.io/monitoring") "enabled" }}`.
-    No dependsOn on monitoring from cert-manager (Flux just retries until the CRD
-    lands); avoids a cross-profile HelmRelease-ownership conflict.
+  - **cert-manager SM** (rearchitected Aug 2026): the chart SM is now OFF
+    **everywhere and unconditionally** (`prometheus.servicemonitor.enabled: false`
+    in the base, no per-cluster re-enable patches). The cert-manager ServiceMonitor
+    is instead a **standalone manifest owned by the monitoring add-on**
+    (`infrastructure/monitoring/cert-manager-servicemonitor.yaml`, ns `monitoring`,
+    label `release: kube-prometheus-stack`, `namespaceSelector: [cert-manager]`,
+    targeting the cert-manager metrics Service — a faithful reproduction of the
+    chart SM, verified live against v1.21.1). WHY THE REWRITE: the earlier
+    "default OFF + re-enable via a templated `cert-manager-install` patch gated on
+    the `sveltos.argus.rpcu.io/monitoring` label" scheme DEADLOCKED any cluster
+    opting into BOTH add-ons (e.g. `lab`): cert-manager rendered the SM →
+    HelmRelease install failed on the missing ServiceMonitor CRD → cert-manager
+    never Ready; and the `monitoring` profile `dependsOn: cert-manager`, so the
+    add-on that ships the CRD waited on the add-on that needed it → permanent
+    `no matches for kind "ServiceMonitor"`. Two coupled fixes: (1) the monitoring
+    add-on OWNS the SM (the component shipping the CRD can never race itself);
+    (2) **removed `cert-manager` from the `monitoring` Sveltos profile
+    `dependsOn`** — the `root-mgmt` CA templateResourceRef reads a STATIC mgmt-side
+    Secret (created at bootstrap, not gated on the workload cert-manager add-on),
+    and kube-prometheus-stack installs its CRDs via `install/upgrade.crds:
+CreateReplace` with no cert-manager dependency (self-signed webhook certs), so
+    the edge was never needed. `test` (monitoring disabled) was unaffected
+    throughout; `lab`/`production` (both add-ons) now converge.
 - **cert-manager monitoring** (Aug 2026): `prometheus.enabled: true` alone only
-  adds scrape annotations (NOT honoured). Need `prometheus.servicemonitor.enabled: true`
-  - `labels: {release: kube-prometheus-stack}` (mgmt selector; harmless on
-    openstack), but the SM is DEFAULT-OFF in the shared base and re-enabled per
-    monitoring-capable cluster (see "monitoring-gated ServiceMonitors" above).
-    Metrics: `certmanager_certificate_expiration_timestamp_seconds`,
-    `_not_before_timestamp_seconds` (for %-lifetime), `_ready_status`. Expiry alerts
-    use %-of-lifetime (10%/20%), not fixed days (avoids false alerts on 72h certs).
+  adds scrape annotations (NOT honoured) + exposes the metrics Service. The
+  scraping ServiceMonitor is owned by the monitoring add-on (see
+  "monitoring-gated ServiceMonitors" above), NOT the cert-manager chart.
+  Metrics: `certmanager_certificate_expiration_timestamp_seconds`,
+  `_not_before_timestamp_seconds` (for %-lifetime), `_ready_status`. Expiry alerts
+  use %-of-lifetime (10%/20%), not fixed days (avoids false alerts on 72h certs).
 - **kube-apiserver CPU is TLS-handshake bound, not request volume** (openstack).
   ~2 cores/apiserver at 2-3 inflight requests: per-connection RSA-2048 handshakes
   - baremetal contention. Fix: ECDSA-P256 keys — baremetal via **hephaestus**
@@ -1004,7 +1055,61 @@ env; pre-commit quality gates; 1-minute Git sync.
 
 ---
 
-**Last Updated**: August 2026 — **Removed the `dike` Sveltos add-on**
+**Last Updated**: August 2026 — **Fixed the kamaji-apiserver-proxy
+CiliumLocalRedirectPolicy on Cilium ≥1.20.** The LRP used `addressMatcher` on the
+`kubernetes.default` ClusterIP (`10.107.0.1:443`); on 1.20 Cilium hard-refuses an
+`addressMatcher` LRP whose IP is owned by an existing Service
+(`level=error msg="LocalRedirectPolicy matches an address owned by an existing
+service => refusing to override" serviceName=default/kubernetes`, confirmed live
+on `test`). The CR is accepted (`cilium-dbg lrp list` shows the mapping) but the
+eBPF LB map is never rewritten — `cilium-dbg service list` keeps `10.107.0.1:443`
+as plain `ClusterIP` (0 backends), never `LocalRedirect`, so in-cluster apiserver
+traffic black-holes; restarting the agent can't fix it (refusal re-emitted every
+boot — this is what put the out-of-cluster `dike` controller into an infinite
+cilium-agent restart loop on `test`). Switched
+`infrastructure/sveltos/clusterprofiles/kamaji-apiserver-proxy.yaml` to
+`serviceMatcher` (serviceName `kubernetes`, ns `default`) — the supported way to
+redirect a Service-owned frontend. serviceMatcher forces two namespace moves
+(both verified live): the LRP must be in the target Service's namespace, and the
+backend pods must be in the LRP's namespace. So the WHOLE proxy stack (LRP +
+Caddy DaemonSet + Caddyfile ConfigMap + the two synced TLS/CA Secrets in
+`kamaji-apiserver-proxy-certs.yaml`) moved from the dedicated
+`kamaji-apiserver-proxy` namespace into `default`; the `namespace.yaml` for that
+ns was dropped. Verified end-to-end on `test`: a serviceMatcher LRP in `default`
+with a node-local backend flips service `#45` to
+`LocalRedirect 1 => <node-local>:6443 (active)` in both `cilium-dbg service list`
+and `bpf lb list` on both nodes. Also dropped the service-CIDR arithmetic (no
+longer needed — serviceMatcher resolves the ClusterIP by name). `kustomize build
+infrastructure/sveltos/clusterprofiles` green; prettier clean. NOTE: `dike` is
+running out-of-cluster at mgmt (`dike-system`), not deployed by argus (§1 records
+it as removed); it was scaled to 0 during debugging to stop the restart loop.
+— Prior: **Moved cert-manager ServiceMonitor ownership to
+the monitoring add-on and broke the monitoring↔cert-manager CRD deadlock.**
+A cluster opting into BOTH add-ons (`lab`) wedged cert-manager's HelmRelease on
+`no matches for kind "ServiceMonitor"`: the cert-manager Sveltos profile
+re-enabled the chart SM when `sveltos.argus.rpcu.io/monitoring: enabled`, but the
+SM CRD ships only with kube-prometheus-stack (the `monitoring` add-on), and the
+`monitoring` ClusterProfile `dependsOn: cert-manager` → the add-on that provides
+the CRD waited on the add-on that needed it (permanent cycle). Fix: (1) added a
+**standalone** `infrastructure/monitoring/cert-manager-servicemonitor.yaml` (ns
+`monitoring`, label `release: kube-prometheus-stack`, `namespaceSelector:
+[cert-manager]`, faithful repro of the chart SM against v1.21.1) wired into
+`infrastructure/monitoring/kustomization.yaml` — the component that ships the CRD
+now ships the SM, so it can never race itself; (2) set the cert-manager base
+`prometheus.servicemonitor.enabled: false` **unconditionally** and REMOVED the SM
+re-enable patches from `clusters/mgmt/cert-manager.yaml` +
+`clusters/openstack/cert-manager.yaml` and the templated gate from the
+`cert-manager-install` ConfigMap in
+`infrastructure/sveltos/clusterprofiles/cert-manager.yaml` (ConfigMap no longer
+`projectsveltos.io/template`); (3) removed `cert-manager` from the `monitoring`
+Sveltos profile `dependsOn` (`infrastructure/sveltos/clusterprofiles/monitoring.yaml`)
+— the `root-mgmt` CA templateResourceRef reads a static mgmt Secret and
+kube-prometheus-stack installs its CRDs via `install/upgrade.crds: CreateReplace`
+with no cert-manager webhook dependency, so the edge was never needed. `test`
+(monitoring off) unaffected; `lab`/`production` (both add-ons) converge. All
+`kustomize build` targets green (`infrastructure/{monitoring,cert-manager}`,
+`clusters/{mgmt,openstack}`, `infrastructure/sveltos/clusterprofiles`).
+— Prior: **Removed the `dike` Sveltos add-on**
 (deleted `infrastructure/sveltos/clusterprofiles/dike.yaml` and its entry in that
 dir's `kustomization.yaml`; also dropped the corresponding §1 add-on entry and
 the Renovate plain-`image:` note for `zot.rpcu.io/public/dike`). The companion

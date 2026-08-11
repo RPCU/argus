@@ -4,8 +4,11 @@ metadata:
   name: chihiro-service
   labels:
     app.kubernetes.io/name: chihiro-service
+  annotations:
+    loadbalancer.openstack.org/load-balancer-address: "172.16.255.11"
 spec:
-  type: ClusterIP
+  type: LoadBalancer
+  loadBalancerIP: 172.16.255.11
   ports:
     - protocol: TCP
       port: 8080

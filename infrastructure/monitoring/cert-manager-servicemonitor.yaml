@@ -1,0 +1,83 @@
+# Standalone cert-manager ServiceMonitor — OWNED BY THE MONITORING ADD-ON.
+#
+# WHY IT LIVES HERE (and not in the cert-manager chart via
+# prometheus.servicemonitor.enabled):
+#   The `ServiceMonitor` kind is a Prometheus Operator CRD that only exists once
+#   kube-prometheus-stack (this monitoring add-on) is installed. The shared
+#   cert-manager base (infrastructure/cert-manager) is deployed on mgmt,
+#   openstack AND opt-in workload clusters, many of which run NO monitoring —
+#   so if the cert-manager HelmRelease rendered its own ServiceMonitor it would
+#   hard-fail on `no matches for kind "ServiceMonitor"` on those clusters.
+#
+#   The previous workaround (default the chart SM off, re-enable it via a
+#   HelmRelease `values` patch on monitoring-capable clusters + a templated
+#   gate in the cert-manager Sveltos profile) created a DEADLOCK on clusters
+#   that opt into BOTH add-ons: cert-manager needed the CRD, the CRD only came
+#   from monitoring, and monitoring `dependsOn: cert-manager`. See §8.
+#
+#   Making the monitoring add-on OWN this ServiceMonitor removes the coupling
+#   entirely: the component that ships the ServiceMonitor CRD also ships the
+#   ServiceMonitor, so it can never race itself, and cert-manager's HelmRelease
+#   never references a CRD it can't guarantee. cert-manager just exposes its
+#   metrics Service (prometheus.enabled: true adds the scrape annotations /
+#   metrics endpoint); this SM does the scraping.
+#
+# This is a faithful reproduction of the ServiceMonitor the cert-manager chart
+# emits when prometheus.servicemonitor.enabled=true (verified live against the
+# v1.21.1 chart on the production cluster): jobLabel, selector expressions
+# (controller/cainjector/webhook), 60s interval, /metrics on http-metrics.
+#
+# Deployed ONLY where the Prometheus Operator CRDs exist — i.e. everywhere the
+# monitoring base is applied:
+#   - mgmt      : clusters/mgmt/monitoring.yaml (Flux)
+#   - openstack : clusters/openstack/monitoring.yaml (Flux)
+#   - opt-in workload clusters: the `monitoring` Sveltos ClusterProfile
+#     (infrastructure/sveltos/clusterprofiles/monitoring.yaml) pushes the same
+#     ./infrastructure/monitoring base.
+#
+# The `release: kube-prometheus-stack` label is REQUIRED: the mgmt Prometheus
+# serviceMonitorSelector is matchLabels{release: kube-prometheus-stack} (the
+# openstack cluster uses an allow-all NotIn selector, so the label is harmless
+# there). serviceMonitorNamespaceSelector is {} (all namespaces), so this SM may
+# live in the monitoring namespace and scrape the cert-manager Service in the
+# cert-manager namespace via namespaceSelector.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cert-manager
+  # namespace omitted on purpose — the kustomization sets it to `monitoring`.
+  labels:
+    app: cert-manager
+    app.kubernetes.io/name: cert-manager
+    app.kubernetes.io/instance: cert-manager
+    app.kubernetes.io/component: controller
+    release: kube-prometheus-stack
+spec:
+  jobLabel: app.kubernetes.io/name
+  namespaceSelector:
+    matchNames:
+      - cert-manager
+  selector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - cainjector
+          - cert-manager
+          - webhook
+      - key: app.kubernetes.io/instance
+        operator: In
+        values:
+          - cert-manager
+      - key: app.kubernetes.io/component
+        operator: In
+        values:
+          - cainjector
+          - controller
+          - webhook
+  endpoints:
+    - targetPort: http-metrics
+      path: /metrics
+      interval: 60s
+      scrapeTimeout: 30s
+      honorLabels: false

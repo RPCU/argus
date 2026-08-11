@@ -35,6 +35,13 @@
 # (set on tenant clusters created with the openstack-kamaji-external class).
 #
 # dependsOn cilium: CiliumLocalRedirectPolicy CRD must exist.
+#
+# ⚠️ EVERYTHING LIVES IN THE `default` NAMESPACE — this is FORCED by Cilium's LRP
+# serviceMatcher constraints (see the local-redirect-policy.yaml comment below).
+# The Caddy DaemonSet, its Caddyfile ConfigMap, the two synced TLS/CA Secrets AND
+# the LRP must all sit in `default` alongside the `kubernetes` Service. Do NOT
+# move them back into a dedicated namespace — Cilium 1.20 will silently refuse to
+# program the redirect.
 apiVersion: config.projectsveltos.io/v1beta1
 kind: ClusterProfile
 metadata:
@@ -67,17 +74,14 @@ metadata:
   annotations:
     projectsveltos.io/template: "true"
 data:
-  namespace.yaml: |
-    apiVersion: v1
-    kind: Namespace
-    metadata:
-      name: kamaji-apiserver-proxy
+  # NOTE: no namespace.yaml — everything deploys into the pre-existing `default`
+  # namespace (required by the LRP serviceMatcher, see local-redirect-policy.yaml).
   caddyfile-configmap.yaml: |
     apiVersion: v1
     kind: ConfigMap
     metadata:
       name: kamaji-apiserver-proxy-caddyfile
-      namespace: kamaji-apiserver-proxy
+      namespace: default
     data:
       Caddyfile: |
         :6443 {
@@ -102,7 +106,7 @@ data:
     kind: DaemonSet
     metadata:
       name: kamaji-apiserver-proxy
-      namespace: kamaji-apiserver-proxy
+      namespace: default
       labels:
         app.kubernetes.io/name: kamaji-apiserver-proxy
     spec:
@@ -194,34 +198,47 @@ data:
     # local Caddy:6443 -> (TLS termination + reverse_proxy) -> Gateway:6443 ->
     # TLSRoute -> TCP's kube-apiserver.
     #
-    # MUST use addressMatcher, NOT serviceMatcher. Cilium silently refuses to
-    # program an LRP whose serviceMatcher targets the special kubernetes.default
-    # service (the apiserver-managed ClusterIP): `cilium-dbg lrp list` shows the
-    # policy but no matching service, and the ClusterIP keeps routing to the
-    # unreachable Kamaji endpoint. addressMatcher on the raw ClusterIP works.
+    # MUST use serviceMatcher, NOT addressMatcher (Cilium >= 1.20). The frontend
+    # IP is the kubernetes.default ClusterIP, which is OWNED by the default/
+    # kubernetes Service. Since 1.20 Cilium hard-refuses an addressMatcher LRP
+    # whose IP coincides with an existing Service frontend:
+    #   level=error msg="LocalRedirectPolicy matches an address owned by an
+    #   existing service => refusing to override" address=<clusterIP>:443/TCP
+    #   serviceName=default/kubernetes
+    # `cilium-dbg lrp list` still shows the mapping (the CR is accepted) but the
+    # eBPF LB map is NOT rewritten — `cilium-dbg service list` shows the frontend
+    # as plain ClusterIP (non-routable, 0 backends), never LocalRedirect, so all
+    # in-cluster apiserver traffic black-holes. Restarting the agent cannot fix
+    # this; the refusal is re-emitted every boot. (On 1.18 addressMatcher on this
+    # IP worked — this is a 1.20 tightening.)
     #
-    # The kubernetes.default ClusterIP is ALWAYS the first host of the service
-    # CIDR (network address + 1), so we derive it from the Cluster's
-    # clusterNetwork.services.cidrBlocks[0] instead of hardcoding it — this stays
-    # correct for any tenant cluster regardless of its service CIDR.
+    # serviceMatcher is the supported way to redirect a Service-owned frontend
+    # (Cilium replaces the ClusterIP entry with a LocalRedirect one), BUT it adds
+    # two hard namespace constraints, both verified live on 1.20:
+    #   1. The LRP must live in the SAME namespace as the target Service, else:
+    #      "Rejecting malformed CiliumLocalRedirectPolicy ... kubernetes service
+    #       namespace does not match with the CiliumLocalRedirectPolicy namespace"
+    #   2. The LRP backend pods (localEndpointSelector) must live in the LRP's own
+    #      namespace ("The namespace of backend pod(s) need to match with that of
+    #      the policy" — upstream LRP docs).
+    # kubernetes lives in `default`, so BOTH the LRP and the Caddy DaemonSet MUST
+    # be in `default`. That is why the whole proxy stack above targets `default`.
+    #
+    # No service-CIDR math needed anymore: serviceMatcher references the Service
+    # by name, so the ClusterIP is resolved by Cilium regardless of CIDR.
     #
     # NOTE: LRP updates are not supported by Cilium (delete+recreate). Sveltos
     # drift correction recreates it, which is fine.
-    {{- $svcCidr := (index .Cluster.spec.clusterNetwork.services.cidrBlocks 0) }}
-    {{- $octets := splitList "." (first (splitList "/" $svcCidr)) }}
-    {{- $apiServerIP := printf "%s.%s.%s.1" (index $octets 0) (index $octets 1) (index $octets 2) }}
     apiVersion: cilium.io/v2
     kind: CiliumLocalRedirectPolicy
     metadata:
       name: kamaji-apiserver
-      namespace: kamaji-apiserver-proxy
+      namespace: default
     spec:
       redirectFrontend:
-        addressMatcher:
-          ip: "{{ $apiServerIP }}"
-          toPorts:
-            - port: "443"
-              protocol: TCP
+        serviceMatcher:
+          serviceName: kubernetes
+          namespace: default
       redirectBackend:
         localEndpointSelector:
           matchLabels:

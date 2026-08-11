@@ -18,8 +18,24 @@
 # dependsOn:
 #   - flux-instance: pushes Flux Kustomization + HelmRelease CRs that require
 #     the kustomize/helm controllers
-#   - cert-manager: the root-mgmt CA Secret must be available on mgmt for the
-#     templateResourceRef to resolve
+#
+# WHY NOT cert-manager: this profile MUST NOT dependsOn the cert-manager add-on.
+# Doing so created a DEADLOCK on clusters that opt into BOTH add-ons (e.g. lab):
+#   - the cert-manager Sveltos profile re-enables the cert-manager ServiceMonitor
+#     when the Cluster carries `sveltos.argus.rpcu.io/monitoring: enabled`, so its
+#     HelmRelease install needs the ServiceMonitor CRD;
+#   - that CRD is shipped by kube-prometheus-stack, which THIS (monitoring) profile
+#     installs (`install.crds: CreateReplace`);
+#   - with `monitoring dependsOn cert-manager`, monitoring waited for cert-manager
+#     to be Ready, but cert-manager could never become Ready without the CRD that
+#     only monitoring provides → permanent cycle
+#     (`no matches for kind "ServiceMonitor"`).
+# The `root-mgmt` CA Secret read by the templateResourceRef below is a STATIC
+# mgmt-cluster resource (created at cluster bootstrap, cert-manager namespace) and
+# is NOT gated on the workload cert-manager add-on, so this profile never needed
+# the cert-manager edge. Dropping it lets kube-prometheus-stack land the CRD
+# independently; the cert-manager HelmRelease then succeeds on Flux's next retry
+# (its install remediation retries — infrastructure/cert-manager/helmrelease.yaml).
 apiVersion: config.projectsveltos.io/v1beta1
 kind: ClusterProfile
 metadata:
@@ -29,7 +45,6 @@ spec:
   syncMode: ContinuousWithDriftDetection
   dependsOn:
     - flux-instance
-    - cert-manager
   clusterSelector:
     matchLabels:
       type: workload

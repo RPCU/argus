@@ -83,7 +83,8 @@ spec:
 ---
 # EventTrigger: when a TCP cert Secret changes on production, deploy it to the
 # workload cluster. The ConfigMap template creates a Secret named
-# kamaji-apiserver-proxy-tls in the kamaji-apiserver-proxy namespace.
+# kamaji-apiserver-proxy-tls in the `default` namespace (the proxy stack lives in
+# `default` — forced by the LRP serviceMatcher, see kamaji-apiserver-proxy.yaml).
 #
 # sourceClusterSelector matches the production cluster (where TCP lives).
 # destinationClusterSelector matches workload clusters with the proxy enabled.
@@ -113,7 +114,7 @@ spec:
 ---
 # EventTrigger: when a TCP CA Secret changes on production, deploy it to the
 # workload cluster. The ConfigMap template creates a Secret named
-# kamaji-apiserver-proxy-ca in the kamaji-apiserver-proxy namespace.
+# kamaji-apiserver-proxy-ca in the `default` namespace (see above).
 apiVersion: lib.projectsveltos.io/v1beta1
 kind: EventTrigger
 metadata:
@@ -156,7 +157,7 @@ data:
     kind: Secret
     metadata:
       name: kamaji-apiserver-proxy-tls
-      namespace: kamaji-apiserver-proxy
+      namespace: default
     type: Opaque
     data:
       cert.pem: {{ index .Resource.data "apiserver.crt" }}
@@ -177,6 +178,6 @@ data:
     kind: Secret
     metadata:
       name: kamaji-apiserver-proxy-ca
-      namespace: kamaji-apiserver-proxy
+      namespace: default
     data:
       ca.pem: {{ index .Resource.data "ca.crt" }}

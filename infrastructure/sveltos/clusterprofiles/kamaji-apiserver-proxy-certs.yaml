@@ -9,48 +9,67 @@
 # Production hosts the Kamaji control planes of MANY workload clusters at once
 # (test, lab, …), so its kamaji-tenants ns holds one cert Secret AND one CA
 # Secret PER tenant. Each tenant has its OWN CA, so the sync MUST route each
-# tenant's material to ITS OWN workload cluster. The previous design watched the
+# tenant's material to ITS OWN workload cluster. The ORIGINAL design watched the
 # raw Secrets and used a `destinationClusterSelector` matching ALL proxy-enabled
-# workload clusters with `oneForEvent`, so every tenant's CA fanned out to every
-# workload cluster — last event wins. That cross-contaminated `lab` with `test`'s
-# CA: Caddy then failed upstream TLS (`x509: certificate signed by unknown
-# authority`), returned 502 for every request to `kubernetes.default`, CoreDNS
-# could not reach the API server (stuck NotReady), the konnectivity agents could
-# not resolve the control-plane FQDN (ClusterFirst DNS → dead CoreDNS), the
+# workload clusters with `oneForEvent` and NO guard, so every tenant's CA fanned
+# out to every workload cluster — last event wins. That cross-contaminated `lab`
+# with `test`'s CA: Caddy failed upstream TLS (`x509: certificate signed by
+# unknown authority`), returned 502 for every request to `kubernetes.default`,
+# CoreDNS could not reach the API server (stuck NotReady), the konnectivity agents
+# could not resolve the control-plane FQDN (ClusterFirst DNS → dead CoreDNS), the
 # tenant API server lost all node connectivity, and the whole cluster wedged.
-# The raw Secrets carry ONLY the opaque TCP UUID (`kamaji.clastix.io/name`), not
-# the CAPI cluster name — so they cannot be correlated to a destination cluster.
 #
-# SOLUTION. Watch the `TenantControlPlane` CR instead: Kamaji's CAPO integration
-# stamps it with `cluster.x-k8s.io/cluster-name: <cluster>` (verified live on
-# test + lab), which is exactly the destination workload cluster's name. A single
-# EventTrigger then:
-#   - targets `destinationCluster` = that label (one specific cluster, NOT a
-#     broadcast selector) → each tenant's material lands ONLY on its own cluster;
-#   - references the tenant's `<tcp>-api-server-certificate` and `<tcp>-ca`
-#     Secrets DIRECTLY via `templateResourceRefs` (named after the TCP
-#     `metadata.name`, which is the exact prefix of those Secrets). These refs
-#     are resolved only at event/deploy time, never during EventTrigger hash
-#     evaluation (where `.Resource` is absent), so — unlike a `.Resource`-named
-#     `secretGenerator` — they emit no `map has no entry for key metadata`
-#     template errors on every reconcile;
-#   - renders the two workload-cluster Secrets Caddy mounts from them:
+# WHY A NAÏVE ONE-EVENTTRIGGER FIX IS IMPOSSIBLE (all verified live on Sveltos
+# v1.13.0 — the tenant Secrets live on PRODUCTION, a workload cluster, while
+# Sveltos' management cluster is MGMT):
+#   - The raw cert/CA Secrets carry ONLY the opaque TCP UUID
+#     (`kamaji.clastix.io/name`), NOT the CAPI cluster name — so a Secret event
+#     cannot name a `destinationCluster`.
+#   - `secretGenerator` and `templateResourceRefs` fetch from the MANAGEMENT
+#     cluster (mgmt) — where `kamaji-tenants` does not even exist — so neither can
+#     read the tenant Secrets on production. Only an EventSource `collectResources`
+#     ships resource DATA off a source cluster (into `.Resource`/`.Resources`).
+#   - `destinationClusterSelector.matchLabels` VALUES are NOT templated (taken
+#     literally), so a Secret event cannot be routed by a templated UUID.
+#   - The two template stages are mutually exclusive: the event-manager stage has
+#     the event data (`.Resource`/`.Resources`) but `.Cluster` = the SOURCE; the
+#     addon-controller (deploy) stage has `.Cluster` = the DESTINATION but NO
+#     `.Resources` (`can't evaluate field Resources in type currentClusterObjects`).
+#   Net: per-tenant routing needs `destinationCluster` templated from the event
+#   resource, which needs the CAPI cluster-name ON the resource that ALSO carries
+#   the DATA. Only the TenantControlPlane has the cluster-name; only the Secret has
+#   the data. So we bridge them in two phases.
+#
+# SOLUTION (two-phase, both phases use ONLY proven primitives).
+#
+#   PHASE 1 — stamp the cluster-name onto the tenant Secrets (in place, on
+#   production). `kamaji-tcp-label` watches the TenantControlPlane (it carries
+#   `cluster.x-k8s.io/cluster-name` AND its `metadata.name` is the exact prefix of
+#   the `-api-server-certificate` / `-ca` Secrets). It deploys BACK to the source
+#   cluster (`destinationCluster` = production itself) two label patches that add
+#   `cluster.x-k8s.io/cluster-name=<cluster>` to those two Secrets. (`.Resource` =
+#   the TCP, so both the cluster-name and the secret names are known here.)
+#
+#   PHASE 2 — sync the now-labelled Secrets per tenant. `kamaji-tcp-certs` watches
+#   the cert/CA Secrets (collectResources → `.Resource.data` bytes) and, because
+#   PHASE 1 added the cluster-name label, routes each Secret to its OWN workload
+#   cluster via `destinationCluster` templated from that label. The deployed
+#   template renders the matching Caddy Secret by the source's
+#   `kamaji.clastix.io/component` label:
 #       - kamaji-apiserver-proxy-tls (cert.pem, key.pem)  ← apiserver.crt/.key
 #       - kamaji-apiserver-proxy-ca  (ca.pem)             ← ca.crt
-#     in the `default` namespace (the proxy stack lives in `default` — forced by
-#     the LRP serviceMatcher, see kamaji-apiserver-proxy.yaml).
+#   in the `default` namespace (forced by the LRP serviceMatcher — see
+#   kamaji-apiserver-proxy.yaml). Cross-tenant contamination is now impossible:
+#   each Secret is delivered to exactly one cluster.
 #
-# Kamaji rotation re-fires the event (the TCP generation/secret checksum change),
-# re-pulling fresh material — no manual step on cert rotation.
+# Kamaji rotation re-fires PHASE 2 (secret checksum change) → fresh material, no
+# manual step. New tenants get labelled by PHASE 1 automatically.
 #
 # Requires cilium + gateway-api: CiliumLocalRedirectPolicy CRD + Gateway CRD.
----
-# EventSource: watch Kamaji TenantControlPlane CRs on the production cluster.
-# The TCP carries the CAPI `cluster.x-k8s.io/cluster-name` label (the destination
-# workload cluster) AND its `metadata.name` (kcp-<uuid>) is the exact prefix of
-# the per-tenant `-api-server-certificate` / `-ca` Secrets. collectResources so
-# the EventTrigger can template destinationCluster + the secretGenerator names off
-# the matched TCP.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 1: label the tenant Secrets with their CAPI cluster-name (on production).
+# ─────────────────────────────────────────────────────────────────────────────
 apiVersion: lib.projectsveltos.io/v1beta1
 kind: EventSource
 metadata:
@@ -63,29 +82,111 @@ spec:
       version: "v1alpha1"
       kind: "TenantControlPlane"
       namespace: "kamaji-tenants"
-      # Only TCPs that CAPI owns (carry the cluster-name label) — the label is
-      # required to route the sync to the right workload cluster.
+      # Only CAPI-owned TCPs (carry the cluster-name label used for routing).
       evaluate: |
         function evaluate()
           hs = {}
           hs.matching = false
           if obj.metadata.labels ~= nil then
-            if obj.metadata.labels["cluster.x-k8s.io/cluster-name"] ~= nil
-               and obj.metadata.labels["cluster.x-k8s.io/cluster-name"] ~= "" then
+            local n = obj.metadata.labels["cluster.x-k8s.io/cluster-name"]
+            if n ~= nil and n ~= "" then
               hs.matching = true
             end
           end
           return hs
         end
 ---
-# EventTrigger: when a tenant's TCP appears/changes on production, deploy its
-# cert + CA to THAT tenant's workload cluster only.
-#
-# destinationCluster (NOT destinationClusterSelector) pins the single target
-# cluster to the TCP's `cluster.x-k8s.io/cluster-name` label — this is the fix
-# for the cross-tenant fan-out. The two templateResourceRefs resolve the tenant's
-# real cert/CA Secrets (in the kamaji-tenants ns, named after the TCP) on the
-# management cluster, which the policyRef template then reads via getResource.
+apiVersion: lib.projectsveltos.io/v1beta1
+kind: EventTrigger
+metadata:
+  name: kamaji-tcp-label
+  namespace: projectsveltos
+spec:
+  # Source = production (hosts the TCPs). Deploy the patches BACK to production
+  # (destinationCluster = the same cluster) so the Secrets get labelled in place.
+  sourceClusterSelector:
+    matchLabels:
+      type: workload
+      cluster.x-k8s.io/cluster-name: production
+  destinationCluster:
+    apiVersion: cluster.x-k8s.io/v1beta1
+    kind: Cluster
+    name: production
+    namespace: mgmt
+  eventSourceName: kamaji-tcp
+  syncMode: ContinuousWithDriftDetection
+  reloader: true
+  oneForEvent: true
+  policyRefs:
+    - kind: ConfigMap
+      name: kamaji-tcp-label-patch
+      namespace: projectsveltos
+---
+# Two label patches (SSA) that stamp cluster.x-k8s.io/cluster-name onto this
+# tenant's cert + CA Secrets. `.Resource` = the matched TCP: its metadata.name is
+# the Secret name prefix and its label is the cluster name.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kamaji-tcp-label-patch
+  namespace: projectsveltos
+  annotations:
+    # instantiate (NOT template): the EventTrigger renders `.Resource` (the event
+    # TCP) at the event-manager stage into a fresh ConfigMap; the addon-controller
+    # then deploys that verbatim. `.Resource` is NOT available at deploy time.
+    projectsveltos.io/instantiate: ok
+data:
+  patch.yaml: |
+    {{- $tcp := .Resource.metadata.name }}
+    {{- $cluster := index .Resource.metadata.labels "cluster.x-k8s.io/cluster-name" }}
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: {{ $tcp }}-api-server-certificate
+      namespace: kamaji-tenants
+      labels:
+        cluster.x-k8s.io/cluster-name: {{ $cluster }}
+    ---
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: {{ $tcp }}-ca
+      namespace: kamaji-tenants
+      labels:
+        cluster.x-k8s.io/cluster-name: {{ $cluster }}
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 2: sync each labelled Secret to ITS OWN workload cluster.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: lib.projectsveltos.io/v1beta1
+kind: EventSource
+metadata:
+  name: kamaji-tcp-certs
+  namespace: projectsveltos
+spec:
+  collectResources: true
+  resourceSelectors:
+    - group: ""
+      version: "v1"
+      kind: "Secret"
+      namespace: "kamaji-tenants"
+      # Match the cert + CA Secrets, but ONLY once PHASE 1 has stamped the
+      # cluster-name (otherwise there is no destination to route to).
+      evaluate: |
+        function evaluate()
+          hs = {}
+          hs.matching = false
+          if obj.metadata.labels ~= nil then
+            local c = obj.metadata.labels["kamaji.clastix.io/component"]
+            local n = obj.metadata.labels["cluster.x-k8s.io/cluster-name"]
+            if (c == "api-server-certificate" or c == "ca")
+               and n ~= nil and n ~= "" then
+              hs.matching = true
+            end
+          end
+          return hs
+        end
+---
 apiVersion: lib.projectsveltos.io/v1beta1
 kind: EventTrigger
 metadata:
@@ -95,63 +196,41 @@ spec:
   sourceClusterSelector:
     matchLabels:
       type: workload
-      # Production cluster hosts the Kamaji TCPs.
       cluster.x-k8s.io/cluster-name: production
-  # Route to the ONE workload cluster this TCP belongs to. Templated from the
-  # matched TenantControlPlane's CAPI cluster-name label. The destination CAPI
-  # Cluster lives in the `mgmt` namespace on the management cluster.
+  # Route each Secret to the ONE workload cluster named by the label PHASE 1
+  # stamped on it. This is the per-tenant guard that replaces the fan-out.
   destinationCluster:
     apiVersion: cluster.x-k8s.io/v1beta1
     kind: Cluster
     name: '{{ index .Resource.metadata.labels "cluster.x-k8s.io/cluster-name" }}'
     namespace: mgmt
-  eventSourceName: kamaji-tcp
+  eventSourceName: kamaji-tcp-certs
   syncMode: ContinuousWithDriftDetection
   reloader: true
   oneForEvent: true
-  # Reference the tenant's API-server cert + CA Secrets DIRECTLY. `.Resource` is
-  # the matched TCP; its metadata.name is the exact prefix of the two Secrets in
-  # the kamaji-tenants ns. templateResourceRefs are instantiated ONLY at
-  # event/deploy time (never during EventTrigger hash evaluation, where
-  # `.Resource` is nil), so this avoids the `map has no entry for key metadata`
-  # errors a `.Resource`-named secretGenerator emits on every reconcile. The
-  # names resolve per event (one ClusterProfile per tenant), so concurrent
-  # tenants never collide.
-  templateResourceRefs:
-    - resource:
-        apiVersion: v1
-        kind: Secret
-        name: "{{ .Resource.metadata.name }}-api-server-certificate"
-        namespace: kamaji-tenants
-      identifier: TcpCert
-    - resource:
-        apiVersion: v1
-        kind: Secret
-        name: "{{ .Resource.metadata.name }}-ca"
-        namespace: kamaji-tenants
-      identifier: TcpCA
   policyRefs:
     - kind: ConfigMap
       name: kamaji-tcp-certs-deploy
       namespace: projectsveltos
 ---
-# The workload-cluster payload: the two Secrets Caddy mounts, rendered from the
-# generated TcpCert / TcpCA Secrets (read via getResource). `projectsveltos.io/
-# template: ok` instantiates the content against the templateResourceRefs on the
-# management cluster; the addon controller then deploys the instantiated Secrets
-# to the destination workload cluster.
-#   - cert.pem/key.pem  ← apiserver.crt / apiserver.key (api-server-certificate)
-#   - ca.pem            ← ca.crt (the tenant's OWN CA — this is what the fan-out
-#                         used to get wrong)
+# The workload-cluster payload. Instantiated in the EVENT context (so `.Resource`
+# = the matched source Secret, incl. `.data`). Renders the matching Caddy Secret
+# by the source's `kamaji.clastix.io/component` label.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: kamaji-tcp-certs-deploy
   namespace: projectsveltos
   annotations:
-    projectsveltos.io/template: ok
+    # instantiate (NOT template): the EventTrigger renders `.Resource` (the event
+    # Secret, incl. `.data`) at the event-manager stage into a fresh ConfigMap;
+    # the addon-controller deploys that verbatim. `.Resource` is NOT available at
+    # deploy time (`currentClusterObjects` has no `.Resource`).
+    projectsveltos.io/instantiate: ok
 data:
-  tls-secret.yaml: |
+  secret.yaml: |
+    {{- $component := index .Resource.metadata.labels "kamaji.clastix.io/component" }}
+    {{- if eq $component "api-server-certificate" }}
     apiVersion: v1
     kind: Secret
     metadata:
@@ -159,9 +238,9 @@ data:
       namespace: default
     type: Opaque
     data:
-      cert.pem: {{ index (getResource "TcpCert").data "apiserver.crt" }}
-      key.pem: {{ index (getResource "TcpCert").data "apiserver.key" }}
-  ca-secret.yaml: |
+      cert.pem: {{ index .Resource.data "apiserver.crt" }}
+      key.pem: {{ index .Resource.data "apiserver.key" }}
+    {{- else if eq $component "ca" }}
     apiVersion: v1
     kind: Secret
     metadata:
@@ -169,4 +248,5 @@ data:
       namespace: default
     type: Opaque
     data:
-      ca.pem: {{ index (getResource "TcpCA").data "ca.crt" }}
+      ca.pem: {{ index .Resource.data "ca.crt" }}
+    {{- end }}

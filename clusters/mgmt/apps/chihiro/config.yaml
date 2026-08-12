@@ -166,10 +166,6 @@ cluster:
           label: "25.11"
           constrain:
             version: ["v1.35.4"]
-        - value: "hephaestus-kaas-26.05-{{ chihiro.version }}"
-          label: "26.05"
-          constrain:
-            version: ["v1.36.1"]
         - value: "hephaestus-kaas-2-26.05-{{ chihiro.version }}"
           label: "26.05-2"
           constrain:

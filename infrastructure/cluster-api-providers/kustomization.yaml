@@ -10,6 +10,7 @@ resources:
   - control-plane-kubeadm.yaml
   - infrastructure-openstack.yaml
   - control-plane-kamaji.yaml
+  - rbac-kamaji-bootstrap.yaml
 #
 # NOTE: ORC (openstack-resource-controller) is a hard dependency of CAPO
 # v0.14.x (OpenStackMachine images resolve through ORC Image resources), but it

@@ -1,158 +1,159 @@
 # Dynamic cert sync for kamaji-apiserver-proxy — Sveltos Event Framework.
 #
 # PROBLEM. The kamaji-apiserver-proxy Caddy daemon needs the TCP's API server
-# cert + CA to terminate TLS. These Secrets live on the PRODUCTION cluster
+# cert + CA to terminate TLS and to verify its upstream (the tenant API server
+# behind the shared SNI Gateway). These Secrets live on the PRODUCTION cluster
 # (kamaji-tenants ns), but the proxy runs on WORKLOAD clusters.
 #
-# SOLUTION. Sveltos Event Framework watches TCP Secrets on production and syncs
-# them to the workload cluster:
+# ⚠️ PER-TENANT CORRELATION (do NOT regress to a broadcast fan-out).
+# Production hosts the Kamaji control planes of MANY workload clusters at once
+# (test, lab, …), so its kamaji-tenants ns holds one cert Secret AND one CA
+# Secret PER tenant. Each tenant has its OWN CA, so the sync MUST route each
+# tenant's material to ITS OWN workload cluster. The previous design watched the
+# raw Secrets and used a `destinationClusterSelector` matching ALL proxy-enabled
+# workload clusters with `oneForEvent`, so every tenant's CA fanned out to every
+# workload cluster — last event wins. That cross-contaminated `lab` with `test`'s
+# CA: Caddy then failed upstream TLS (`x509: certificate signed by unknown
+# authority`), returned 502 for every request to `kubernetes.default`, CoreDNS
+# could not reach the API server (stuck NotReady), the konnectivity agents could
+# not resolve the control-plane FQDN (ClusterFirst DNS → dead CoreDNS), the
+# tenant API server lost all node connectivity, and the whole cluster wedged.
+# The raw Secrets carry ONLY the opaque TCP UUID (`kamaji.clastix.io/name`), not
+# the CAPI cluster name — so they cannot be correlated to a destination cluster.
 #
-#   EventSource (production cluster):
-#     - watches `kamaji.clastix.io/component: api-server-certificate` Secrets
-#     - watches `kamaji.clastix.io/component: ca` Secrets
-#     - collectResources: true (full Secret data available for templating)
+# SOLUTION. Watch the `TenantControlPlane` CR instead: Kamaji's CAPO integration
+# stamps it with `cluster.x-k8s.io/cluster-name: <cluster>` (verified live on
+# test + lab), which is exactly the destination workload cluster's name. A single
+# EventTrigger then:
+#   - targets `destinationCluster` = that label (one specific cluster, NOT a
+#     broadcast selector) → each tenant's material lands ONLY on its own cluster;
+#   - uses two `secretGenerator`s to pull the tenant's `<tcp>-api-server-
+#     certificate` and `<tcp>-ca` Secret DATA (named after the TCP
+#     `metadata.name`, which is the exact prefix of those Secrets) into the
+#     management cluster as event-scoped Secrets;
+#   - references those generated Secrets via `templateResourceRefs` and renders
+#     the two workload-cluster Secrets Caddy mounts:
+#       - kamaji-apiserver-proxy-tls (cert.pem, key.pem)  ← apiserver.crt/.key
+#       - kamaji-apiserver-proxy-ca  (ca.pem)             ← ca.crt
+#     in the `default` namespace (the proxy stack lives in `default` — forced by
+#     the LRP serviceMatcher, see kamaji-apiserver-proxy.yaml).
 #
-#   EventTrigger (production → workload):
-#     - sourceClusterSelector: production cluster
-#     - destinationClusterSelector: workload clusters with kamaji-apiserver-proxy
-#     - creates a ConfigMap on mgmt that deploys the cert Secret to workload
-#
-# The EventTrigger creates a nested ClusterProfile per matching TCP that deploys
-# the cert Secret to the workload cluster. Caddy picks up the cert via volume
-# mount (Secret name: kamaji-apiserver-proxy-tls).
-#
-# NOTE: two EventSources (cert + CA) are needed because Sveltos templates can't
-# easily combine fields from different collected resources into one Secret.
-# Caddy mounts both Secrets as separate volumes.
+# Kamaji rotation re-fires the event (the TCP generation/secret checksum change),
+# re-pulling fresh material — no manual step on cert rotation.
 #
 # Requires cilium + gateway-api: CiliumLocalRedirectPolicy CRD + Gateway CRD.
 ---
-# EventSource: watch TCP API server cert Secrets on production cluster.
-# Fires when a cert Secret is created/updated (e.g. Kamaji rotation).
+# EventSource: watch Kamaji TenantControlPlane CRs on the production cluster.
+# The TCP carries the CAPI `cluster.x-k8s.io/cluster-name` label (the destination
+# workload cluster) AND its `metadata.name` (kcp-<uuid>) is the exact prefix of
+# the per-tenant `-api-server-certificate` / `-ca` Secrets. collectResources so
+# the EventTrigger can template destinationCluster + the secretGenerator names off
+# the matched TCP.
 apiVersion: lib.projectsveltos.io/v1beta1
 kind: EventSource
 metadata:
-  name: kamaji-tcp-cert
+  name: kamaji-tcp
   namespace: projectsveltos
 spec:
   collectResources: true
   resourceSelectors:
-    - group: ""
-      version: "v1"
-      kind: "Secret"
+    - group: "kamaji.clastix.io"
+      version: "v1alpha1"
+      kind: "TenantControlPlane"
       namespace: "kamaji-tenants"
-      # Match TCP API server cert Secrets (label: kamaji.clastix.io/component=api-server-certificate)
+      # Only TCPs that CAPI owns (carry the cluster-name label) — the label is
+      # required to route the sync to the right workload cluster.
       evaluate: |
         function evaluate()
           hs = {}
           hs.matching = false
           if obj.metadata.labels ~= nil then
-            if obj.metadata.labels["kamaji.clastix.io/component"] == "api-server-certificate" then
+            if obj.metadata.labels["cluster.x-k8s.io/cluster-name"] ~= nil
+               and obj.metadata.labels["cluster.x-k8s.io/cluster-name"] ~= "" then
               hs.matching = true
             end
           end
           return hs
         end
 ---
-# EventSource: watch TCP CA Secrets on production cluster.
-# Fires when a CA Secret is created/updated.
-apiVersion: lib.projectsveltos.io/v1beta1
-kind: EventSource
-metadata:
-  name: kamaji-tcp-ca
-  namespace: projectsveltos
-spec:
-  collectResources: true
-  resourceSelectors:
-    - group: ""
-      version: "v1"
-      kind: "Secret"
-      namespace: "kamaji-tenants"
-      # Match TCP CA Secrets (label: kamaji.clastix.io/component=ca)
-      evaluate: |
-        function evaluate()
-          hs = {}
-          hs.matching = false
-          if obj.metadata.labels ~= nil then
-            if obj.metadata.labels["kamaji.clastix.io/component"] == "ca" then
-              hs.matching = true
-            end
-          end
-          return hs
-        end
----
-# EventTrigger: when a TCP cert Secret changes on production, deploy it to the
-# workload cluster. The ConfigMap template creates a Secret named
-# kamaji-apiserver-proxy-tls in the `default` namespace (the proxy stack lives in
-# `default` — forced by the LRP serviceMatcher, see kamaji-apiserver-proxy.yaml).
+# EventTrigger: when a tenant's TCP appears/changes on production, deploy its
+# cert + CA to THAT tenant's workload cluster only.
 #
-# sourceClusterSelector matches the production cluster (where TCP lives).
-# destinationClusterSelector matches workload clusters with the proxy enabled.
+# destinationCluster (NOT destinationClusterSelector) pins the single target
+# cluster to the TCP's `cluster.x-k8s.io/cluster-name` label — this is the fix
+# for the cross-tenant fan-out. The two secretGenerators materialise the tenant's
+# real cert/CA Secret DATA (from production's kamaji-tenants ns, named after the
+# TCP) into the management cluster as event-scoped Secrets, which the policyRef
+# template then reads via templateResourceRefs.
 apiVersion: lib.projectsveltos.io/v1beta1
 kind: EventTrigger
 metadata:
-  name: kamaji-tcp-cert
+  name: kamaji-tcp-certs
   namespace: projectsveltos
 spec:
   sourceClusterSelector:
     matchLabels:
       type: workload
-      # Production cluster has this label (it hosts Kamaji TCPs)
+      # Production cluster hosts the Kamaji TCPs.
       cluster.x-k8s.io/cluster-name: production
-  destinationClusterSelector:
-    matchLabels:
-      type: workload
-      sveltos.argus.rpcu.io/kamaji-apiserver-proxy: enabled
-  eventSourceName: kamaji-tcp-cert
+  # Route to the ONE workload cluster this TCP belongs to. Templated from the
+  # matched TenantControlPlane's CAPI cluster-name label. The destination CAPI
+  # Cluster lives in the `mgmt` namespace on the management cluster.
+  destinationCluster:
+    apiVersion: cluster.x-k8s.io/v1beta1
+    kind: Cluster
+    name: '{{ index .Resource.metadata.labels "cluster.x-k8s.io/cluster-name" }}'
+    namespace: mgmt
+  eventSourceName: kamaji-tcp
   syncMode: ContinuousWithDriftDetection
   reloader: true
   oneForEvent: true
+  # Pull the tenant's API-server cert + CA Secret DATA into the management
+  # cluster. `.Resource` is the matched TCP; its metadata.name is the exact
+  # prefix of the two Secrets in production's kamaji-tenants ns. The generated
+  # Secrets are named per-cluster so concurrent tenants never collide.
+  secretGenerator:
+    - name: "{{ .Resource.metadata.name }}-api-server-certificate"
+      namespace: kamaji-tenants
+      nameFormat: "kamaji-tcp-cert-{{ .Cluster.metadata.name }}"
+    - name: "{{ .Resource.metadata.name }}-ca"
+      namespace: kamaji-tenants
+      nameFormat: "kamaji-tcp-ca-{{ .Cluster.metadata.name }}"
+  templateResourceRefs:
+    - resource:
+        apiVersion: v1
+        kind: Secret
+        name: "kamaji-tcp-cert-{{ .Cluster.metadata.name }}"
+        namespace: projectsveltos
+      identifier: TcpCert
+    - resource:
+        apiVersion: v1
+        kind: Secret
+        name: "kamaji-tcp-ca-{{ .Cluster.metadata.name }}"
+        namespace: projectsveltos
+      identifier: TcpCA
   policyRefs:
     - kind: ConfigMap
-      name: kamaji-tcp-cert-deploy
+      name: kamaji-tcp-certs-deploy
       namespace: projectsveltos
 ---
-# EventTrigger: when a TCP CA Secret changes on production, deploy it to the
-# workload cluster. The ConfigMap template creates a Secret named
-# kamaji-apiserver-proxy-ca in the `default` namespace (see above).
-apiVersion: lib.projectsveltos.io/v1beta1
-kind: EventTrigger
-metadata:
-  name: kamaji-tcp-ca
-  namespace: projectsveltos
-spec:
-  sourceClusterSelector:
-    matchLabels:
-      type: workload
-      cluster.x-k8s.io/cluster-name: production
-  destinationClusterSelector:
-    matchLabels:
-      type: workload
-      sveltos.argus.rpcu.io/kamaji-apiserver-proxy: enabled
-  eventSourceName: kamaji-tcp-ca
-  syncMode: ContinuousWithDriftDetection
-  reloader: true
-  oneForEvent: true
-  policyRefs:
-    - kind: ConfigMap
-      name: kamaji-tcp-ca-deploy
-      namespace: projectsveltos
----
-# ConfigMap template: deploys the TCP API server cert Secret to the workload
-# cluster. The .Resource variable is the matched Secret from production.
-# Maps apiserver.crt → cert.pem, apiserver.key → key.pem for Caddy.
-# Annotation "projectsveltos.io/instantiate: ok" tells the EventTrigger to
-# process Go templates using event data. The addon controller does NOT
-# re-template — it deploys the already-instantiated content.
+# The workload-cluster payload: the two Secrets Caddy mounts, rendered from the
+# generated TcpCert / TcpCA Secrets (read via getResource). `projectsveltos.io/
+# template: ok` instantiates the content against the templateResourceRefs on the
+# management cluster; the addon controller then deploys the instantiated Secrets
+# to the destination workload cluster.
+#   - cert.pem/key.pem  ← apiserver.crt / apiserver.key (api-server-certificate)
+#   - ca.pem            ← ca.crt (the tenant's OWN CA — this is what the fan-out
+#                         used to get wrong)
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: kamaji-tcp-cert-deploy
+  name: kamaji-tcp-certs-deploy
   namespace: projectsveltos
   annotations:
-    projectsveltos.io/instantiate: ok
+    projectsveltos.io/template: ok
 data:
-  cert-secret.yaml: |
+  tls-secret.yaml: |
     apiVersion: v1
     kind: Secret
     metadata:
@@ -160,24 +161,14 @@ data:
       namespace: default
     type: Opaque
     data:
-      cert.pem: {{ index .Resource.data "apiserver.crt" }}
-      key.pem: {{ index .Resource.data "apiserver.key" }}
----
-# ConfigMap template: deploys the TCP CA Secret to the workload cluster.
-# Maps ca.crt → ca.pem for Caddy's trusted CA bundle.
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: kamaji-tcp-ca-deploy
-  namespace: projectsveltos
-  annotations:
-    projectsveltos.io/instantiate: ok
-data:
+      cert.pem: {{ index (getResource "TcpCert").data "apiserver.crt" }}
+      key.pem: {{ index (getResource "TcpCert").data "apiserver.key" }}
   ca-secret.yaml: |
     apiVersion: v1
     kind: Secret
     metadata:
       name: kamaji-apiserver-proxy-ca
       namespace: default
+    type: Opaque
     data:
-      ca.pem: {{ index .Resource.data "ca.crt" }}
+      ca.pem: {{ index (getResource "TcpCA").data "ca.crt" }}

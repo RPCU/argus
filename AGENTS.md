@@ -425,13 +425,20 @@ cert-manager]`) pushes the Gateway (`*.cluster.rpcu.lan`, `vault-issuer`),
 - **cluster-api-operator/** (v0.27.0, ns capi-operator-system) — chart-managed
   cert-manager disabled; providers managed separately.
 - **cluster-api-providers/** — provider CRs (`operator.cluster.x-k8s.io/v1alpha2`):
-  CoreProvider cluster-api v1.13.2, BootstrapProvider kubeadm v1.13.2,
-  ControlPlaneProvider kubeadm v1.13.2, InfrastructureProvider openstack/CAPO
-  v0.14.4 (configSecret capo-variables), ControlPlaneProvider kamaji v0.20.0.
+  CoreProvider cluster-api v1.14.0, BootstrapProvider kubeadm v1.14.0,
+  ControlPlaneProvider kubeadm v1.14.0, InfrastructureProvider openstack/CAPO
+  v0.14.7 (configSecret capo-variables), ControlPlaneProvider kamaji v0.20.0.
   `namespaces.yaml` (capi-system, capi-kubeadm-_-system, capo-system).
   `clusterctl._/v1alpha3`inventory CRs are EXCLUDED (CRD not installed by the
-operator).`capo-variables` is created **manually** (README). ORC is a hard
+operator).`capo-variables`is created **manually** (README). ORC is a hard
   CAPO dependency but is a plain Flux Kustomization, NOT a provider CR.
+ `rbac-kamaji-bootstrap.yaml`(ClusterRole+Binding
+ `capi-kubeadm-bootstrap-kamaji-read`) grants the kubeadm bootstrap SA
+  (`capi-kubeadm-bootstrap-manager`in`capi-kubeadm-bootstrap-system`)
+  get/list/watch on `kamajicontrolplanes`. REQUIRED since CAPI v1.14.0
+  (PR #13433): the bootstrap controller reads `Cluster.spec.controlPlaneRef`to
+  resolve the control-plane version, and on Kamaji-backed clusters that`get`   is forbidden without this bridge (upstream bootstrap RBAC only covers
+  `kubeadmcontrolplanes`).
 - **orc/** (v2.5.0) — standalone, fetched by URL (CAPO image resolution).
 - **kamaji/** (chart `0.0.0+latest`, image `clastix/kamaji:26.8.2-edge`, ns
   kamaji-system) — hosted control-plane manager. `helmrelease-crds.yaml`
@@ -1055,7 +1062,19 @@ env; pre-commit quality gates; 1-minute Git sync.
 
 ---
 
-**Last Updated**: August 2026 — **Fixed the kamaji-apiserver-proxy
+**Last Updated**: August 2026 — **Granted the kubeadm bootstrap SA read on
+KamajiControlPlane (CAPI v1.14.0 compat).** As of Cluster API v1.14.0 (PR
+kubernetes-sigs/cluster-api#13433) the kubeadm bootstrap controller resolves the
+control-plane version by reading `Cluster.spec.controlPlaneRef`; on Kamaji-backed
+clusters that `get kamajicontrolplanes` is forbidden for the SA
+`system:serviceaccount:capi-kubeadm-bootstrap-system:capi-kubeadm-bootstrap-manager` —
+upstream bootstrap RBAC only covers `kubeadmcontrolplanes` — so DataSecret
+generation fails with `failed to read control plane version: ... is forbidden`.
+Added `infrastructure/cluster-api-providers/rbac-kamaji-bootstrap.yaml`
+(ClusterRole + ClusterRoleBinding `capi-kubeadm-bootstrap-kamaji-read`, get/list/watch
+on `kamajicontrolplanes`) and wired it into that dir's `kustomization.yaml`.
+`kustomize build infrastructure/cluster-api-providers` green. — Prior:
+**Fixed the kamaji-apiserver-proxy
 CiliumLocalRedirectPolicy on Cilium ≥1.20.** The LRP used `addressMatcher` on the
 `kubernetes.default` ClusterIP (`10.107.0.1:443`); on 1.20 Cilium hard-refuses an
 `addressMatcher` LRP whose IP is owned by an existing Service

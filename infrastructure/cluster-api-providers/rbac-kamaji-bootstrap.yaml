@@ -1,0 +1,50 @@
+# Cross-provider RBAC bridge: let the kubeadm bootstrap controller read
+# KamajiControlPlane objects.
+#
+# As of Cluster API v1.14.0 (PR kubernetes-sigs/cluster-api#13433, "Write kubeadm
+# control plane version file for workers to use to fetch the matching kubeadm
+# binary") the kubeadm bootstrap controller resolves the control-plane Kubernetes
+# version by reading the object referenced by `Cluster.spec.controlPlaneRef`. When
+# a Cluster uses a KamajiControlPlane instead of a KubeadmControlPlane, the
+# controller issues a `get kamajicontrolplanes.controlplane.cluster.x-k8s.io`.
+#
+# Upstream kubeadm-bootstrap RBAC only grants access to `kubeadmcontrolplanes`, so
+# on Kamaji-backed clusters reconciliation fails with:
+#   failed to read control plane version: ... kamajicontrolplanes.controlplane.cluster.x-k8s.io
+#   "<name>" is forbidden: User "system:serviceaccount:capi-kubeadm-bootstrap-system:capi-kubeadm-bootstrap-manager"
+#   cannot get resource "kamajicontrolplanes" in API group "controlplane.cluster.x-k8s.io"
+#
+# The controller reads the resource via an APIReader (no /status), so get/list/watch
+# on `kamajicontrolplanes` is sufficient. This is standalone cluster-scoped glue and
+# is intentionally NOT expressed as a spec.patch on the Kamaji ControlPlaneProvider
+# (that mechanism patches the Kamaji provider's own manifests, not this SA).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: capi-kubeadm-bootstrap-kamaji-read
+  labels:
+    app.kubernetes.io/name: cluster-api-providers
+rules:
+  - apiGroups:
+      - controlplane.cluster.x-k8s.io
+    resources:
+      - kamajicontrolplanes
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: capi-kubeadm-bootstrap-kamaji-read
+  labels:
+    app.kubernetes.io/name: cluster-api-providers
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: capi-kubeadm-bootstrap-kamaji-read
+subjects:
+  - kind: ServiceAccount
+    name: capi-kubeadm-bootstrap-manager
+    namespace: capi-kubeadm-bootstrap-system

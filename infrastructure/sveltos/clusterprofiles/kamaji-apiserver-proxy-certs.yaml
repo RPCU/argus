@@ -27,12 +27,14 @@
 # EventTrigger then:
 #   - targets `destinationCluster` = that label (one specific cluster, NOT a
 #     broadcast selector) → each tenant's material lands ONLY on its own cluster;
-#   - uses two `secretGenerator`s to pull the tenant's `<tcp>-api-server-
-#     certificate` and `<tcp>-ca` Secret DATA (named after the TCP
-#     `metadata.name`, which is the exact prefix of those Secrets) into the
-#     management cluster as event-scoped Secrets;
-#   - references those generated Secrets via `templateResourceRefs` and renders
-#     the two workload-cluster Secrets Caddy mounts:
+#   - references the tenant's `<tcp>-api-server-certificate` and `<tcp>-ca`
+#     Secrets DIRECTLY via `templateResourceRefs` (named after the TCP
+#     `metadata.name`, which is the exact prefix of those Secrets). These refs
+#     are resolved only at event/deploy time, never during EventTrigger hash
+#     evaluation (where `.Resource` is absent), so — unlike a `.Resource`-named
+#     `secretGenerator` — they emit no `map has no entry for key metadata`
+#     template errors on every reconcile;
+#   - renders the two workload-cluster Secrets Caddy mounts from them:
 #       - kamaji-apiserver-proxy-tls (cert.pem, key.pem)  ← apiserver.crt/.key
 #       - kamaji-apiserver-proxy-ca  (ca.pem)             ← ca.crt
 #     in the `default` namespace (the proxy stack lives in `default` — forced by
@@ -81,10 +83,9 @@ spec:
 #
 # destinationCluster (NOT destinationClusterSelector) pins the single target
 # cluster to the TCP's `cluster.x-k8s.io/cluster-name` label — this is the fix
-# for the cross-tenant fan-out. The two secretGenerators materialise the tenant's
-# real cert/CA Secret DATA (from production's kamaji-tenants ns, named after the
-# TCP) into the management cluster as event-scoped Secrets, which the policyRef
-# template then reads via templateResourceRefs.
+# for the cross-tenant fan-out. The two templateResourceRefs resolve the tenant's
+# real cert/CA Secrets (in the kamaji-tenants ns, named after the TCP) on the
+# management cluster, which the policyRef template then reads via getResource.
 apiVersion: lib.projectsveltos.io/v1beta1
 kind: EventTrigger
 metadata:
@@ -108,29 +109,26 @@ spec:
   syncMode: ContinuousWithDriftDetection
   reloader: true
   oneForEvent: true
-  # Pull the tenant's API-server cert + CA Secret DATA into the management
-  # cluster. `.Resource` is the matched TCP; its metadata.name is the exact
-  # prefix of the two Secrets in production's kamaji-tenants ns. The generated
-  # Secrets are named per-cluster so concurrent tenants never collide.
-  secretGenerator:
-    - name: "{{ .Resource.metadata.name }}-api-server-certificate"
-      namespace: kamaji-tenants
-      nameFormat: "kamaji-tcp-cert-{{ .Cluster.metadata.name }}"
-    - name: "{{ .Resource.metadata.name }}-ca"
-      namespace: kamaji-tenants
-      nameFormat: "kamaji-tcp-ca-{{ .Cluster.metadata.name }}"
+  # Reference the tenant's API-server cert + CA Secrets DIRECTLY. `.Resource` is
+  # the matched TCP; its metadata.name is the exact prefix of the two Secrets in
+  # the kamaji-tenants ns. templateResourceRefs are instantiated ONLY at
+  # event/deploy time (never during EventTrigger hash evaluation, where
+  # `.Resource` is nil), so this avoids the `map has no entry for key metadata`
+  # errors a `.Resource`-named secretGenerator emits on every reconcile. The
+  # names resolve per event (one ClusterProfile per tenant), so concurrent
+  # tenants never collide.
   templateResourceRefs:
     - resource:
         apiVersion: v1
         kind: Secret
-        name: "kamaji-tcp-cert-{{ .Cluster.metadata.name }}"
-        namespace: projectsveltos
+        name: "{{ .Resource.metadata.name }}-api-server-certificate"
+        namespace: kamaji-tenants
       identifier: TcpCert
     - resource:
         apiVersion: v1
         kind: Secret
-        name: "kamaji-tcp-ca-{{ .Cluster.metadata.name }}"
-        namespace: projectsveltos
+        name: "{{ .Resource.metadata.name }}-ca"
+        namespace: kamaji-tenants
       identifier: TcpCA
   policyRefs:
     - kind: ConfigMap

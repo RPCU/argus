@@ -11,6 +11,8 @@ socketLB:
   # clusters/openstack/cilium.yaml.
   hostNamespaceOnly: false
 kubeProxyReplacement: true
+operator:
+  replicas: 1
 # Enable CiliumLocalRedirectPolicy — used to redirect in-cluster
 # kubernetes.default.svc traffic to a node-local SNI-rewrite proxy when the
 # tenant API server is fronted by a shared SNI Gateway (Kamaji externalCluster-

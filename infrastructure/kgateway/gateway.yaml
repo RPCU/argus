@@ -50,7 +50,11 @@ spec:
         limits:
           memory: 4Gi
         requests:
-          memory: 1Gi
+          # Envoy dataplane. 7d mem (Mimir): openstack (busiest) ~195Mi max,
+          # mgmt 29-153Mi, production 26-72Mi. 1Gi request was ~5x the busiest
+          # pod; trimmed to 256Mi (~1.3x peak). Limit kept at 4Gi for burst
+          # headroom (config reloads / connection floods).
+          memory: 256Mi
     service:
       type: LoadBalancer
       extraAnnotations:

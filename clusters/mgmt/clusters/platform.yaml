@@ -30,7 +30,7 @@ spec:
     classRef:
       name: openstack-kamaji-external
     controlPlane:
-      replicas: 3
+      replicas: 1
     variables:
       - name: identityRef
         value:

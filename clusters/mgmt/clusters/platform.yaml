@@ -1,0 +1,65 @@
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: Cluster
+metadata:
+  name: platform
+  namespace: mgmt
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+    sveltos.argus.rpcu.io/capo-version: default
+  labels:
+    type: workload
+    cluster.x-k8s.io/cluster-name: platform
+    sveltos.argus.rpcu.io/cilium: enabled
+    sveltos.argus.rpcu.io/cert-manager: enabled
+    sveltos.argus.rpcu.io/external-dns: enabled
+    sveltos.argus.rpcu.io/gateway-api: enabled
+    sveltos.argus.rpcu.io/kamaji-apiserver-proxy: enabled
+    sveltos.argus.rpcu.io/oidc-rbac: enabled
+    sveltos.argus.rpcu.io/openstack-integration: enabled
+    sveltos.argus.rpcu.io/vault-auth: enabled
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+        - 10.245.0.0/16
+    services:
+      cidrBlocks:
+        - 10.105.0.0/16
+    serviceDomain: platform.local
+  topology:
+    classRef:
+      name: openstack-kamaji-external
+    controlPlane:
+      replicas: 3
+    variables:
+      - name: identityRef
+        value:
+          cloudName: production
+          name: mgmt-cloud-config
+      - name: externalNetworkId
+        value: 1cfd69da-057c-4748-a0d4-de5b0ca77db2
+      - name: imageName
+        value: hephaestus-kaas-2-26.05-v1.36.1
+      - name: oidc
+        value:
+          clientID: "377050089077613929"
+          enabled: true
+          issuerURL: https://rpcu-gabeck.eu1.zitadel.cloud
+      - name: managedSubnetCIDR
+        value: 192.168.5.0/24
+      - name: gatewayHostname
+        value: platform.kcp.production.rpcu.lan
+      - name: gatewayName
+        value: https
+      - name: externalKubeconfigSecretName
+        value: production-kubeconfig
+    version: v1.36.1
+    workers:
+      machineDeployments:
+        - class: default-worker
+          name: worker
+          replicas: 2
+          variables:
+            overrides:
+              - name: workerFlavor
+                value: xmedium

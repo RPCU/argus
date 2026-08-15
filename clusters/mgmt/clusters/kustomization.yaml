@@ -2,3 +2,4 @@ namespace: mgmt
 resources:
   - mgmt.yaml
   - production.yaml
+  - platform.yaml

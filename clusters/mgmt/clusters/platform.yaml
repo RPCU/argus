@@ -58,7 +58,7 @@ spec:
       machineDeployments:
         - class: default-worker
           name: worker
-          replicas: 2
+          replicas: 3
           variables:
             overrides:
               - name: workerFlavor

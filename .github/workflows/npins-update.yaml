@@ -27,7 +27,7 @@ jobs:
       - name: Upgrade npins lock format
         run: nix run nixpkgs#npins -- upgrade
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "chore(deps): upgrade npins lock format"
@@ -75,7 +75,7 @@ jobs:
         run: nix run nixpkgs#npins -- update ${{ matrix.pin }}
       - name: Create Pull Request
         id: cpr
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "chore(deps): update ${{ matrix.pin }}"

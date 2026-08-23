@@ -26,6 +26,6 @@ kind: Provider
 metadata:
   name: provider-vault
 spec:
-  package: xpkg.upbound.io/upbound/provider-vault:v4.0.2
+  package: xpkg.upbound.io/upbound/provider-vault:v4.0.3
   runtimeConfigRef:
     name: provider-vault

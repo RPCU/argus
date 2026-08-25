@@ -192,8 +192,25 @@ FALSE` **unconditionally**. The cert-manager base NEVER emits a ServiceMonitor
   cloud); VM counts via `openstack_nova_total_vms` (=11) /
   `openstack_nova_limits_instances_used`; per-VM state via
   `openstack_nova_server_status` (4=ERROR, 0=ACTIVE, 11=SHUTOFF).
-- **mimir/** (chart v5.6.0) — `mimir-distributed` monolithic, filesystem, 5Gi PVC,
-  72h retention. `httproute.yaml` `mimir.mgmt.rpcu.lan`. Ruler disabled.
+- **mimir/** (chart v6.2.0) — `mimir-distributed`, 1 replica/component, **S3
+  (Ceph RGW) block storage**, 72h retention. `httproute.yaml`
+  `mimir.mgmt.rpcu.lan`. Ruler/alertmanager/Kafka-ingest disabled. **Storage MUST
+  be S3, not filesystem** (§8 "Mimir storage"): the chart runs
+  ingester/compactor/store-gateway as separate pods each with its OWN PVC, so
+  `backend: filesystem` gives the ingester a private "bucket" the compactor can't
+  see → compactor `users=0`, never compacts, never applies retention → ingester
+  PVC grows unbounded (and long-term queries return nothing). `common.storage`
+  points at `s3.rpcu.vpn` (bucket `mimir`, the OBC in
+  `infrastructure/rook/configs/mimir-bucket.yaml` on openstack); creds via the
+  `mimir-s3` ExternalSecret (`externalsecret.yaml`, Vault `secrets-mgmt/mimir`)
+  injected with `global.extraEnvFrom` + Mimir `-config.expand-env`. TLS:
+  `insecure: false` + `http.insecure_skip_verify: true` (HTTPS to the gateway,
+  skip verify — mgmt has no trust bundle); `bucket_lookup_type: path` +
+  `dualstack_enabled: false` for Ceph. Ingester PVC 10Gi (head+WAL only),
+  compactor 10Gi (compaction scratch), store-gateway 5Gi (index-headers). Set
+  ONLY `common.storage` (blocks*storage inherits). Bootstrap: seed Vault +
+  `mimir` policy first (`infrastructure/vault/README.md`), else pods crash on the
+  missing `${AWS*\*}` env.
 - **grafana-operator/** (v5.16.0) — watches all namespaces (DaaS).
 - **grafana/** (Operator CRDs v1beta1) — `grafana.yaml` (5Gi PVC, label
   `dashboards: grafana-central`, Zitadel OIDC `grafana-oidc-conn`),
@@ -937,6 +954,31 @@ hyperconverged nodes → probe timeouts → restart loops.
   IN PLACE, do NOT raise the immutable `volumeClaimTemplates`/chart value). Mimir
   chart 6.x silently enabled Kafka/ingest-storage — disable BOTH
   `kafka.enabled: false` + `mimir.structuredConfig.ingest_storage.enabled: false`.
+- **Mimir storage MUST be S3, not filesystem** (mgmt, 2026-08). The ingester PVC
+  grew unbounded (47.8 GB / 91% of a 50Gi vol, +~3 GB/day) with 355 uncompacted
+  `level:1` blocks back 34 days despite a 72h `compactor_blocks_retention_period`.
+  ROOT CAUSE: `common.storage.backend: filesystem` is NOT a shared object store.
+  The mimir-distributed chart runs ingester/compactor/store-gateway as SEPARATE
+  pods, each with its OWN PVC, so the ingester ships blocks to a `/data/blocks`
+  only IT can see. The compactor (own empty PVC) logs `discovered users from
+bucket users=0` every cycle → never compacts level-1→N, never writes
+  `bucket-index.json.gz`, never creates `deletion-mark.json`, never applies
+  retention. Store-gateway loads 0 blocks → any query older than the 13h ingester
+  head silently returns nothing. Tuning retention/PVC size does NOT fix it (growth
+  just slows). Fix: point `common.storage` at Ceph S3 (`s3.rpcu.vpn`, bucket
+  `mimir` via the OBC on openstack) so all components share ONE bucket; then
+  compaction + retention work and the ingester PVC drops to head+WAL (~2-3 GiB,
+  now 10Gi). Diagnose live: `kubectl debug <ingester> --image=busybox --target=…
+--custom={runAsUser:0}` then `du -sh /proc/1/root/data/*` (distroless — no
+  shell/df/du in the container); check compactor logs for `users=0`. TLS to the
+  RGW gateway is `insecure: false` + `http.insecure_skip_verify: true` (HTTPS,
+  skip verify), NOT `insecure: true` (which means PLAINTEXT http and fails on
+  443); also `dualstack_enabled: false` + `bucket_lookup_type: path` for Ceph.
+  Shrinking the ingester PVC (50Gi→10Gi) needs a StatefulSet recreate
+  (`--cascade=orphan` + delete pod + delete PVC) — volumeClaimTemplates are
+  immutable and CSI can't shrink; the discarded data is just WAL/head, replayed
+  from remote*write. GITOPS ORDER: seed Vault `secrets-mgmt/mimir` + the `mimir`
+  policy BEFORE Flux reconciles, or the pods crash on the missing `${AWS*\*}` env.
 - **KSM customResourceState for Flux CRDs**: `gotk_resource_info`
   (`ready`/`suspended`/`revision`). Flux CRD RBAC under top-level
   `kube-state-metrics.rbac.extraRules` (the nested `customResourceState.rbac` is
@@ -1062,7 +1104,35 @@ env; pre-commit quality gates; 1-minute Git sync.
 
 ---
 
-**Last Updated**: August 2026 — **Granted the kubeadm bootstrap SA read on
+**Last Updated**: August 2026 — **Moved Mimir off the filesystem backend onto
+Ceph S3 to stop the unbounded ingester-PVC growth.** The `storage-mimir-ingester-0`
+PVC had climbed to 47.8 GB / 91% of 50Gi (+~3 GB/day) holding 355 uncompacted
+`level:1` blocks dating back 34 days, despite a 72h retention. Verified live that
+`common.storage.backend: filesystem` is the root cause: the mimir-distributed
+chart runs ingester/compactor/store-gateway as separate pods each with its own
+PVC, so the ingester shipped blocks to a `/data/blocks` only it could see; the
+compactor logged `discovered users from bucket users=0`, never compacted, never
+wrote a `bucket-index.json.gz` or any `deletion-mark.json`, and never applied
+retention (and the store-gateway loaded 0 blocks, so long-term queries returned
+nothing). Fix: added an `ObjectBucketClaim` `mimir-bucket`
+(`infrastructure/rook/configs/mimir-bucket.yaml`, reusing the `ceph-bucket`
+StorageClass) creating bucket `mimir` on the openstack Ceph RGW; a `mimir-s3`
+`ExternalSecret` (`infrastructure/mimir/externalsecret.yaml`, Vault
+`secrets-mgmt/mimir`) rendering the OBC creds; and switched
+`infrastructure/mimir/helmrelease.yaml` `common.storage` to `s3` (endpoint
+`s3.rpcu.vpn`, `insecure: false` + `http.insecure_skip_verify: true`,
+`bucket_lookup_type: path`, `dualstack_enabled: false`, creds via
+`global.extraEnvFrom` → `${AWS_*}` expanded by `-config.expand-env`). Removed the
+filesystem dirs, shrank the ingester PVC 50Gi→10Gi (head+WAL only; needs a
+StatefulSet recreate — see §8) and sized compactor 10Gi / store-gateway 5Gi for
+S3 scratch/index-headers. Chart bumped to v6.2.0 in the docs. Manual prereq
+(`infrastructure/vault/README.md`, "Mimir S3 bucket bootstrap"): seed
+`secrets-mgmt/mimir` + attach a `mimir` Vault policy to the `external-secrets`
+role BEFORE Flux reconciles, or the pods crash on the missing `${AWS_*}` env. All
+`kustomize build` targets green (`infrastructure/{mimir,rook/configs}`,
+`clusters/{mgmt,openstack}`); `helm template` confirms `blocks_storage` inherits
+the S3 backend and `mimir-s3` is wired via `envFrom`. — Prior: **Granted the
+kubeadm bootstrap SA read on
 KamajiControlPlane (CAPI v1.14.0 compat).** As of Cluster API v1.14.0 (PR
 kubernetes-sigs/cluster-api#13433) the kubeadm bootstrap controller resolves the
 control-plane version by reading `Cluster.spec.controlPlaneRef`; on Kamaji-backed

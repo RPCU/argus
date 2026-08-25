@@ -163,6 +163,54 @@ kubectl -n monitoring get externalsecret grafana-discord-webhook
 Until this is done the alert rules still evaluate, but the Discord contact point
 has no URL and notifications are not delivered.
 
+## Mimir S3 bucket bootstrap (one-time manual)
+
+Grafana Mimir (ns `monitoring`, mgmt) stores its TSDB blocks in a Ceph S3 bucket
+on the **openstack** cluster instead of a local filesystem PVC (a filesystem
+backend is not a shared object store, so the compactor never compacts/retains and
+the ingester PVC grows unbounded — see `infrastructure/mimir/helmrelease.yaml`).
+The bucket + a scoped RGW user are created by the ObjectBucketClaim in
+`infrastructure/rook/configs/mimir-bucket.yaml` (openstack); its credentials must
+be copied into the mgmt Vault so the `mimir-s3` ExternalSecret
+(`infrastructure/mimir/externalsecret.yaml`) can inject them.
+
+```bash
+# 1. Read the OBC-generated credentials from the OPENSTACK cluster
+export KUBECONFIG=~/.kube/configs/rpcu/openstack.kubeconfig
+AK=$(kubectl -n rook-ceph get secret mimir-bucket -o jsonpath='{.data.AWS_ACCESS_KEY_ID}' | base64 -d)
+SK=$(kubectl -n rook-ceph get secret mimir-bucket -o jsonpath='{.data.AWS_SECRET_ACCESS_KEY}' | base64 -d)
+
+# 2. Seed them into the mgmt Vault (secrets-mgmt/mimir)
+export KUBECONFIG=~/.kube/configs/rpcu/kubernetes-admin@mgmt.kubeconfig
+export VAULT_POD="kubectl -n vault exec -it vault-0 --"
+$VAULT_POD vault kv put secrets-mgmt/mimir access-key="$AK" secret-key="$SK"
+
+# 3. Policy granting ESO read access to the Mimir secret only
+$VAULT_POD vault policy write mimir - <<'EOF'
+path "secrets-mgmt/data/mimir" {
+  capabilities = ["read"]
+}
+EOF
+
+# 4. Attach it ALONGSIDE the existing policies (this overwrites the role, so ALL
+#    must be listed — omitting any breaks that consumer's ExternalSecret).
+$VAULT_POD vault write auth/kubernetes/role/external-secrets \
+  bound_service_account_names=vault-auth \
+  bound_service_account_namespaces=external-secrets \
+  policies=crossplane,grafana,mimir \
+  ttl=1h
+```
+
+Verify ESO picked it up:
+
+```bash
+kubectl -n monitoring get externalsecret mimir-s3   # STATUS should be SecretSynced
+```
+
+Until this is done the `mimir-s3` Secret is absent, so Mimir pods fail to start
+(missing `${AWS_ACCESS_KEY_ID}` env). The bucket itself is idempotent — the OBC
+recreates the user if deleted, but re-seed Vault with the new keys if it does.
+
 ## Vault PKI intermediate bootstrap (one-time manual)
 
 `clusters/mgmt/crossplane/vault/pki-int.yaml` chains a Vault PKI **intermediate

@@ -3,3 +3,4 @@ resources:
   - helmrepo.yaml
   - helmrelease.yaml
   - httproute.yaml
+  - externalsecret.yaml

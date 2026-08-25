@@ -12,5 +12,6 @@ resources:
   - storageclassrdb.yaml
   - storageclasscephfs.yaml
   - zot-bucket.yaml
+  - mimir-bucket.yaml
   - toolbox-deployment.yaml
   - gateway/

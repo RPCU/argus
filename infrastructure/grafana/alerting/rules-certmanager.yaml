@@ -13,27 +13,17 @@
 # automatically. kube-prometheus-stack's default serviceMonitorSelector
 # (allow-all) picks it up without extra configuration.
 #
-# Key metrics:
-#   certmanager_certificate_expiration_timestamp_seconds
-#     - Unix timestamp of the certificate's NotAfter field
-#     - Labels: namespace, name, issuer_kind, issuer_name, condition, ready
-#   certmanager_certificate_not_before_timestamp_seconds
-#     - Unix timestamp of the certificate's NotBefore (issuance) field
-#     - Labels: namespace, name, issuer_kind, issuer_name, condition, ready
+# Alert on renewal FAILURE, not proximity to expiry. cert-manager auto-renews
+# at certmanager_certificate_renewal_timestamp_seconds (~2/3 lifetime); a cert
+# being "close to expiry" is the normal steady state for short-lived certs (90d
+# certs sit <20% lifetime for ~9d before rolling), so the old <20%/<10%-lifetime
+# rules false-fired every cycle. Warning = renewal overdue; Critical = renewal
+# overdue AND <10% lifetime left. Expressions use plain vector arithmetic on
+# same-label metrics so namespace/name/issuer_*/cluster survive (the old
+# label_join(... and on ...) stripped them, breaking every {{ $labels.* }}).
 #
-# Expiry rules use PERCENTAGE-OF-LIFETIME thresholds, not fixed day counts.
-# This avoids false alerts on short-lived certs (e.g. 72h duration certs that
-# would fire a 30d warning immediately). The percentage is computed as:
-#   (remaining_seconds / total_lifetime_seconds) * 100
-# where total_lifetime = not_after - not_before.
-#
-# Thresholds:
-#   Critical: <10% of lifetime remaining
-#   Warning:  <20% of lifetime remaining
-#
-# DO NOT add a `cluster=~"$cluster"` selector to these expressions. Grafana
-# alert rules have NO dashboard template variables — see rules-flux.yaml for
-# the full explanation.
+# DO NOT add a `cluster=~"$cluster"` selector — Grafana alert rules have no
+# dashboard template variables (see rules-flux.yaml).
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaAlertRuleGroup
 metadata:
@@ -47,23 +37,20 @@ spec:
   folderRef: alerts
   interval: 5m
   rules:
-    # Fires when <10% of the certificate's total lifetime remains.
-    # Uses certmanager_certificate_not_before_timestamp_seconds to compute
-    # the total duration (not_after - not_before), so the threshold scales
-    # with every cert regardless of its configured duration.
-    # Example: 72h cert → fires at ~7.2h remaining; 90d cert → fires at ~9d.
+    # CRITICAL: renewal overdue AND <10% lifetime left. A emits days-remaining
+    # (B → $values.B.Value) only for certs matching both filters.
     - uid: argus-cert-expiring-7d
-      title: CertManagerCertificateExpiringCritical
+      title: CertManagerExpiringCritical
       condition: C
-      for: "5m"
+      for: "15m"
       noDataState: OK
       execErrState: Error
       labels:
         severity: critical
         component: cert-manager
       annotations:
-        summary: "Certificate {{ $labels.name }} expiring — <10% lifetime left ({{ $labels.cluster }})"
-        description: 'Certificate {{ $labels.namespace }}/{{ $labels.name }} (issuer: {{ $labels.issuer_kind }}/{{ $labels.issuer_name }}) in cluster {{ $labels.cluster }} has {{ printf "%.0f" (divf $values.B.Value 86400) }} days remaining (<10% of its lifetime). Immediate action required — clients will reject this cert.'
+        summary: "Certificate {{ $labels.name }} expiring & renewal overdue ({{ $labels.cluster }})"
+        description: 'Certificate {{ $labels.namespace }}/{{ $labels.name }} (issuer: {{ $labels.issuer_kind }}/{{ $labels.issuer_name }}) in cluster {{ $labels.cluster }} has {{ printf "%.1f" $values.B.Value }} days remaining, cert-manager renewal is OVERDUE, and it is within the last 10% of its lifetime. Immediate action required — clients will reject this cert. Check the Issuer and the Certificate/CertificateRequest status.'
       data:
         - refId: A
           relativeTimeRange:
@@ -76,18 +63,18 @@ spec:
               uid: Mimir
             editorMode: code
             expr: |
-              label_join(
+              (
+                (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400
+              )
+              and (
+                time() - certmanager_certificate_renewal_timestamp_seconds > 0
+              )
+              and (
                 (certmanager_certificate_expiration_timestamp_seconds - time())
                 /
                 (certmanager_certificate_expiration_timestamp_seconds
                   - certmanager_certificate_not_before_timestamp_seconds)
-                * 100,
-                "join_key", "/", "namespace", "name"
-              )
-              and on(join_key)
-              label_join(
-                (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400,
-                "join_key", "/", "namespace", "name"
+                < 0.10
               )
             instant: true
             range: false
@@ -115,11 +102,12 @@ spec:
               uid: __expr__
             expression: B
             type: threshold
+            # B exists only when both filters match, so any value ⇒ fire.
             conditions:
               - evaluator:
                   type: lt
                   params:
-                    - 10
+                    - 100000
                 operator:
                   type: and
                 query:
@@ -133,24 +121,22 @@ spec:
             maxDataPoints: 43200
             refId: C
 
-    # Fires when <20% of the certificate's total lifetime remains.
-    # Warning threshold — enough time to investigate and renew before it
-    # becomes critical. cert-manager should auto-renew well before this,
-    # so a firing rule here usually means the issuer is broken or the
-    # Certificate resource is misconfigured.
-    # Example: 72h cert → fires at ~14.4h remaining; 90d cert → fires at ~18d.
+    # WARNING: cert-manager renewal is overdue (time() past renewal_timestamp).
+    # A healthy cert resets this into the future on every rotation, so this only
+    # fires when renewal has genuinely failed. A emits days-remaining until
+    # actual expiry, filtered to overdue certs.
     - uid: argus-cert-expiring-30d
-      title: CertManagerCertificateExpiringWarning
+      title: CertManagerRenewalOverdue
       condition: C
-      for: "5m"
+      for: "6h"
       noDataState: OK
       execErrState: Error
       labels:
         severity: warning
         component: cert-manager
       annotations:
-        summary: "Certificate {{ $labels.name }} expiring — <20% lifetime left ({{ $labels.cluster }})"
-        description: 'Certificate {{ $labels.namespace }}/{{ $labels.name }} (issuer: {{ $labels.issuer_kind }}/{{ $labels.issuer_name }}) in cluster {{ $labels.cluster }} has {{ printf "%.0f" (divf $values.B.Value 86400) }} days remaining (<20% of its lifetime). Check cert-manager renewal status.'
+        summary: "Certificate {{ $labels.name }} renewal overdue ({{ $labels.cluster }})"
+        description: 'Certificate {{ $labels.namespace }}/{{ $labels.name }} (issuer: {{ $labels.issuer_kind }}/{{ $labels.issuer_name }}) in cluster {{ $labels.cluster }} is past its cert-manager renewal time and has {{ printf "%.1f" $values.B.Value }} days remaining. Renewal has not completed — check the Issuer and the Certificate/CertificateRequest status.'
       data:
         - refId: A
           relativeTimeRange:
@@ -163,18 +149,11 @@ spec:
               uid: Mimir
             editorMode: code
             expr: |
-              label_join(
-                (certmanager_certificate_expiration_timestamp_seconds - time())
-                /
-                (certmanager_certificate_expiration_timestamp_seconds
-                  - certmanager_certificate_not_before_timestamp_seconds)
-                * 100,
-                "join_key", "/", "namespace", "name"
+              (
+                (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400
               )
-              and on(join_key)
-              label_join(
-                (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400,
-                "join_key", "/", "namespace", "name"
+              and (
+                time() - certmanager_certificate_renewal_timestamp_seconds > 0
               )
             instant: true
             range: false
@@ -202,11 +181,12 @@ spec:
               uid: __expr__
             expression: B
             type: threshold
+            # B exists only for overdue certs, so any value ⇒ fire.
             conditions:
               - evaluator:
                   type: lt
                   params:
-                    - 20
+                    - 100000
                 operator:
                   type: and
                 query:

@@ -62,4 +62,4 @@ spec:
           variables:
             overrides:
               - name: workerFlavor
-                value: xmedium
+                value: large

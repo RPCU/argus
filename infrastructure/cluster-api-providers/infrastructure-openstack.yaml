@@ -10,7 +10,7 @@ metadata:
   namespace: capo-system
 spec:
   # renovate: datasource=github-releases depName=kubernetes-sigs/cluster-api-provider-openstack
-  version: v0.14.7
+  version: v0.14.8
   configSecret:
     name: capo-variables
     namespace: capo-system

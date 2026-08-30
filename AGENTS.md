@@ -324,6 +324,21 @@ FALSE` **unconditionally**. The cert-manager base NEVER emits a ServiceMonitor
   Composition `external-network` (Network+Subnet+RouterV2) + patch-and-transform
   Function. Kept as its own Kustomization to avoid pruning the in-use XRD.
 - **external-secrets/** (v2.3.0).
+- **kyverno/** (chart v3.9.0 / app v1.19.0) — policy engine for OPT-IN workload
+  clusters (Sveltos `kyverno` add-on, label `.../kyverno`, default OFF). Base =
+  HelmRepository/HelmRelease/namespace (`kyverno` ns, single-replica controllers,
+  `resourceFilters` exclude kube-system/flux-system/projectsveltos/kyverno so a
+  bad policy can't wedge the platform reconcilers). `policies/` (own Flux
+  Kustomization pushed second, `dependsOn: kyverno`) holds two `ClusterPolicy`
+  guardrails, both `validationFailureAction: Enforce`, **scoped to OIDC users
+  only** (matched on the bare Zitadel groups `kube-admin`/`kube-user` — the only
+  identities carrying them; SAs/kubeadm/nodes never do): `protect-sveltos-resources`
+  denies CREATE/UPDATE/DELETE on any resource labelled `projectsveltos.io/reason:
+Resources` (checks BOTH `request.object` and `request.oldObject` so DELETE is
+  covered — a missing label resolves to null, precondition false); `protect-kube-system`
+  denies writes in the `kube-system` namespace + on the `kube-system` Namespace
+  object. Platform reconcilers (Flux/Sveltos agent/Kyverno) auth as SAs and are
+  never matched. Chihiro toggle `kyverno` (default OFF).
 - **golinky/** (v0.3.1) — link shortener; `LoadBalancer` pinned `10.0.0.241`.
 - **openstack-ccm/** (chart v2.35.0 / app v1.35.0) — LoadBalancer via Octavia +
   Node init (removes the CAPO cloud-provider taint). Replaces Cilium LB on mgmt.
@@ -424,6 +439,23 @@ Dragonfly` CRD) via a Flux takeover of the SAME base mgmt uses,
     per-cluster values/secrets. The Dragonfly INSTANCE is app-owned by the
     consuming repo (e.g. atlas production's zot registry uses one as its Redis
     remoteCache), NOT this add-on. Default OFF.
+  - `kyverno.yaml` (`dependsOn: flux-instance`, label `.../kyverno`, default OFF)
+    — Kyverno policy engine via Flux takeover. TWO Flux Kustomization CRs pushed:
+    `kyverno` (`./infrastructure/kyverno`, the Helm chart = CRDs + controllers)
+    then `kyverno-policies` (`./infrastructure/kyverno/policies`, `dependsOn:
+kyverno` so the `ClusterPolicy` CRs never land before their CRDs). The two
+    ClusterPolicies are **scoped to OIDC users only** — matched on the bare
+    Zitadel groups `kube-admin`/`kube-user` (the only identities carrying them:
+    `usernameClaim: sub` + empty groupsPrefix; SAs are `system:serviceaccounts:*`,
+    node/kubeadm are `system:*`). Platform reconcilers (Flux, Sveltos agent,
+    Kyverno) authenticate as SAs and are never matched. `protect-sveltos-resources`
+    denies CREATE/UPDATE/DELETE on anything labelled `projectsveltos.io/reason:
+Resources` (checks BOTH `request.object` and `request.oldObject` so DELETE is
+    covered too); `protect-kube-system` denies writes in the `kube-system`
+    namespace + on the `kube-system` Namespace object. Both `validationFailureAction:
+Enforce`. HelmRelease also excludes kube-system/flux-system/projectsveltos/
+    kyverno from the webhook `resourceFilters` (belt-and-suspenders so a bad policy
+    can't wedge the platform reconcilers).
   - `gateway-api-crds.yaml` (`dependsOn: flux-instance`, ALL workload clusters,
     no opt-in) — Gateway API CRDs (cert-manager gateway-shim needs them).
   - `gateway-api.yaml` (label `.../gateway-api`) — TWO profiles: `gateway-api`
@@ -655,6 +687,7 @@ kube-prometheus-stack`, SM in ns `monitoring`). Deployed ONLY where the
 | ceph-csi-cephfs      | 3.15.0  | ceph.github.io/csi-charts                      |
 | external-dns         | 1.21.1  | kubernetes-sigs.github.io/external-dns/        |
 | openstack-exporter   | 1.6.0   | ghcr.io/openstack-exporter/openstack-exporter  |
+| kyverno              | 3.9.0   | kyverno.github.io/kyverno                      |
 
 Sync interval 5m (openstack-exporter 60s SM).
 
@@ -1104,7 +1137,35 @@ env; pre-commit quality gates; 1-minute Git sync.
 
 ---
 
-**Last Updated**: August 2026 — **Moved Mimir off the filesystem backend onto
+**Last Updated**: August 2026 — **Added a Kyverno policy-engine Sveltos add-on
+with OIDC-user guardrails.** New `infrastructure/kyverno/` component: the Helm
+chart base (HelmRepository/HelmRelease/namespace, chart v3.9.0 / app v1.19.0,
+`kyverno` ns, single-replica controllers, webhook `resourceFilters` excluding
+kube-system/flux-system/projectsveltos/kyverno) + `policies/` (own Flux
+Kustomization) holding two `ClusterPolicy` guardrails, both
+`validationFailureAction: Enforce`, **scoped to OIDC users only** by matching the
+bare Zitadel groups `kube-admin`/`kube-user` (the only identities carrying them —
+`usernameClaim: sub` + empty groupsPrefix; SAs are `system:serviceaccounts:*`,
+node/kubeadm `system:*`, so platform reconcilers via SAs are never matched):
+`protect-sveltos-resources` denies CREATE/UPDATE/DELETE on any resource labelled
+`projectsveltos.io/reason: Resources` (Sveltos stamps this on EVERY addon
+resource it deploys; the precondition checks BOTH `request.object` and
+`request.oldObject` so DELETE is covered, and a missing label resolves to null →
+false); `protect-kube-system` denies writes in the `kube-system` namespace and on
+the `kube-system` Namespace object. Delivered via
+`infrastructure/sveltos/clusterprofiles/kyverno.yaml` (Flux takeover, same
+pattern as dragonfly, `dependsOn: flux-instance`, label
+`sveltos.argus.rpcu.io/kyverno: enabled`, default OFF) pushing TWO Flux
+Kustomization CRs — `kyverno` then `kyverno-policies` (`dependsOn: kyverno`) so
+the ClusterPolicy CRs never land before their CRDs. Registered in the
+clusterprofiles `kustomization.yaml`; chihiro gained a `kyverno` boolean toggle
+(`clusters/mgmt/apps/chihiro/config.yaml`, default OFF, path
+`metadata.labels.'sveltos.argus.rpcu.io/kyverno'`) + the matching
+`sveltos.argus.rpcu.io/kyverno: {{ chihiro.kyverno }}` label in `cluster.template`.
+Chart added to the §2 version table (kyverno 3.9.0). All `kustomize build`
+targets green (`infrastructure/kyverno`, `infrastructure/kyverno/policies`,
+`infrastructure/sveltos/clusterprofiles`, `clusters/mgmt`); prettier clean. —
+Prior: **Moved Mimir off the filesystem backend onto
 Ceph S3 to stop the unbounded ingester-PVC growth.** The `storage-mimir-ingester-0`
 PVC had climbed to 47.8 GB / 91% of 50Gi (+~3 GB/day) holding 355 uncompacted
 `level:1` blocks dating back 34 days, despite a 72h retention. Verified live that

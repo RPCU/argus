@@ -1,3 +1,4 @@
 resources:
   - protect-sveltos-resources.yaml
   - protect-kube-system.yaml
+  - protect-nodes.yaml

@@ -1,0 +1,68 @@
+# Block OIDC-authenticated users from any write to the kube-system namespace or
+# to the Namespace object itself. kube-system holds CNI, CSI, CoreDNS, the
+# apiserver-proxy and other cluster-critical workloads; a tenant admin has no
+# business mutating it.
+#
+# Scope: OIDC users only, matched on the bare Zitadel groups kube-admin /
+# kube-user (see protect-sveltos-resources.yaml for the full rationale — these
+# are the only identities carrying those groups). Platform reconcilers (Flux,
+# Sveltos, CSI/CNI operators) authenticate as ServiceAccounts and are untouched.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: protect-kube-system
+  annotations:
+    policies.kyverno.io/title: Protect the kube-system namespace
+    policies.kyverno.io/category: Argus Platform
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Denies CREATE/UPDATE/DELETE from OIDC users (groups kube-admin / kube-user)
+      on any resource in the kube-system namespace, and on the kube-system
+      Namespace object itself.
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: deny-oidc-writes-in-kube-system
+      match:
+        any:
+          - resources:
+              kinds:
+                - "*"
+              namespaces:
+                - kube-system
+              operations:
+                - CREATE
+                - UPDATE
+                - DELETE
+            subjects:
+              - kind: Group
+                name: kube-admin
+              - kind: Group
+                name: kube-user
+      validate:
+        message: >-
+          The kube-system namespace is reserved for platform components. OIDC
+          users may not create, modify or delete resources in it.
+        deny: {}
+    - name: deny-oidc-mutating-kube-system-namespace
+      match:
+        any:
+          - resources:
+              kinds:
+                - Namespace
+              names:
+                - kube-system
+              operations:
+                - UPDATE
+                - DELETE
+            subjects:
+              - kind: Group
+                name: kube-admin
+              - kind: Group
+                name: kube-user
+      validate:
+        message: >-
+          The kube-system Namespace object is protected. OIDC users may not
+          modify or delete it.
+        deny: {}

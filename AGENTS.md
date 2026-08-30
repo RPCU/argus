@@ -337,8 +337,11 @@ FALSE` **unconditionally**. The cert-manager base NEVER emits a ServiceMonitor
 Resources` (checks BOTH `request.object` and `request.oldObject` so DELETE is
   covered — a missing label resolves to null, precondition false); `protect-kube-system`
   denies writes in the `kube-system` namespace + on the `kube-system` Namespace
-  object. Platform reconcilers (Flux/Sveltos agent/Kyverno) auth as SAs and are
-  never matched. Chihiro toggle `kyverno` (default OFF).
+  object; `protect-nodes` denies CREATE/UPDATE/DELETE + CONNECT on `Node`
+  (+ `nodes/status`, `nodes/proxy`) — blocks cordon/drain, labels, taints and
+  kubelet-proxy (admission can't see GET/LIST/WATCH, so read/list is an RBAC
+  concern, not covered here). Platform reconcilers (Flux/Sveltos agent/Kyverno)
+  auth as SAs and are never matched. Chihiro toggle `kyverno` (default OFF).
 - **golinky/** (v0.3.1) — link shortener; `LoadBalancer` pinned `10.0.0.241`.
 - **openstack-ccm/** (chart v2.35.0 / app v1.35.0) — LoadBalancer via Octavia +
   Node init (removes the CAPO cloud-provider taint). Replaces Cilium LB on mgmt.

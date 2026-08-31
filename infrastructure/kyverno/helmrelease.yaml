@@ -32,18 +32,36 @@ spec:
       replicas: 1
     cleanupController:
       replicas: 1
-    # The admission webhook's resourceFilters decide which admission requests are
-    # even sent to Kyverno. Keep the chart defaults (which already exclude the
-    # kyverno namespace and a long list of controller-owned resources), but ALSO
-    # exclude the namespaces that run the platform's own reconcilers so a
-    # misbehaving policy can never wedge them. Our OIDC-user guard policies match
-    # on the subject's groups, so these are belt-and-suspenders.
     config:
-      excludeGroups:
-        - system:nodes
-        - system:serviceaccounts
-      resourceFiltersExcludeNamespaces:
-        - kube-system
-        - flux-system
-        - projectsveltos
-        - kyverno
+      # CRITICAL: the chart DEFAULT webhook namespaceSelector excludes
+      # kube-system (`NotIn kube-system`), which means the API server NEVER sends
+      # kube-system admission requests to Kyverno — that silently defeats the
+      # `protect-kube-system` policy. We override it to exclude ONLY the kyverno
+      # namespace itself (so Kyverno can never block its own controllers), and
+      # DELIBERATELY leave kube-system in scope so protect-kube-system can fire.
+      #
+      # Safe because every guard policy matches ONLY the OIDC groups
+      # kube-admin / kube-user. Platform components in kube-system (CNI/CSI/
+      # CoreDNS, the kubelet, cloud-controller-manager) act as ServiceAccounts or
+      # system:* identities, never carry those groups, and are therefore never
+      # denied — so opening kube-system to the webhook cannot wedge the platform.
+      webhooks:
+        namespaceSelector:
+          matchExpressions:
+            - key: kubernetes.io/metadata.name
+              operator: NotIn
+              values:
+                - kyverno
+      # SECOND, INDEPENDENT default that silently defeats our policies: Kyverno's
+      # ConfigMap `resourceFilters` is a global skip-list applied at policy-eval
+      # time (separate from the webhook namespaceSelector above). The chart
+      # defaults include `[*/*,kube-system,*]`, `[Node,*,*]` and `[Node/?*,*,*]`,
+      # so Kyverno IGNORES every kube-system resource and every Node/Node
+      # sub-resource — defeating BOTH protect-kube-system AND protect-nodes.
+      # resourceFiltersExclude removes those three exact entries from the default
+      # list (via Helm `without`) while KEEPING all the Kyverno self-exclusion
+      # filters intact, so Kyverno still never processes its own controllers.
+      resourceFiltersExclude:
+        - "[*/*,kube-system,*]"
+        - "[Node,*,*]"
+        - "[Node/?*,*,*]"

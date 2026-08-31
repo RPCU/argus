@@ -1,0 +1,54 @@
+# Block OIDC-authenticated users from interacting with cluster Nodes. Tenant
+# admins have no business cordoning/draining, labelling, tainting, editing or
+# deleting Nodes, nor proxying to the kubelet API via nodes/proxy.
+#
+# Coverage / limits: Kyverno's admission webhook only sees write operations
+# (CREATE/UPDATE/DELETE) and CONNECT (sub-resource proxy). It does NOT see
+# GET/LIST/WATCH, so this policy stops all Node MUTATION and kubelet-proxy
+# access but cannot hide Nodes from being listed/read (that is an RBAC concern).
+#
+# Scope: OIDC users only, matched on the bare Zitadel groups kube-admin /
+# kube-user (see protect-sveltos-resources.yaml for the full rationale — these
+# are the only identities carrying those groups). Platform reconcilers (Flux,
+# Sveltos, cloud-controller-manager, kubelet, CNI/CSI operators) authenticate as
+# ServiceAccounts or system:* identities and are never matched.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: protect-nodes
+  annotations:
+    policies.kyverno.io/title: Protect cluster Nodes
+    policies.kyverno.io/category: Argus Platform
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Denies CREATE/UPDATE/DELETE and CONNECT (kubelet proxy) from OIDC users
+      (groups kube-admin / kube-user) on Nodes and their sub-resources
+      (nodes/status, nodes/proxy).
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: deny-oidc-writes-to-nodes
+      match:
+        any:
+          - resources:
+              kinds:
+                - Node
+                - Node/status
+                - Node/proxy
+              operations:
+                - CREATE
+                - UPDATE
+                - DELETE
+                - CONNECT
+            subjects:
+              - kind: Group
+                name: kube-admin
+              - kind: Group
+                name: kube-user
+      validate:
+        message: >-
+          Cluster Nodes are managed by the platform. OIDC users may not create,
+          modify, delete or proxy to Nodes (including cordon/drain, labels,
+          taints and the kubelet API).
+        deny: {}

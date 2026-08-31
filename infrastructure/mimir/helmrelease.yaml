@@ -1,8 +1,22 @@
 # Grafana Mimir — centralised TSDB receiving remote_write from all clusters.
 #
-# Deployed in MONOLITHIC mode (single binary, 1 replica) with filesystem
-# storage. This is sufficient for 2-3 clusters and can be upgraded to Swift or
-# S3-compatible storage later.
+# Deployed with 1 replica per component and S3 (Ceph RGW) block storage.
+#
+# WHY S3, NOT FILESYSTEM: the filesystem backend is NOT a shared object store.
+# The chart runs ingester/compactor/store-gateway as separate pods, each with
+# its OWN PVC, so with `backend: filesystem` the ingester ships blocks to a
+# "bucket" only IT can see. The compactor then reports `discovered users ...
+# users=0`, never compacts and never applies `compactor_blocks_retention_period`
+# — so the ingester PVC grows UNBOUNDED (verified live Aug 2026: 355 uncompacted
+# level-1 blocks back 34 days on a 50Gi PVC at 91% full, +~3GB/day) and
+# long-term queries return nothing (store-gateway loads 0 blocks). Ceph S3 is a
+# real shared bucket: all components see it, compaction + 72h retention work,
+# and the ingester PVC shrinks to just head+WAL.
+#
+# The bucket lives on the openstack cluster's Ceph RGW; mgmt reaches it over the
+# VPN at https://s3.rpcu.vpn. Credentials come from the `mimir-s3` Secret
+# (externalsecret.yaml) injected via `global.extraEnvFrom` and expanded into the
+# config by Mimir's `-config.expand-env=true` (${AWS_ACCESS_KEY_ID}/…).
 #
 # The nginx gateway is enabled to provide a single entrypoint for both
 # remote_write (POST /api/v1/push) and Prometheus-compatible queries
@@ -31,6 +45,14 @@ spec:
     # --- Global Cluster Domain for mgmt cluster ---
     global:
       clusterDomain: "mgmt.local."
+      # Inject the Ceph S3 bucket credentials into EVERY Mimir pod. The
+      # `mimir-s3` Secret is rendered by externalsecret.yaml from the mgmt Vault
+      # and carries AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY; Mimir expands
+      # ${AWS_ACCESS_KEY_ID}/${AWS_SECRET_ACCESS_KEY} in the S3 config below via
+      # the chart's default `-config.expand-env=true`.
+      extraEnvFrom:
+        - secretRef:
+            name: mimir-s3
 
     # --- Top-level Nginx config ---
     nginx:
@@ -59,22 +81,23 @@ spec:
         enabled: false
       persistentVolume:
         enabled: true
-        # The PVC was originally 2Gi, expanded to 5Gi in-place, and is now
-        # expanded to 20Gi. The WAL + head blocks + flushed blocks all live on
-        # this single volume. At ~150k series / 60s scrape, each 2h head-block
-        # rotation consumes ~7-8 GiB (WAL + head + pre-compaction blocks), so
-        # 5Gi filled up repeatedly and 10Gi would still be tight.
+        # With S3 block storage the ingester PVC holds ONLY the TSDB head + WAL
+        # (blocks are shipped to Ceph S3, not kept locally), so it no longer
+        # grows with retention. Measured head+WAL is ~2-3Gi; 10Gi is headroom
+        # for WAL-replay spikes on restart. This is a REDUCTION from the old
+        # 50Gi filesystem-store volume.
         #
-        # A StatefulSet's volumeClaimTemplates are IMMUTABLE, but Kubernetes
-        # allows increasing the size IF the StorageClass has
-        # allowVolumeExpansion: true (csi-cinder-sc-delete does). The two-step
-        # process is:
-        #   1. Expand the PVC in place (immediate, no pod restart needed):
-        #      kubectl patch pvc storage-mimir-ingester-0 -n monitoring \
-        #        -p '{"spec":{"resources":{"requests":{"storage":"20Gi"}}}}'
-        #   2. Update this value to match (so future installs get the right
-        #      size and the HelmRelease stays truthful).
-        size: 50Gi
+        # SHRINKING is not an in-place operation: a StatefulSet's
+        # volumeClaimTemplates are immutable and CSI cannot shrink a bound PVC.
+        # After this lands, the old 50Gi volume keeps serving until the
+        # StatefulSet + its PVC are recreated. One-time migration (data on the
+        # old PVC is disposable — it is WAL/head that re-replays from the
+        # remote_write senders):
+        #   kubectl -n monitoring delete statefulset mimir-ingester --cascade=orphan
+        #   kubectl -n monitoring delete pod mimir-ingester-0
+        #   kubectl -n monitoring delete pvc storage-mimir-ingester-0
+        #   flux -n flux-system reconcile kustomization mimir --with-source
+        size: 10Gi
       resources:
         requests:
           cpu: 50m
@@ -90,7 +113,9 @@ spec:
         initialDelaySeconds: 60
       persistentVolume:
         enabled: true
-        size: 2Gi
+        # Holds only per-block index-headers downloaded from S3 (not full
+        # blocks); small but scales with block count. 5Gi is ample headroom.
+        size: 5Gi
       resources:
         requests:
           cpu: 30m
@@ -131,7 +156,11 @@ spec:
         initialDelaySeconds: 60
       persistentVolume:
         enabled: true
-        size: 2Gi
+        # Scratch space: the compactor downloads source blocks from S3 to /data
+        # to merge them locally, then uploads the result. Must fit several
+        # source blocks + the output at once; 2Gi was fine only because
+        # compaction never ran. 10Gi for the real workload.
+        size: 10Gi
       resources:
         requests:
           cpu: 30m
@@ -139,7 +168,7 @@ spec:
         limits:
           memory: 1Gi
 
-    # --- Filesystem storage & clean memberlist ring for single replica ---
+    # --- S3 storage & clean memberlist ring for single replica ---
     mimir:
       structuredConfig:
         # Disable the Kafka-backed write path templated in by chart 6.x. Must be
@@ -192,15 +221,42 @@ spec:
           ring:
             unregister_on_shutdown: true
             replication_factor: 1
+        # --- S3 (Ceph RGW) shared object store ---
+        # `common.storage` sets the default backend for blocks/ruler/alertmanager
+        # so every component talks to the SAME bucket. Ceph RGW is reached over
+        # the VPN at https://s3.rpcu.vpn (gateway TLS on 443). Credentials come
+        # from ${AWS_*} env (global.extraEnvFrom -> mimir-s3).
+        #
+        # TLS knobs, do NOT confuse the two:
+        #   insecure: false           -> keep HTTPS (the endpoint is on 443).
+        #   http.insecure_skip_verify -> skip cert verification (mgmt has no
+        #                                RPCU trust bundle; same choice as every
+        #                                other internal-VPN client in this repo).
+        # `insecure: true` would switch to PLAINTEXT http and fail against the
+        # HTTPS gateway.
+        #
+        # bucket_lookup_type: path  -> Ceph RGW serves path-style buckets, not
+        #                              AWS virtual-host subdomains.
+        # dualstack_enabled: false  -> the AWS IPv6 dualstack endpoint rewrite
+        #                              is meaningless for Ceph and breaks DNS.
+        # Only `common.storage` is set: Mimir propagates it to blocks_storage
+        # (and ruler/alertmanager) automatically, so every component reads and
+        # writes the SAME bucket. Do not also pin blocks_storage.s3 — a partial
+        # override there would shadow the common block per-field and is easy to
+        # get subtly wrong.
         common:
           storage:
-            backend: filesystem
-        compactor:
-          data_dir: /data/compactor-data
-        blocks_storage:
-          backend: filesystem
-          filesystem:
-            dir: /data/blocks
+            backend: s3
+            s3:
+              endpoint: s3.rpcu.vpn
+              bucket_name: mimir
+              access_key_id: ${AWS_ACCESS_KEY_ID}
+              secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+              insecure: false
+              bucket_lookup_type: path
+              dualstack_enabled: false
+              http:
+                insecure_skip_verify: true
 
     # --- Disable heavy/optional subcharts ---
     # query_scheduler MUST stay enabled. Chart 6.x unconditionally templates

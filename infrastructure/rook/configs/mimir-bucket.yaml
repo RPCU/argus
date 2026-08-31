@@ -1,0 +1,32 @@
+# S3 bucket for Grafana Mimir's long-term block storage.
+#
+# Mimir runs on the mgmt cluster but its blocks_storage backend must be a REAL
+# shared object store, not a filesystem PVC: in filesystem mode every Mimir
+# component (ingester/compactor/store-gateway) gets its own private PVC, so the
+# compactor sees an EMPTY bucket (`discovered users ... users=0`), never
+# compacts, and never applies the 72h retention — the ingester PVC then grows
+# unbounded (verified live Aug 2026: 355 uncompacted level-1 blocks back to
+# Jul 22 on a 50Gi PVC at 91% full) and long-term queries return nothing
+# (store-gateway loads 0 blocks). Pointing Mimir at this Ceph S3 bucket gives
+# all three components ONE shared bucket, so compaction + retention work and the
+# ingester PVC drops to just head+WAL.
+#
+# Reuses the same ObjectBucketClaim provisioner + `ceph-bucket` StorageClass as
+# zot-bucket.yaml. The OBC creates a bucket-scoped RGW user; its credentials
+# land in the `mimir-bucket` Secret (rook-ceph ns) as AWS_ACCESS_KEY_ID /
+# AWS_SECRET_ACCESS_KEY. Because Mimir is on a DIFFERENT cluster (mgmt), those
+# two values must be copied into the mgmt Vault at secrets-mgmt/mimir
+# (access-key / secret-key) so the mgmt-side ExternalSecret can inject them —
+# see infrastructure/vault/README.md ("Mimir S3 bucket bootstrap").
+#
+# mgmt reaches this store over the VPN at https://s3.rpcu.vpn (the RGW HTTPRoute
+# in gateway/httproute-ceph.yaml); the Mimir S3 client uses insecure: true, the
+# same choice every other internal-VPN client in this repo makes.
+apiVersion: objectbucket.io/v1alpha1
+kind: ObjectBucketClaim
+metadata:
+  name: mimir-bucket
+  namespace: rook-ceph
+spec:
+  storageClassName: ceph-bucket
+  bucketName: mimir

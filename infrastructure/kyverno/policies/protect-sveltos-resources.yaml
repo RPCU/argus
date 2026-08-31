@@ -1,0 +1,67 @@
+# Block OIDC-authenticated users from tampering with any resource that Sveltos
+# deployed to this workload cluster. Sveltos stamps EVERY resource it deploys
+# (Helm-chart-rendered or raw policyRef) with the label
+# `projectsveltos.io/reason: Resources`, so matching that label catches the whole
+# addon fleet (Cilium, cert-manager, gateway-api, CSI drivers, monitoring, etc.)
+# regardless of kind or namespace.
+#
+# Scope: OIDC users only. On these clusters the kube-apiserver is wired to the
+# shared Zitadel "kubernetes" OIDC client with `--oidc-username-claim=sub` (so
+# OIDC usernames are opaque, no prefix) and `--oidc-groups-claim=groups` with an
+# EMPTY groups prefix, so the Zitadel groupsClaim Action injects the bare role
+# keys `kube-admin` / `kube-user`. Every human logging in via OIDC therefore
+# carries one of those two groups, and NOTHING else does (service accounts are
+# `system:serviceaccounts:*`, kubeadm/node identities are `system:*`). Matching
+# those two groups is the reliable discriminator for "a user using OIDC to talk
+# to the apiserver". The platform reconcilers (Flux, Sveltos agent, Kyverno
+# itself) authenticate as ServiceAccounts and are never matched, so they keep
+# managing these resources normally.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: protect-sveltos-resources
+  annotations:
+    policies.kyverno.io/title: Protect Sveltos-managed resources
+    policies.kyverno.io/category: Argus Platform
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Denies CREATE/UPDATE/DELETE from OIDC users (groups kube-admin / kube-user)
+      on any resource labelled projectsveltos.io/reason — i.e. anything Sveltos
+      deployed as a platform addon.
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: deny-oidc-writes-to-sveltos-resources
+      match:
+        any:
+          - resources:
+              kinds:
+                - "*"
+              operations:
+                - CREATE
+                - UPDATE
+                - DELETE
+            subjects:
+              - kind: Group
+                name: kube-admin
+              - kind: Group
+                name: kube-user
+      # For DELETE the incoming object is request.oldObject; for CREATE/UPDATE it
+      # is request.object. Deny when EITHER carries the Sveltos label. A missing
+      # label resolves to null (not the string "Resources"), so the precondition
+      # is simply false — no empty-string fallback needed.
+      preconditions:
+        any:
+          - key: '{{ request.object.metadata.labels."projectsveltos.io/reason" }}'
+            operator: Equals
+            value: Resources
+          - key: '{{ request.oldObject.metadata.labels."projectsveltos.io/reason" }}'
+            operator: Equals
+            value: Resources
+      validate:
+        message: >-
+          This resource is managed by the platform (Sveltos addon,
+          projectsveltos.io/reason=Resources). OIDC users may not create, modify
+          or delete it. Change it via the argus GitOps repository instead.
+        deny: {}

@@ -7,6 +7,7 @@ resources:
   - openstack-cinder-csi.yaml
   - csi-driver-nfs.yaml
   - dragonfly.yaml
+  - kyverno.yaml
   - capi-management.yaml
   - vault-auth.yaml
   - cert-manager.yaml

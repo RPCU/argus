@@ -192,8 +192,25 @@ FALSE` **unconditionally**. The cert-manager base NEVER emits a ServiceMonitor
   cloud); VM counts via `openstack_nova_total_vms` (=11) /
   `openstack_nova_limits_instances_used`; per-VM state via
   `openstack_nova_server_status` (4=ERROR, 0=ACTIVE, 11=SHUTOFF).
-- **mimir/** (chart v5.6.0) — `mimir-distributed` monolithic, filesystem, 5Gi PVC,
-  72h retention. `httproute.yaml` `mimir.mgmt.rpcu.lan`. Ruler disabled.
+- **mimir/** (chart v6.2.0) — `mimir-distributed`, 1 replica/component, **S3
+  (Ceph RGW) block storage**, 72h retention. `httproute.yaml`
+  `mimir.mgmt.rpcu.lan`. Ruler/alertmanager/Kafka-ingest disabled. **Storage MUST
+  be S3, not filesystem** (§8 "Mimir storage"): the chart runs
+  ingester/compactor/store-gateway as separate pods each with its OWN PVC, so
+  `backend: filesystem` gives the ingester a private "bucket" the compactor can't
+  see → compactor `users=0`, never compacts, never applies retention → ingester
+  PVC grows unbounded (and long-term queries return nothing). `common.storage`
+  points at `s3.rpcu.vpn` (bucket `mimir`, the OBC in
+  `infrastructure/rook/configs/mimir-bucket.yaml` on openstack); creds via the
+  `mimir-s3` ExternalSecret (`externalsecret.yaml`, Vault `secrets-mgmt/mimir`)
+  injected with `global.extraEnvFrom` + Mimir `-config.expand-env`. TLS:
+  `insecure: false` + `http.insecure_skip_verify: true` (HTTPS to the gateway,
+  skip verify — mgmt has no trust bundle); `bucket_lookup_type: path` +
+  `dualstack_enabled: false` for Ceph. Ingester PVC 10Gi (head+WAL only),
+  compactor 10Gi (compaction scratch), store-gateway 5Gi (index-headers). Set
+  ONLY `common.storage` (blocks*storage inherits). Bootstrap: seed Vault +
+  `mimir` policy first (`infrastructure/vault/README.md`), else pods crash on the
+  missing `${AWS*\*}` env.
 - **grafana-operator/** (v5.16.0) — watches all namespaces (DaaS).
 - **grafana/** (Operator CRDs v1beta1) — `grafana.yaml` (5Gi PVC, label
   `dashboards: grafana-central`, Zitadel OIDC `grafana-oidc-conn`),
@@ -307,6 +324,24 @@ FALSE` **unconditionally**. The cert-manager base NEVER emits a ServiceMonitor
   Composition `external-network` (Network+Subnet+RouterV2) + patch-and-transform
   Function. Kept as its own Kustomization to avoid pruning the in-use XRD.
 - **external-secrets/** (v2.3.0).
+- **kyverno/** (chart v3.9.0 / app v1.19.0) — policy engine for OPT-IN workload
+  clusters (Sveltos `kyverno` add-on, label `.../kyverno`, default OFF). Base =
+  HelmRepository/HelmRelease/namespace (`kyverno` ns, single-replica controllers,
+  `resourceFilters` exclude kube-system/flux-system/projectsveltos/kyverno so a
+  bad policy can't wedge the platform reconcilers). `policies/` (own Flux
+  Kustomization pushed second, `dependsOn: kyverno`) holds two `ClusterPolicy`
+  guardrails, both `validationFailureAction: Enforce`, **scoped to OIDC users
+  only** (matched on the bare Zitadel groups `kube-admin`/`kube-user` — the only
+  identities carrying them; SAs/kubeadm/nodes never do): `protect-sveltos-resources`
+  denies CREATE/UPDATE/DELETE on any resource labelled `projectsveltos.io/reason:
+Resources` (checks BOTH `request.object` and `request.oldObject` so DELETE is
+  covered — a missing label resolves to null, precondition false); `protect-kube-system`
+  denies writes in the `kube-system` namespace + on the `kube-system` Namespace
+  object; `protect-nodes` denies CREATE/UPDATE/DELETE + CONNECT on `Node`
+  (+ `nodes/status`, `nodes/proxy`) — blocks cordon/drain, labels, taints and
+  kubelet-proxy (admission can't see GET/LIST/WATCH, so read/list is an RBAC
+  concern, not covered here). Platform reconcilers (Flux/Sveltos agent/Kyverno)
+  auth as SAs and are never matched. Chihiro toggle `kyverno` (default OFF).
 - **golinky/** (v0.3.1) — link shortener; `LoadBalancer` pinned `10.0.0.241`.
 - **openstack-ccm/** (chart v2.35.0 / app v1.35.0) — LoadBalancer via Octavia +
   Node init (removes the CAPO cloud-provider taint). Replaces Cilium LB on mgmt.
@@ -407,6 +442,23 @@ Dragonfly` CRD) via a Flux takeover of the SAME base mgmt uses,
     per-cluster values/secrets. The Dragonfly INSTANCE is app-owned by the
     consuming repo (e.g. atlas production's zot registry uses one as its Redis
     remoteCache), NOT this add-on. Default OFF.
+  - `kyverno.yaml` (`dependsOn: flux-instance`, label `.../kyverno`, default OFF)
+    — Kyverno policy engine via Flux takeover. TWO Flux Kustomization CRs pushed:
+    `kyverno` (`./infrastructure/kyverno`, the Helm chart = CRDs + controllers)
+    then `kyverno-policies` (`./infrastructure/kyverno/policies`, `dependsOn:
+kyverno` so the `ClusterPolicy` CRs never land before their CRDs). The two
+    ClusterPolicies are **scoped to OIDC users only** — matched on the bare
+    Zitadel groups `kube-admin`/`kube-user` (the only identities carrying them:
+    `usernameClaim: sub` + empty groupsPrefix; SAs are `system:serviceaccounts:*`,
+    node/kubeadm are `system:*`). Platform reconcilers (Flux, Sveltos agent,
+    Kyverno) authenticate as SAs and are never matched. `protect-sveltos-resources`
+    denies CREATE/UPDATE/DELETE on anything labelled `projectsveltos.io/reason:
+Resources` (checks BOTH `request.object` and `request.oldObject` so DELETE is
+    covered too); `protect-kube-system` denies writes in the `kube-system`
+    namespace + on the `kube-system` Namespace object. Both `validationFailureAction:
+Enforce`. HelmRelease also excludes kube-system/flux-system/projectsveltos/
+    kyverno from the webhook `resourceFilters` (belt-and-suspenders so a bad policy
+    can't wedge the platform reconcilers).
   - `gateway-api-crds.yaml` (`dependsOn: flux-instance`, ALL workload clusters,
     no opt-in) — Gateway API CRDs (cert-manager gateway-shim needs them).
   - `gateway-api.yaml` (label `.../gateway-api`) — TWO profiles: `gateway-api`
@@ -638,6 +690,7 @@ kube-prometheus-stack`, SM in ns `monitoring`). Deployed ONLY where the
 | ceph-csi-cephfs      | 3.15.0  | ceph.github.io/csi-charts                      |
 | external-dns         | 1.21.1  | kubernetes-sigs.github.io/external-dns/        |
 | openstack-exporter   | 1.6.0   | ghcr.io/openstack-exporter/openstack-exporter  |
+| kyverno              | 3.9.0   | kyverno.github.io/kyverno                      |
 
 Sync interval 5m (openstack-exporter 60s SM).
 
@@ -937,6 +990,31 @@ hyperconverged nodes → probe timeouts → restart loops.
   IN PLACE, do NOT raise the immutable `volumeClaimTemplates`/chart value). Mimir
   chart 6.x silently enabled Kafka/ingest-storage — disable BOTH
   `kafka.enabled: false` + `mimir.structuredConfig.ingest_storage.enabled: false`.
+- **Mimir storage MUST be S3, not filesystem** (mgmt, 2026-08). The ingester PVC
+  grew unbounded (47.8 GB / 91% of a 50Gi vol, +~3 GB/day) with 355 uncompacted
+  `level:1` blocks back 34 days despite a 72h `compactor_blocks_retention_period`.
+  ROOT CAUSE: `common.storage.backend: filesystem` is NOT a shared object store.
+  The mimir-distributed chart runs ingester/compactor/store-gateway as SEPARATE
+  pods, each with its OWN PVC, so the ingester ships blocks to a `/data/blocks`
+  only IT can see. The compactor (own empty PVC) logs `discovered users from
+bucket users=0` every cycle → never compacts level-1→N, never writes
+  `bucket-index.json.gz`, never creates `deletion-mark.json`, never applies
+  retention. Store-gateway loads 0 blocks → any query older than the 13h ingester
+  head silently returns nothing. Tuning retention/PVC size does NOT fix it (growth
+  just slows). Fix: point `common.storage` at Ceph S3 (`s3.rpcu.vpn`, bucket
+  `mimir` via the OBC on openstack) so all components share ONE bucket; then
+  compaction + retention work and the ingester PVC drops to head+WAL (~2-3 GiB,
+  now 10Gi). Diagnose live: `kubectl debug <ingester> --image=busybox --target=…
+--custom={runAsUser:0}` then `du -sh /proc/1/root/data/*` (distroless — no
+  shell/df/du in the container); check compactor logs for `users=0`. TLS to the
+  RGW gateway is `insecure: false` + `http.insecure_skip_verify: true` (HTTPS,
+  skip verify), NOT `insecure: true` (which means PLAINTEXT http and fails on
+  443); also `dualstack_enabled: false` + `bucket_lookup_type: path` for Ceph.
+  Shrinking the ingester PVC (50Gi→10Gi) needs a StatefulSet recreate
+  (`--cascade=orphan` + delete pod + delete PVC) — volumeClaimTemplates are
+  immutable and CSI can't shrink; the discarded data is just WAL/head, replayed
+  from remote*write. GITOPS ORDER: seed Vault `secrets-mgmt/mimir` + the `mimir`
+  policy BEFORE Flux reconciles, or the pods crash on the missing `${AWS*\*}` env.
 - **KSM customResourceState for Flux CRDs**: `gotk_resource_info`
   (`ready`/`suspended`/`revision`). Flux CRD RBAC under top-level
   `kube-state-metrics.rbac.extraRules` (the nested `customResourceState.rbac` is
@@ -1062,7 +1140,63 @@ env; pre-commit quality gates; 1-minute Git sync.
 
 ---
 
-**Last Updated**: August 2026 — **Granted the kubeadm bootstrap SA read on
+**Last Updated**: August 2026 — **Added a Kyverno policy-engine Sveltos add-on
+with OIDC-user guardrails.** New `infrastructure/kyverno/` component: the Helm
+chart base (HelmRepository/HelmRelease/namespace, chart v3.9.0 / app v1.19.0,
+`kyverno` ns, single-replica controllers, webhook `resourceFilters` excluding
+kube-system/flux-system/projectsveltos/kyverno) + `policies/` (own Flux
+Kustomization) holding two `ClusterPolicy` guardrails, both
+`validationFailureAction: Enforce`, **scoped to OIDC users only** by matching the
+bare Zitadel groups `kube-admin`/`kube-user` (the only identities carrying them —
+`usernameClaim: sub` + empty groupsPrefix; SAs are `system:serviceaccounts:*`,
+node/kubeadm `system:*`, so platform reconcilers via SAs are never matched):
+`protect-sveltos-resources` denies CREATE/UPDATE/DELETE on any resource labelled
+`projectsveltos.io/reason: Resources` (Sveltos stamps this on EVERY addon
+resource it deploys; the precondition checks BOTH `request.object` and
+`request.oldObject` so DELETE is covered, and a missing label resolves to null →
+false); `protect-kube-system` denies writes in the `kube-system` namespace and on
+the `kube-system` Namespace object. Delivered via
+`infrastructure/sveltos/clusterprofiles/kyverno.yaml` (Flux takeover, same
+pattern as dragonfly, `dependsOn: flux-instance`, label
+`sveltos.argus.rpcu.io/kyverno: enabled`, default OFF) pushing TWO Flux
+Kustomization CRs — `kyverno` then `kyverno-policies` (`dependsOn: kyverno`) so
+the ClusterPolicy CRs never land before their CRDs. Registered in the
+clusterprofiles `kustomization.yaml`; chihiro gained a `kyverno` boolean toggle
+(`clusters/mgmt/apps/chihiro/config.yaml`, default OFF, path
+`metadata.labels.'sveltos.argus.rpcu.io/kyverno'`) + the matching
+`sveltos.argus.rpcu.io/kyverno: {{ chihiro.kyverno }}` label in `cluster.template`.
+Chart added to the §2 version table (kyverno 3.9.0). All `kustomize build`
+targets green (`infrastructure/kyverno`, `infrastructure/kyverno/policies`,
+`infrastructure/sveltos/clusterprofiles`, `clusters/mgmt`); prettier clean. —
+Prior: **Moved Mimir off the filesystem backend onto
+Ceph S3 to stop the unbounded ingester-PVC growth.** The `storage-mimir-ingester-0`
+PVC had climbed to 47.8 GB / 91% of 50Gi (+~3 GB/day) holding 355 uncompacted
+`level:1` blocks dating back 34 days, despite a 72h retention. Verified live that
+`common.storage.backend: filesystem` is the root cause: the mimir-distributed
+chart runs ingester/compactor/store-gateway as separate pods each with its own
+PVC, so the ingester shipped blocks to a `/data/blocks` only it could see; the
+compactor logged `discovered users from bucket users=0`, never compacted, never
+wrote a `bucket-index.json.gz` or any `deletion-mark.json`, and never applied
+retention (and the store-gateway loaded 0 blocks, so long-term queries returned
+nothing). Fix: added an `ObjectBucketClaim` `mimir-bucket`
+(`infrastructure/rook/configs/mimir-bucket.yaml`, reusing the `ceph-bucket`
+StorageClass) creating bucket `mimir` on the openstack Ceph RGW; a `mimir-s3`
+`ExternalSecret` (`infrastructure/mimir/externalsecret.yaml`, Vault
+`secrets-mgmt/mimir`) rendering the OBC creds; and switched
+`infrastructure/mimir/helmrelease.yaml` `common.storage` to `s3` (endpoint
+`s3.rpcu.vpn`, `insecure: false` + `http.insecure_skip_verify: true`,
+`bucket_lookup_type: path`, `dualstack_enabled: false`, creds via
+`global.extraEnvFrom` → `${AWS_*}` expanded by `-config.expand-env`). Removed the
+filesystem dirs, shrank the ingester PVC 50Gi→10Gi (head+WAL only; needs a
+StatefulSet recreate — see §8) and sized compactor 10Gi / store-gateway 5Gi for
+S3 scratch/index-headers. Chart bumped to v6.2.0 in the docs. Manual prereq
+(`infrastructure/vault/README.md`, "Mimir S3 bucket bootstrap"): seed
+`secrets-mgmt/mimir` + attach a `mimir` Vault policy to the `external-secrets`
+role BEFORE Flux reconciles, or the pods crash on the missing `${AWS_*}` env. All
+`kustomize build` targets green (`infrastructure/{mimir,rook/configs}`,
+`clusters/{mgmt,openstack}`); `helm template` confirms `blocks_storage` inherits
+the S3 backend and `mimir-s3` is wired via `envFrom`. — Prior: **Granted the
+kubeadm bootstrap SA read on
 KamajiControlPlane (CAPI v1.14.0 compat).** As of Cluster API v1.14.0 (PR
 kubernetes-sigs/cluster-api#13433) the kubeadm bootstrap controller resolves the
 control-plane version by reading `Cluster.spec.controlPlaneRef`; on Kamaji-backed

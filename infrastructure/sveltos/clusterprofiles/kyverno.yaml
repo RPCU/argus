@@ -1,0 +1,78 @@
+# Kyverno policy engine for OPT-IN workload clusters, delivered as a Flux
+# takeover (same pattern as dragonfly / csi-driver-nfs / external-dns).
+#
+# TWO things are pushed, ordered by dependsOn so the ClusterPolicies never land
+# before their CRDs:
+#   1. `kyverno` — the Helm chart (installs the Kyverno CRDs + admission /
+#      background / reports / cleanup controllers) from ./infrastructure/kyverno.
+#   2. `kyverno-policies` — the ClusterPolicies from ./infrastructure/kyverno/policies
+#      (dependsOn kyverno) that:
+#        - deny OIDC users (groups kube-admin / kube-user) any write to resources
+#          labelled projectsveltos.io/reason (everything Sveltos deploys), and
+#        - deny those same OIDC users any write to the kube-system namespace.
+#      Deploying the ClusterPolicy CRs before the Kyverno CRDs exist would fail
+#      with `no matches for kind "ClusterPolicy"`; the dependency + retries fix
+#      that.
+#
+# Gated by the opt-in label sveltos.argus.rpcu.io/kyverno: enabled.
+#
+# dependsOn flux-instance: the pushed Flux Kustomization CRs are reconciled by
+# the kustomize controller, which only exists once Flux is installed.
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: kyverno
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  dependsOn:
+    - flux-instance
+  clusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/kyverno: enabled
+  policyRefs:
+    - name: kyverno-flux-kustomizations
+      namespace: projectsveltos
+      kind: ConfigMap
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kyverno-flux-kustomizations
+  namespace: projectsveltos
+data:
+  kyverno.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: kyverno
+      namespace: flux-system
+    spec:
+      interval: 10m
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/kyverno
+      prune: true
+      wait: true
+      timeout: 10m
+  kyverno-policies.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: kyverno-policies
+      namespace: flux-system
+    spec:
+      interval: 10m
+      dependsOn:
+        - name: kyverno
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/kyverno/policies
+      prune: true
+      wait: true
+      timeout: 5m

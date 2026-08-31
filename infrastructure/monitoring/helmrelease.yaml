@@ -22,7 +22,7 @@ spec:
   chart:
     spec:
       chart: kube-prometheus-stack
-      version: 88.5.3
+      version: 88.6.2
       interval: 24h
       sourceRef:
         kind: HelmRepository

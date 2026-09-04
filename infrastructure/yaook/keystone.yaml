@@ -93,8 +93,8 @@ spec:
       expiration: 86400
   memcached:
     connections: 2000
-    memory: 1024
-    replicas: 3
+    memory: 512
+    replicas: 2
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   policy:
     admin_required: role:admin or is_admin:1

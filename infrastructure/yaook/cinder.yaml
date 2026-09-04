@@ -107,7 +107,7 @@ spec:
   memcached:
     connections: 1024
     memory: 512
-    replicas: 3
+    replicas: 2
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   messageQueue:
     replicas: 1

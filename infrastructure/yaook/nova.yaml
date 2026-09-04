@@ -10,7 +10,7 @@ spec:
       ingressClassName: nginx
       port: 443
     publishEndpoint: true
-    replicas: 3
+    replicas: 2
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     resources:
       nova-api:
@@ -88,7 +88,7 @@ spec:
             user: cinder
             uuid: b3ab713d-912b-49ed-adaf-bd74368e567a
   conductor:
-    replicas: 3
+    replicas: 2
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     resources:
       nova-conductor:
@@ -296,7 +296,7 @@ spec:
   memcached:
     connections: 1024
     memory: 512
-    replicas: 3
+    replicas: 2
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   messageQueue:
     cell1:
@@ -317,7 +317,7 @@ spec:
       storageSize: 8Gi
       tolerateNodeDown: false
   metadata:
-    replicas: 3
+    replicas: 2
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     resources:
       nova-metadata:
@@ -358,7 +358,7 @@ spec:
       ingressClassName: nginx
       port: 443
     publishEndpoint: true
-    replicas: 3
+    replicas: 2
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     resources:
       placement:
@@ -374,7 +374,7 @@ spec:
   region:
     name: hetzner
   scheduler:
-    replicas: 3
+    replicas: 2
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     resources:
       nova-scheduler:

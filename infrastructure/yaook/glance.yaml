@@ -47,7 +47,7 @@ spec:
     replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
   api:
-    replicas: 3
+    replicas: 2
     ingress:
       createIngress: false
       fqdn: "glance.rpcu.vpn"
@@ -58,7 +58,7 @@ spec:
           cpu: 200m
           memory: 512Mi
         limits:
-          memory: 4Gi
+          memory: 2Gi
   glanceConfig:
     DEFAULT:
       # Expose the RBD location of images so cinder/nova can create volumes

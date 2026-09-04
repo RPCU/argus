@@ -92,12 +92,23 @@ spec:
   syncMode: ContinuousWithDriftDetection
   reloader: true
   policyRefs:
+    # force: true lets a REGENERATED per-cluster ClusterProfile adopt Vault PKI
+    # MRs (Backend/Policy/SecretBackendRole) that still carry a previous
+    # generation's Sveltos owner annotations. When a workload cluster is rebuilt,
+    # this EventTrigger regenerates a fresh ClusterProfile+ConfigMap (new random
+    # name) while the 22-day-old Crossplane MRs persist; without force the new
+    # profile refuses to take over the stale-owned resource and wedges on a
+    # "conflict was detected" error forever (2449 consecutive failures, fixed
+    # 2026-09-04). The resources are single-owner per cluster, so auto-adoption
+    # is safe here.
     - kind: ConfigMap
       name: cert-manager-vault-role
       namespace: projectsveltos
+      force: true
     - kind: ConfigMap
       name: cert-manager-vault-authconfig-cp
       namespace: projectsveltos
+      force: true
 ---
 # Crossplane MRs created on the mgmt Vault, instantiated per workload cluster:
 #   - SecretBackendRole cm-<cluster> on pki-int — THE subdomain isolation

@@ -295,7 +295,7 @@ cluster:
       default: false
       true_value: enabled
       false_value: disabled
-      editable: false
+      editable: true
       path: "metadata.labels.'sveltos.argus.rpcu.io/dragonfly'"
     monitoring:
       label: "Monitoring"

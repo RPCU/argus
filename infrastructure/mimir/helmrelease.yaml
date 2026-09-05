@@ -118,7 +118,8 @@ spec:
         size: 5Gi
       resources:
         requests:
-          cpu: 30m
+          # Measured (Mimir, 3d): peak ~6m, avg ~3m.
+          cpu: 10m
           memory: 128Mi
         limits:
           memory: 1Gi
@@ -279,7 +280,8 @@ spec:
       replicas: 1
       resources:
         requests:
-          cpu: 20m
+          # Measured (Mimir, 3d): peak ~9m, avg ~5m.
+          cpu: 15m
           memory: 64Mi
         limits:
           memory: 256Mi

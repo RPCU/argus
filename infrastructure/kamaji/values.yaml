@@ -50,10 +50,11 @@ kamaji-etcd:
   # Only set it when bootstrapping a cluster whose default SC is not Cinder.
   resources:
     requests:
-      # Measured P95 ~115m / peak ~124m CPU per member over 3d (Mimir).
-      # 500m was ~4x peak and blocked scheduling on a 2-node fleet;
-      # 250m is 2x peak with headroom.
-      cpu: 250m
+      # Measured (Mimir, 3d): peak ~132m across mgmt+production members,
+      # steady-state avg ~40-50m. 500m was ~4x peak and blocked scheduling
+      # on a 2-node fleet; 200m is ~1.5x peak with headroom while freeing
+      # ~50m x3 members per cluster for denser packing.
+      cpu: 200m
       memory: 256Mi
   # Spread the 3 etcd members across distinct nodes. Without this, node
   # churn (CAPI remediation) packed 2/3 members onto ONE worker (observed

@@ -6,10 +6,10 @@ spec:
   replicas: 1
   resources:
     requests:
-      # Measured P95 ~8m / peak ~9m CPU over 3d (Mimir). 500m was a
-      # ~60x over-reservation that ate a worker's schedulable budget on
-      # a 2-node fleet; 100m keeps generous headroom.
-      cpu: 100m
+      # Measured (Mimir, 3d): peak ~11m, avg ~6m. 500m was a ~60x
+      # over-reservation; 15m (~1.5x peak) frees reservation while the
+      # 600m limit still absorbs any burst.
+      cpu: 15m
       memory: 500Mi
     limits:
       cpu: 600m

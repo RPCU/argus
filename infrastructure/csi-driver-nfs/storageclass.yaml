@@ -26,3 +26,5 @@ mountOptions:
   - noatime
   - rsize=1048576
   - wsize=1048576
+  - lookupcache=all
+  - nconnect=8

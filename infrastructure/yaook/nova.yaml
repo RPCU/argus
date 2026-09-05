@@ -82,7 +82,11 @@ spec:
             remote_filesystem_transport: rsync
         volumeBackends:
           ceph:
-            cephConfig: {}
+            cephConfig:
+              global:
+                "rbd_cache": "true"
+                "rbd_cache_size": "268435456"
+                "rbd_cache_writethrough_until_flush": "true"
             enabled: true
             keyringSecretName: rook-ceph-client-cinder
             user: cinder

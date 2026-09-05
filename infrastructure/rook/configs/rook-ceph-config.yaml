@@ -11,3 +11,6 @@ data:
   config: |
     [global]
     mon_max_pg_per_osd = 400
+    ms_async_op_threads = 4
+    osd_op_threads = 6
+    osd_memory_target_autotune = true

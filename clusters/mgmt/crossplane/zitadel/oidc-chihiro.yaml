@@ -36,6 +36,7 @@ spec:
       - "*"
     projectId: "370001231801746254"
     redirectUris:
+      - "https://*.rpcu.lan/auth/callback"
       - https://chihiro.mgmt.rpcu.lan/auth/callback
       - https://chihiro.rpcu.io/auth/callback
     responseTypes:

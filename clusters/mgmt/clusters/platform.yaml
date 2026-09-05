@@ -58,8 +58,8 @@ spec:
       machineDeployments:
         - class: default-worker
           name: worker
-          replicas: 3
+          replicas: 2
           variables:
             overrides:
               - name: workerFlavor
-                value: large
+                value: duo-large

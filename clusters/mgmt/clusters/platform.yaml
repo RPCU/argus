@@ -16,6 +16,7 @@ metadata:
     sveltos.argus.rpcu.io/kamaji-apiserver-proxy: enabled
     sveltos.argus.rpcu.io/oidc-rbac: enabled
     sveltos.argus.rpcu.io/openstack-integration: enabled
+    sveltos.argus.rpcu.io/csi-driver-nfs: enabled
     sveltos.argus.rpcu.io/vault-auth: enabled
 spec:
   clusterNetwork:

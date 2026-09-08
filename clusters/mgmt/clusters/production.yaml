@@ -35,7 +35,7 @@ spec:
       replicas: 1
     workers:
       machineDeployments:
-        - class: cpu-worker
+        - class: default-worker
           name: cpu-xlarge
           replicas: 1
           variables:

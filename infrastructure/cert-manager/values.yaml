@@ -24,3 +24,23 @@ prometheus:
     # the CRD; the CRD came only from monitoring; monitoring dependsOn
     # cert-manager). See §8.
     enabled: false
+
+resources:
+  controller:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+  webhook:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+  cainjector:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      memory: 256Mi

@@ -50,7 +50,7 @@ spec:
       controller:
         resources:
           requests:
-            cpu: 80m
+            cpu: 50m
             memory: 448Mi
           limits:
             memory: 1536Mi

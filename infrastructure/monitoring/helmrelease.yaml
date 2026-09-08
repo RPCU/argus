@@ -324,6 +324,12 @@ spec:
     # NOTE: the node-exporter subchart lives under the `prometheus-node-exporter`
     # key (not `nodeExporter`, which only controls enabled/forceDeployDashboards).
     prometheus-node-exporter:
+      resources:
+        requests:
+          cpu: 25m
+          memory: 32Mi
+        limits:
+          memory: 128Mi
       prometheus:
         monitor:
           relabelings:

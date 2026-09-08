@@ -14,3 +14,10 @@ spec:
   configSecret:
     name: capo-variables
     namespace: capo-system
+  manager:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        memory: 512Mi

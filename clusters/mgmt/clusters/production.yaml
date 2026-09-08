@@ -35,6 +35,13 @@ spec:
       replicas: 1
     workers:
       machineDeployments:
+        - class: cpu-worker
+          name: cpu-xlarge
+          replicas: 1
+          variables:
+            overrides:
+              - name: workerFlavor
+                value: cpu-xlarge
         - class: default-worker
           name: worker-xlarge
           replicas: 2

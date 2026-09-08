@@ -109,6 +109,18 @@ spec:
 apiVersion: compute.openstack.m.crossplane.io/v1alpha1
 kind: FlavorV2
 metadata:
+  name: cpu-xlarge
+spec:
+  forProvider:
+    name: cpu-xlarge
+    vcpus: 6
+    ram: 4096
+    disk: 40
+    isPublic: true
+---
+apiVersion: compute.openstack.m.crossplane.io/v1alpha1
+kind: FlavorV2
+metadata:
   name: octavia-amphora
 spec:
   forProvider:

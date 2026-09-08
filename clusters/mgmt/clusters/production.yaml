@@ -36,6 +36,13 @@ spec:
     workers:
       machineDeployments:
         - class: default-worker
+          name: duo-large
+          replicas: 1
+          variables:
+            overrides:
+              - name: workerFlavor
+                value: duo-large
+        - class: default-worker
           name: worker-xlarge
           replicas: 2
           variables:

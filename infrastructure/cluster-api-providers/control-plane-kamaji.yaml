@@ -10,12 +10,6 @@ spec:
   manager:
     featureGates:
       ExternalClusterReference: true
-    resources:
-      requests:
-        cpu: 50m
-        memory: 64Mi
-      limits:
-        memory: 256Mi
   # ---------------------------------------------------------------------------
   # CRD patch: drop `minProperties: 1` from KamajiControlPlane.spec.controlPlaneEndpoint
   #

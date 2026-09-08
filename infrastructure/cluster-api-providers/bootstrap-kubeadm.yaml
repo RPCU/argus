@@ -7,3 +7,10 @@ metadata:
 spec:
   # renovate: datasource=github-releases depName=kubernetes-sigs/cluster-api
   version: v1.14.1
+  manager:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 256Mi

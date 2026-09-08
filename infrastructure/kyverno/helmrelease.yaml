@@ -26,12 +26,36 @@ spec:
     # not the platform. HA (3 replicas) would need 3 nodes with podAntiAffinity.
     admissionController:
       replicas: 1
+      resources:
+        requests:
+          cpu: 25m
+          memory: 64Mi
+        limits:
+          memory: 256Mi
     backgroundController:
       replicas: 1
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          memory: 256Mi
     reportsController:
       replicas: 1
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          memory: 128Mi
     cleanupController:
       replicas: 1
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          memory: 128Mi
     config:
       # CRITICAL: the chart DEFAULT webhook namespaceSelector excludes
       # kube-system (`NotIn kube-system`), which means the API server NEVER sends

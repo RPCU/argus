@@ -52,9 +52,8 @@ kamaji-etcd:
     requests:
       # Measured (Mimir, 3d): peak ~132m across mgmt+production members,
       # steady-state avg ~40-50m. 500m was ~4x peak and blocked scheduling
-      # on a 2-node fleet; 200m is ~1.5x peak with headroom while freeing
-      # ~50m x3 members per cluster for denser packing.
-      cpu: 200m
+      # on a 2-node fleet; 150m is ~1.1x peak with headroom.
+      cpu: 150m
       memory: 256Mi
   # Spread the 3 etcd members across distinct nodes. Without this, node
   # churn (CAPI remediation) packed 2/3 members onto ONE worker (observed

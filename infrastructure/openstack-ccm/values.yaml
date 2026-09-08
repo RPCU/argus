@@ -47,3 +47,11 @@ secret:
 # minimal and avoid mounting host PKI into a LB-only controller.
 extraVolumes: []
 extraVolumeMounts: []
+
+resources:
+  cloudControllerManager:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi

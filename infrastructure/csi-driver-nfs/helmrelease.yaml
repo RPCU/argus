@@ -21,3 +21,16 @@ spec:
       name: nfs.csi.k8s.io
     controller:
       replicas: 1
+      resources:
+        requests:
+          cpu: 25m
+          memory: 32Mi
+        limits:
+          memory: 128Mi
+    node:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          memory: 128Mi

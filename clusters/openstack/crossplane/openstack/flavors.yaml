@@ -114,7 +114,7 @@ spec:
   forProvider:
     name: cpu-xlarge
     vcpus: 6
-    ram: 4096
+    ram: 8192
     disk: 40
     isPublic: true
 ---

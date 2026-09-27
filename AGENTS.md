@@ -8,6 +8,25 @@
    project.** Add/update the relevant Section 1 entry, versions, directory
    structure, and the "Last Updated" line, in the same request you ask to commit.
 
+## Git Workflow
+
+Based on [didactiklabs/nixbook](https://github.com/didactiklabs/nixbook.git).
+
+All git operations must follow this workflow. **Always ask the user for validation before performing any git action** (creating a branch, committing, pushing, rebasing, creating a PR, merging, deleting a branch) — never do it on your own initiative.
+
+1. **Branch** — Never commit on `main`. Always create a dedicated feature branch first (`git checkout -b <branch-name>` from `main`), with a descriptive branch name.
+2. **Commit** — Commit the changes on that branch (only after the user validated the changes). Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, `chore(deps):`, `refactor:`, `chore:`).
+3. **PR** — Push the branch and open a Pull Request against `main` (`git push -u origin <branch-name>` then `gh pr create`).
+4. **Rebase** — Before updating the PR, rebase it on top of `main` and force-push (`git fetch origin && git rebase origin/main`, then `git push --force-with-lease`).
+5. **Merge (deploy)** — The PR is merged into `main` only when the user wants to deploy the change. Merging is the deployment trigger: it requires explicit user validation, and the PR must have been rebased on `main` first. **Always use a rebase merge** (`gh pr merge <pr> --rebase`); if the base branch policy blocks it, add `--admin`.
+6. **Cleanup** — After the merge, delete the feature branch both remotely and locally (`git push origin --delete <branch-name>` if not auto-deleted, then `git branch -d <branch-name>`) and switch back to `main` (`git checkout main && git pull --ff-only`).
+
+**Rules:**
+
+- Never commit or push anything to this repository unless explicitly requested by the user.
+- Never amend commits.
+- If you make changes, always present them for user review before committing.
+
 ## Project Overview
 
 **Argus** is RPCU's GitOps repo for Kubernetes cluster config, built with Flux

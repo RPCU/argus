@@ -59,6 +59,10 @@ spec:
         value: ""
       - name: workerFlavor
         value: xmedium
+      # Spread workers across hypervisors (soft-anti-affinity server group
+      # capi-production, Sveltos capi-server-groups). Rolls the workers.
+      - name: workerServerGroup
+        value: true
       - name: oidc
         value:
           enabled: true

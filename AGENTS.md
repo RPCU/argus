@@ -1229,7 +1229,7 @@ env; pre-commit quality gates; 1-minute Git sync.
 partition.** Right-sized every repo-managed workload on openstack, mgmt and the
 Sveltos bases from 72h Mimir (fixed 6 charts whose `resources` keys were
 silently dropped; kamaji tenant apiservers via new
-`controlplane-kamaji-v8`/`-external-v2`; cilium agent OOMs on production; vault
+`controlplane-kamaji-v8`/`-external-v2`, then `-v9`/`-external-v3` with relaxed tenant probes; cilium agent OOMs on production; vault
 and yaook operators no longer BestEffort). Added the nova placement reservation
 CronJob (§8 "Hypervisor partition"); OVN per-node agents deliberately untouched
 (VM eviction trap). — Prior: August 2026 — **Added a Kyverno policy-engine Sveltos add-on

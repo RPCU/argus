@@ -49,6 +49,10 @@ spec:
           issuerURL: https://rpcu-gabeck.eu1.zitadel.cloud
       - name: managedSubnetCIDR
         value: 192.168.5.0/24
+      # Spread workers across hypervisors (soft-anti-affinity server group
+      # capi-platform, Sveltos capi-server-groups). Rolls the workers.
+      - name: workerServerGroup
+        value: true
       - name: gatewayHostname
         value: platform.kcp.production.rpcu.lan
       - name: gatewayName

@@ -2,8 +2,10 @@
 
 ## ⚠️ CRITICAL INSTRUCTIONS FOR AI AGENTS
 
-1. **Commit policy — do NOT commit unless explicitly asked.** Preview changes,
-   show `git diff`, list files, and draft a commit message for approval first.
+1. **Git/deploy policy — agents MAY branch, commit, push, open/rebase PRs,
+   merge to `main` and `flux reconcile` when needed** (see Git Workflow).
+   **For a big change, wait for the user's approval before merging to
+   `main`** (merge = deploy).
 2. **Documentation policy — ALWAYS update this file when you change the
    project.** Add/update the relevant Section 1 entry, versions, directory
    structure, and the "Last Updated" line, in the same request you ask to commit.
@@ -12,20 +14,31 @@
 
 Based on [didactiklabs/nixbook](https://github.com/didactiklabs/nixbook.git).
 
-All git operations must follow this workflow. **Always ask the user for validation before performing any git action** (creating a branch, committing, pushing, rebasing, creating a PR, merging, deleting a branch) — never do it on your own initiative.
+Agents may run this whole workflow on their own (branch, commit, push, PR,
+rebase, merge to `main`, `flux reconcile`, cleanup). **Exception: for a big
+change, stop once the PR is open and rebased, and merge only after the user
+approves.**
 
 1. **Branch** — Never commit on `main`. Always create a dedicated feature branch first (`git checkout -b <branch-name>` from `main`), with a descriptive branch name.
-2. **Commit** — Commit the changes on that branch (only after the user validated the changes). Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, `chore(deps):`, `refactor:`, `chore:`).
-3. **PR** — Push the branch and open a Pull Request against `main` (`git push -u origin <branch-name>` then `gh pr create`).
-4. **Rebase** — Before updating the PR, rebase it on top of `main` and force-push (`git fetch origin && git rebase origin/main`, then `git push --force-with-lease`).
-5. **Merge (deploy)** — The PR is merged into `main` only when the user wants to deploy the change. Merging is the deployment trigger: it requires explicit user validation, and the PR must have been rebased on `main` first. **Always use a rebase merge** (`gh pr merge <pr> --rebase`); if the base branch policy blocks it, add `--admin`.
-6. **Cleanup** — After the merge, delete the feature branch both remotely and locally (`git push origin --delete <branch-name>` if not auto-deleted, then `git branch -d <branch-name>`) and switch back to `main` (`git checkout main && git pull --ff-only`).
+2. **Commit** — Commit the changes on that branch after validating them (`kustomize build` of every touched path, pre-commit hooks). Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, `chore(deps):`, `refactor:`, `chore:`).
+3. **PR** — Push the branch and open a Pull Request against `main` (`git push -u origin <branch-name>` then `gh pr create`). State the blast radius and restart impact.
+4. **Rebase** — Before merging or updating the PR, rebase it on top of `main` and force-push (`git fetch origin && git rebase origin/main`, then `git push --force-with-lease`).
+5. **Merge (deploy)** — Merging into `main` is the deployment trigger. Small change → merge directly; **big change → wait for the user's approval**. **Always use a rebase merge** (`gh pr merge <pr> --rebase`); if the base branch policy blocks it, add `--admin`.
+6. **Reconcile** — When needed, force the sync instead of waiting for the interval (`flux reconcile source git flux-system -n flux-system`, then `flux reconcile kustomization <name> -n flux-system` / `flux reconcile helmrelease <name> -n <ns>`), and check it goes Ready (`flux get kustomizations -A`) on every affected cluster.
+7. **Cleanup** — After the merge, delete the feature branch both remotely and locally (`git push origin --delete <branch-name>` if not auto-deleted, then `git branch -d <branch-name>`) and switch back to `main` (`git checkout main && git pull --ff-only`).
+
+**Big change** (wait for approval before merging): anything that restarts or
+evicts stateful/critical pieces (Ceph, OVN/OVS, Galera, rabbitmq, nova-compute
+— incl. `novaComputeConfig`/`setup.ovn.controller.*` edits, which evict VMs —
+etcd/Kamaji, Vault, Cilium, Prometheus/Mimir), touches several components or
+clusters at once, bumps CRDs/major charts, rotates ClusterClass templates,
+deletes resources or changes `prune`, or has an unclear rollback. When unsure,
+treat it as big.
 
 **Rules:**
 
-- Never commit or push anything to this repository unless explicitly requested by the user.
-- Never amend commits.
-- If you make changes, always present them for user review before committing.
+- Never amend commits or force-push `main`.
+- Never commit secrets — everything sensitive flows through Vault/ESO.
 
 ## Project Overview
 

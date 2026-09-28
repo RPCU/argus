@@ -40,8 +40,9 @@ spec:
           replicas: 2
           variables:
             overrides:
+              # 60 GB root disk: 30 GB cis-xlarge workers hit DiskPressure.
               - name: workerFlavor
-                value: cis-xlarge
+                value: cis-xlarge-60
     variables:
       - name: identityRef
         value:

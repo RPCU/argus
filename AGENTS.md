@@ -77,6 +77,13 @@ Master `kustomization.yaml` plus per-concern Flux Kustomizations:
 `fluxcd/`, `yaook-operator`, `openstack-exporter` (dependsOn external-secrets +
 monitoring, `wait: false`).
 
+- `yaook-rabbitmq-probes.yaml` — raw `MutatingAdmissionPolicy` + binding (cluster-scoped,
+  so it lives here, not under the `namespace: yaook` kustomization). On pod CREATE
+  it swaps yaook's `rabbitmq-diagnostics` exec probes (4 Erlang CLI boots/30s,
+  ~1.8 CPU-s each ≈ 0.25–0.5 core per idle broker) for liveness `httpGet /` on
+  `managements` (HTTPS) and readiness `tcpSocket` on `amqps`. Startup probe is
+  untouched. `failurePolicy: Ignore`; only fires while yaook still ships exec
+  probes. Running brokers keep the old probes until they restart.
 - `rook.yaml` — three Kustomizations: `rook-setup` → `rook-ceph-csi`
   (`./infrastructure/rook/csi-drivers`) → `rook-configs`.
 - `crossplane.yaml` — `crossplane` (Helm) → `crossplane-openstack` →
@@ -1288,7 +1295,9 @@ env; pre-commit quality gates; 1-minute Git sync.
 
 ---
 
-**Last Updated**: 2026-09-28 — **Fleet-wide requests/limits pass + hypervisor
+**Last Updated**: 2026-09-28 — **Cheap RabbitMQ probes** via a MutatingAdmissionPolicy
+(`clusters/openstack/yaook-rabbitmq-probes.yaml`, ~2.3 cores saved fleet-wide once
+brokers restart). Earlier the same day: **Fleet-wide requests/limits pass + hypervisor
 partition.** Right-sized every repo-managed workload on openstack, mgmt and the
 Sveltos bases from 72h Mimir (fixed 6 charts whose `resources` keys were
 silently dropped; kamaji tenant apiservers via new

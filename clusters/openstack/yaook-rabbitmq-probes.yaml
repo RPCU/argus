@@ -1,0 +1,80 @@
+# Replace yaook's RabbitMQ exec probes with socket/HTTP probes.
+#
+# The yaook infra-operator hardcodes liveness/readiness as `rabbitmq-diagnostics`
+# calls (1 for liveness, 3 for readiness, every 30s) and the AMQPServer CRD has
+# no override. Each call boots a whole Erlang VM with TLS distribution: ~1.8
+# CPU-s, i.e. 0.25-0.5 core per idle broker (~2.3 cores fleet-wide, mostly on
+# lucy) while beam.smp itself averages ~0.02 core.
+#
+# - liveness: HTTPS GET / on the management listener, served by the broker VM.
+# - readiness: TCP on amqps, only open while the rabbit app runs (≈ check_running).
+#   The yaook readiness also stops the app on a local disk alarm; that only
+#   matters for multi-replica clusters, and all our brokers run 1 replica.
+#
+# Pods are only mutated on CREATE, so running brokers keep the old probes until
+# they restart. failurePolicy Ignore: on any error the pod gets yaook's probes.
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: yaook-rabbitmq-cheap-probes
+spec:
+  failurePolicy: Ignore
+  reinvocationPolicy: Never
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+  matchConditions:
+    # Only while yaook still ships the exec probes.
+    - name: rabbitmq-exec-probes
+      expression: >-
+        object.spec.containers.exists(c, c.name == "rabbitmq" &&
+        has(c.livenessProbe) && has(c.livenessProbe.exec) &&
+        has(c.readinessProbe) && has(c.readinessProbe.exec))
+  variables:
+    - name: idx
+      expression: string(object.spec.containers.map(c, c.name).indexOf("rabbitmq"))
+  mutations:
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: >-
+          [
+            JSONPatch{
+              op: "replace",
+              path: "/spec/containers/" + variables.idx + "/livenessProbe",
+              value: Object.spec.containers.livenessProbe{
+                httpGet: Object.spec.containers.livenessProbe.httpGet{
+                  path: "/", port: "managements", scheme: "HTTPS"
+                },
+                initialDelaySeconds: 120, periodSeconds: 30,
+                timeoutSeconds: 10, failureThreshold: 6
+              }
+            },
+            JSONPatch{
+              op: "replace",
+              path: "/spec/containers/" + variables.idx + "/readinessProbe",
+              value: Object.spec.containers.readinessProbe{
+                tcpSocket: Object.spec.containers.readinessProbe.tcpSocket{
+                  port: "amqps"
+                },
+                initialDelaySeconds: 10, periodSeconds: 10,
+                timeoutSeconds: 5, failureThreshold: 3
+              }
+            }
+          ]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: yaook-rabbitmq-cheap-probes
+spec:
+  policyName: yaook-rabbitmq-cheap-probes
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: yaook
+    objectSelector:
+      matchLabels:
+        state.yaook.cloud/component: amqpserver

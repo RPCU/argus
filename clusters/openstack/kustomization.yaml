@@ -15,4 +15,5 @@ resources:
   - openstack-exporter.yaml
   - golinky.yaml
   - yaook-operator.yaml
+  - yaook-rabbitmq-probes.yaml
   - fluxcd/

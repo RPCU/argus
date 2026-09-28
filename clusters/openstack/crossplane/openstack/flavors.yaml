@@ -46,6 +46,22 @@ spec:
     disk: 50
     isPublic: true
 ---
+# `large` with 16 GB RAM, for the mgmt kubeadm control plane: on 8 GB its
+# apiserver (~5 GB with the crossplane CRDs) OOM-thrashed the VM during a
+# worker rollout (2026-09-28). Same vCPU/disk as `large` (disk must not
+# shrink for a resize).
+apiVersion: compute.openstack.m.crossplane.io/v1alpha1
+kind: FlavorV2
+metadata:
+  name: large-16
+spec:
+  forProvider:
+    name: large-16
+    vcpus: 4
+    ram: 16384
+    disk: 50
+    isPublic: true
+---
 apiVersion: compute.openstack.m.crossplane.io/v1alpha1
 kind: FlavorV2
 metadata:

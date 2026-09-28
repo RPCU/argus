@@ -89,9 +89,15 @@ spec:
     matchLabels:
       type: workload
       sveltos.argus.rpcu.io/vault-auth: enabled
+  # Only the CAPI Cluster mgmt/mgmt: the chart's SveltosCluster mgmt/mgmt is
+  # the same cluster and also carries type=mgmt; matching both deployed every
+  # object twice (two ClusterSummaries overwriting each other = drift).
   destinationClusterSelector:
     matchLabels:
       type: mgmt
+    matchExpressions:
+      - key: cluster.x-k8s.io/cluster-name
+        operator: Exists
   eventSourceName: vault-auth-eso-ready
   syncMode: ContinuousWithDriftDetection
   # Leave deployed resources in place if mgmt stops matching (e.g. a selector

@@ -1213,6 +1213,17 @@ CreateReplace` with no cert-manager dependency (self-signed webhook certs), so
   kubelet `--kube-reserved`/`--system-reserved`/eviction thresholds (defaults let
   Pods commit 100% + eviction too tight to beat the OOM killer). Uneven VM packing
   is historical placement (makise had 0 VMs); do NOT "fix" via `novaComputeConfig`.
+- **Ballast (request right-sizing)** — `infrastructure/ballast/`, on mgmt + openstack
+  (`clusters/<c>/ballast.yaml`) and opt-in workload clusters (Sveltos `ballast`,
+  label `sveltos.argus.rpcu.io/ballast`; production). Reads metrics.k8s.io
+  (prometheus-adapter), mode `apply` (sizes pods at CREATE once a profile has 24h of
+  samples; in-place resize dry-run). `enrollment-policy.yaml` (MutatingAdmissionPolicy)
+  enrolls controller-owned pods and stamps identity `ballast.rpcu.io/workload=<ns>--<workload>`;
+  it SKIPS pods with a CPU limit (Ballast never removes one and could set request >
+  limit), CNPG instances, and kube-system/flux-system/rook-ceph/yaook/kamaji-tenants/
+  vault/monitoring. Manifest requests stay as the fallback; don't remove them. Webhook
+  post-rendered to `failurePolicy: Ignore`. Kill switch: ConfigMap
+  `ballast-kill-switch` in ballast-system. Platform has no metrics.k8s.io yet.
 - **Crossplane MRD activation (mgmt)**: the `default` MRAP is managed in
   `clusters/mgmt/crossplane/activation-policy.yaml` (explicit kind list). The chart's
   `provider.defaultActivations` is useless after install (`core init` only creates

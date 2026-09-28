@@ -11,6 +11,7 @@ metadata:
     sveltos.argus.rpcu.io/csi-driver-nfs: enabled
     sveltos.argus.rpcu.io/dragonfly: enabled
     sveltos.argus.rpcu.io/descheduler: enabled
+    sveltos.argus.rpcu.io/ballast: enabled
     sveltos.argus.rpcu.io/external-dns: enabled
     sveltos.argus.rpcu.io/gateway-api: enabled
     sveltos.argus.rpcu.io/cert-manager: enabled

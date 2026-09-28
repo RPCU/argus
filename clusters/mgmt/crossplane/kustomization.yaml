@@ -3,3 +3,4 @@ resources:
   - openstack/
   - cloud-controller-eso/
   - vault/
+  - activation-policy.yaml

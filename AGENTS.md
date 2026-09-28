@@ -1213,6 +1213,12 @@ CreateReplace` with no cert-manager dependency (self-signed webhook certs), so
   kubelet `--kube-reserved`/`--system-reserved`/eviction thresholds (defaults let
   Pods commit 100% + eviction too tight to beat the OOM killer). Uneven VM packing
   is historical placement (makise had 0 VMs); do NOT "fix" via `novaComputeConfig`.
+- **Crossplane MRD activation (mgmt)**: the `default` MRAP is managed in
+  `clusters/mgmt/crossplane/activation-policy.yaml` (explicit kind list). The chart's
+  `provider.defaultActivations` is useless after install (`core init` only creates
+  the MRAP, ignoring AlreadyExists), and the values file is shared with openstack.
+  Active MRDs can't be deactivated: add a kind to the list BEFORE creating its first
+  object; the ~430 unused kinds activated by the old `"*"` are still Active.
 - **Crossplane `DeploymentRuntimeConfig` is `pkg.crossplane.io/v1beta1`, not `v1`**
   (only `Provider`/`ClusterProviderConfig` are `v1`). `v1` fails the server
   dry-run and cascades crossplane-zitadel → crossplane-resources →

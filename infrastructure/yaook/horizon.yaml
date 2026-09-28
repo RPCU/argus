@@ -13,8 +13,8 @@ spec:
   resources:
     horizon:
       requests:
-        cpu: 200m
-        memory: 256Mi
+        cpu: 20m
+        memory: 544Mi
       limits:
         memory: 1Gi
   ingress:

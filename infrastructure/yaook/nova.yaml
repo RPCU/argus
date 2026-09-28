@@ -15,10 +15,10 @@ spec:
     resources:
       nova-api:
         requests:
-          cpu: 200m
-          memory: 512Mi
+          cpu: 40m
+          memory: 1856Mi
         limits:
-          memory: 2Gi
+          memory: 3712Mi
   compute:
     configTemplates:
       - nodeSelectors:
@@ -97,10 +97,15 @@ spec:
     resources:
       nova-conductor:
         requests:
-          cpu: 200m
-          memory: 512Mi
+          cpu: 35m
+          memory: 528Mi
         limits:
-          memory: 2Gi
+          memory: 1088Mi
+  # 2026-09-28 DB right-size (same rule in every yaook CR): requests ~ 72h p95
+  # with a 50m CPU floor for mariadb-galera (single replica; starvation took
+  # PowerDNS down on 2026-07-26), galera memory limits never below 2Gi
+  # (buffer pool + restart = outage), otherwise ~2x the 72h max. haproxy
+  # p95 ~85Mi / max ~158Mi -> 10m/96Mi/320Mi.
   database:
     api:
       backup:
@@ -117,14 +122,14 @@ spec:
         resources:
           haproxy:
             requests:
-              cpu: 50m
-              memory: 192Mi
+              cpu: 10m
+              memory: 96Mi
             limits:
-              memory: 512Mi
+              memory: 320Mi
           service-reload:
             requests:
-              cpu: 10m
-              memory: 32Mi
+              cpu: 5m
+              memory: 16Mi
             limits:
               memory: 64Mi
           create-ca-bundle:
@@ -138,8 +143,8 @@ spec:
       resources:
         mariadb-galera:
           requests:
-            cpu: 200m
-            memory: 512Mi
+            cpu: 50m
+            memory: 672Mi
           limits:
             memory: 2Gi
       scheduleRuleWhenUnsatisfiable: ScheduleAnyway
@@ -161,14 +166,14 @@ spec:
         resources:
           haproxy:
             requests:
-              cpu: 50m
-              memory: 192Mi
+              cpu: 10m
+              memory: 96Mi
             limits:
-              memory: 512Mi
+              memory: 320Mi
           service-reload:
             requests:
-              cpu: 10m
-              memory: 32Mi
+              cpu: 5m
+              memory: 16Mi
             limits:
               memory: 64Mi
           create-ca-bundle:
@@ -182,8 +187,8 @@ spec:
       resources:
         mariadb-galera:
           requests:
-            cpu: 200m
-            memory: 512Mi
+            cpu: 50m
+            memory: 480Mi
           limits:
             memory: 2Gi
       scheduleRuleWhenUnsatisfiable: ScheduleAnyway
@@ -205,14 +210,14 @@ spec:
         resources:
           haproxy:
             requests:
-              cpu: 50m
-              memory: 192Mi
+              cpu: 10m
+              memory: 96Mi
             limits:
-              memory: 512Mi
+              memory: 320Mi
           service-reload:
             requests:
-              cpu: 10m
-              memory: 32Mi
+              cpu: 5m
+              memory: 16Mi
             limits:
               memory: 64Mi
           create-ca-bundle:
@@ -226,10 +231,10 @@ spec:
       resources:
         mariadb-galera:
           requests:
-            cpu: 200m
-            memory: 512Mi
+            cpu: 50m
+            memory: 1328Mi
           limits:
-            memory: 2Gi
+            memory: 3776Mi
       scheduleRuleWhenUnsatisfiable: ScheduleAnyway
       storageSize: 8Gi
       timeoutClient: 300
@@ -249,14 +254,14 @@ spec:
         resources:
           haproxy:
             requests:
-              cpu: 50m
-              memory: 192Mi
+              cpu: 10m
+              memory: 96Mi
             limits:
-              memory: 512Mi
+              memory: 320Mi
           service-reload:
             requests:
-              cpu: 10m
-              memory: 32Mi
+              cpu: 5m
+              memory: 16Mi
             limits:
               memory: 64Mi
           create-ca-bundle:
@@ -270,8 +275,8 @@ spec:
       resources:
         mariadb-galera:
           requests:
-            cpu: 200m
-            memory: 512Mi
+            cpu: 50m
+            memory: 432Mi
           limits:
             memory: 2Gi
       scheduleRuleWhenUnsatisfiable: ScheduleAnyway
@@ -308,8 +313,8 @@ spec:
       resources:
         rabbitmq:
           requests:
-            cpu: 250m
-            memory: 1G
+            cpu: 310m
+            memory: 336Mi
           limits:
             # Yaook maps this into rabbitmq.conf default_worker_pool_size /
             # schedulers_online (NOT a CFS throttle). Without it RabbitMQ sizes
@@ -326,18 +331,19 @@ spec:
     resources:
       nova-metadata:
         requests:
-          cpu: 100m
-          memory: 512Mi
+          cpu: 10m
+          memory: 1104Mi
         # 2026-07-30: raised 1Gi -> 1536Mi. After the 2025.1 -> 2025.2 upgrade
         # the nova-metadata container OOMKilled (exit 137) on startup on all 3
         # replicas — it ran ~2Gi against a 1Gi limit because it forked
         # `metadata_workers` WSGI workers (each loads the full nova stack,
         # ~500Mi). The real fix is fewer workers (metadata_workers 4 -> 2 in
         # novaConfig below, since this API only serves cloud-init at VM boot and
-        # sits at ~15m CPU); 2 workers land at ~1-1.2Gi, and 1536Mi leaves
-        # headroom so a transient spike doesn't re-trigger the OOM loop.
+        # sits at ~15m CPU); 2 workers land at ~1-1.2Gi.
+        # 2026-09-28: 72h p95 ~1.1Gi (max 1.11Gi) was at 72% of 1536Mi -> limit
+        # 2240Mi (2x max) so a transient spike doesn't re-trigger the OOM loop.
         limits:
-          memory: 1536Mi
+          memory: 2240Mi
   novaConfig:
     DEFAULT:
       debug: false
@@ -367,8 +373,8 @@ spec:
     resources:
       placement:
         requests:
-          cpu: 100m
-          memory: 1Gi
+          cpu: 20m
+          memory: 784Mi
         limits:
           memory: 2Gi
   placementCleanup:
@@ -383,8 +389,8 @@ spec:
     resources:
       nova-scheduler:
         requests:
-          cpu: 200m
-          memory: 512Mi
+          cpu: 25m
+          memory: 608Mi
         limits:
           memory: 1Gi
   targetRelease: "2026.1"
@@ -400,7 +406,7 @@ spec:
     resources:
       nova-novncproxy:
         requests:
-          cpu: 100m
-          memory: 256Mi
+          cpu: 10m
+          memory: 128Mi
         limits:
-          memory: 512Mi
+          memory: 256Mi

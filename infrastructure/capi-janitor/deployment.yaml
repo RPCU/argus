@@ -77,11 +77,12 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
           resources:
+            # 72h Mimir: mem P95/max ~36Mi, CPU P95 <1m.
             requests:
-              cpu: 10m
-              memory: 64Mi
+              cpu: 5m
+              memory: 48Mi
             limits:
-              memory: 128Mi
+              memory: 192Mi
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

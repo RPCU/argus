@@ -14,10 +14,11 @@ spec:
             # (no CPU limit — throttling controllers hurts reconcile latency, same
             # convention as the Ceph/OVN/DB daemons in AGENTS.md Section 8).
             - name: package-runtime
+              # 72h Mimir (mgmt/openstack/production): P95 ~328Mi / max ~434Mi, CPU P95 ~28m.
               resources:
                 requests:
-                  cpu: 40m
-                  memory: 448Mi
+                  cpu: 30m
+                  memory: 336Mi
                 limits:
                   memory: 896Mi
 ---

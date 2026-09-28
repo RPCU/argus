@@ -17,10 +17,10 @@ spec:
       # not "keystone-api" — yaook source confirms this naming.
       keystone:
         requests:
-          cpu: 200m
-          memory: 512Mi
+          cpu: 150m
+          memory: 1312Mi
         limits:
-          memory: 4Gi
+          memory: 2624Mi
   database:
     mysqlConfig:
       mysqld:
@@ -34,14 +34,14 @@ spec:
       resources:
         haproxy:
           requests:
-            cpu: 50m
-            memory: 192Mi
+            cpu: 10m
+            memory: 96Mi
           limits:
-            memory: 512Mi
+            memory: 320Mi
         service-reload:
           requests:
-            cpu: 10m
-            memory: 32Mi
+            cpu: 5m
+            memory: 16Mi
           limits:
             memory: 64Mi
         create-ca-bundle:
@@ -55,8 +55,8 @@ spec:
     resources:
       mariadb-galera:
         requests:
-          cpu: 200m
-          memory: 512Mi
+          cpu: 50m
+          memory: 464Mi
         limits:
           memory: 2Gi
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway

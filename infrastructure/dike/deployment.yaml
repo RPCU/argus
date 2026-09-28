@@ -48,10 +48,11 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
           resources:
+            # 72h Mimir: mem P95 ~82Mi / max ~114Mi (89% of the old 128Mi
+            # limit), CPU P95 ~1m. No CPU limit (request-only policy).
             limits:
-              cpu: 500m
-              memory: 128Mi
+              memory: 256Mi
             requests:
-              cpu: 10m
-              memory: 64Mi
+              cpu: 5m
+              memory: 96Mi
       terminationGracePeriodSeconds: 10

@@ -44,64 +44,92 @@ spec:
     # Section 8). The chart defaults capped memory at 512Mi, but several
     # controllers peaked above that (addon-controller 469Mi, access/event 362-369Mi)
     # and addonController.controller shipped with only a 512Mi request and no
-    # limit / no CPU request. sveltos-agents and driftDetectionManager do NOT
-    # expose a `resources` key in this chart version, so they can't be tuned here.
+    # limit / no CPU request. Re-sized 2026-09 from 72h P95/max (addon
+    # 309/331Mi, event 334/387Mi, classifier 216/266Mi, access 182/249Mi);
+    # `cpu: null` drops the chart-merged 500m CPU limit (request-only policy).
+    # sveltos-agents and driftDetectionManager do NOT expose a `resources` key
+    # in this chart version, so they can't be tuned here.
     addonController:
       controller:
         resources:
           requests:
-            cpu: 50m
-            memory: 448Mi
+            cpu: 10m
+            memory: 320Mi
           limits:
-            memory: 1536Mi
+            memory: 768Mi
     accessManager:
       manager:
         resources:
           requests:
-            cpu: 15m
-            memory: 320Mi
+            cpu: 5m
+            memory: 192Mi
           limits:
-            memory: 768Mi
+            cpu: null
+            memory: 512Mi
     eventManager:
       manager:
         resources:
           requests:
-            cpu: 15m
-            memory: 320Mi
+            cpu: 10m
+            memory: 336Mi
           limits:
-            memory: 768Mi
+            cpu: null
+            memory: 832Mi
     classifierManager:
       manager:
         resources:
           requests:
-            cpu: 20m
-            memory: 288Mi
+            cpu: 5m
+            memory: 224Mi
           limits:
-            memory: 704Mi
+            cpu: null
+            memory: 576Mi
     hcManager:
       manager:
         resources:
           requests:
-            cpu: 15m
-            memory: 256Mi
+            cpu: 5m
+            memory: 192Mi
           limits:
-            memory: 576Mi
+            cpu: null
+            memory: 448Mi
     shardController:
       manager:
         resources:
           requests:
-            cpu: 15m
-            memory: 224Mi
+            cpu: 5m
+            memory: 128Mi
           limits:
-            memory: 576Mi
+            cpu: null
+            memory: 256Mi
     scManager:
       manager:
         resources:
           requests:
-            cpu: 15m
-            memory: 128Mi
+            cpu: 5m
+            memory: 80Mi
           limits:
+            cpu: null
             memory: 256Mi
+    # Idle on mgmt (72h P95 <1m CPU, ~28-39Mi); chart default was 100m/128Mi.
+    mcpServer:
+      controller:
+        resources:
+          requests:
+            cpu: 5m
+            memory: 32Mi
+          limits:
+            cpu: null
+            memory: 192Mi
+    techsupportController:
+      controller:
+        resources:
+          requests:
+            cpu: 5m
+            memory: 48Mi
+          limits:
+            cpu: null
+            memory: 192Mi
   # Patch chart-created ServiceMonitors to add the label kube-prometheus-stack
   # uses as its default serviceMonitorSelector.
   postRenderers:

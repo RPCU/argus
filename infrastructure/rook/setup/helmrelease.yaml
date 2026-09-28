@@ -18,3 +18,11 @@ spec:
   values:
     crds:
       enabled: true
+    # Operator only (chart default 200m/128Mi/512Mi). 72h p95 ~54m/103Mi,
+    # max ~276m/202Mi (2026-09-28). No CPU limit.
+    resources:
+      requests:
+        cpu: 55m
+        memory: 112Mi
+      limits:
+        memory: 512Mi

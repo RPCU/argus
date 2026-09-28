@@ -13,12 +13,48 @@ spec:
       createIngress: false
       fqdn: "octavia.rpcu.vpn"
       port: 443
+    # api/worker/health_manager/housekeeping were BestEffort. Sized from 72h
+    # Mimir p95 (request) / 2x max (limit), 2026-09-28. No CPU limits.
+    resources:
+      octavia-api:
+        requests:
+          cpu: 65m
+          memory: 176Mi
+        limits:
+          memory: 384Mi
+      octavia-driver-agent:
+        requests:
+          cpu: 35m
+          memory: 256Mi
+        limits:
+          memory: 576Mi
   worker:
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+    resources:
+      octavia-worker:
+        requests:
+          cpu: 10m
+          memory: 128Mi
+        limits:
+          memory: 256Mi
   health_manager:
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+    resources:
+      octavia-health-manager:
+        requests:
+          cpu: 10m
+          memory: 192Mi
+        limits:
+          memory: 448Mi
   housekeeping:
     replicas: 1
+    resources:
+      octavia-housekeeping:
+        requests:
+          cpu: 10m
+          memory: 128Mi
+        limits:
+          memory: 256Mi
   networking:
     # CIDR of the Neutron network to be used to connect Octavia management
     # services and the Amphora VMs. Will be exposed via OVS internal ports
@@ -32,8 +68,8 @@ spec:
     resources:
       mariadb-galera:
         requests:
-          cpu: 200m
-          memory: 512Mi
+          cpu: 50m
+          memory: 288Mi
         limits:
           memory: 2Gi
     timeoutClient: 300
@@ -42,14 +78,14 @@ spec:
       resources:
         haproxy:
           requests:
-            cpu: 50m
-            memory: 192Mi
+            cpu: 10m
+            memory: 96Mi
           limits:
-            memory: 512Mi
+            memory: 320Mi
         service-reload:
           requests:
-            cpu: 10m
-            memory: 32Mi
+            cpu: 5m
+            memory: 16Mi
           limits:
             memory: 64Mi
         create-ca-bundle:
@@ -70,8 +106,8 @@ spec:
     resources:
       rabbitmq:
         requests:
-          cpu: 250m
-          memory: 1G
+          cpu: 290m
+          memory: 240Mi
         limits:
           # Yaook maps this into rabbitmq.conf default_worker_pool_size /
           # schedulers_online (NOT a CFS throttle). Without it RabbitMQ sizes

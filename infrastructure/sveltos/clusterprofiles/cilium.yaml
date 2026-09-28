@@ -59,20 +59,24 @@ spec:
         k8sServiceHost: "{{ .Cluster.spec.controlPlaneEndpoint.host }}"
         k8sServicePort: "{{ .Cluster.spec.controlPlaneEndpoint.port }}"
         kubeProxyReplacement: true
+        # Keep in sync with infrastructure/cilium/values.yaml. Sized from 72h
+        # Mimir P95/max across mgmt/openstack/production (req ≈ P95, limit ≈
+        # 2× max, no CPU limit). The previous 256Mi agent limit OOMKilled
+        # cilium-agent on production (max 250Mi observed at the cap).
         operator:
           replicas: 1
           resources:
             requests:
-              cpu: 50m
-              memory: 64Mi
+              cpu: 10m
+              memory: 144Mi
             limits:
-              memory: 256Mi
+              memory: 512Mi
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
+            cpu: 140m
+            memory: 576Mi
           limits:
-            memory: 256Mi
+            memory: 1280Mi
         # CiliumLocalRedirectPolicy: redirect in-cluster kubernetes.default.svc
         # to a node-local SNI-rewrite proxy when the tenant API server is fronted
         # by a shared SNI Gateway (Kamaji externalClusterReference). See the

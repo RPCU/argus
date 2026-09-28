@@ -1,21 +1,27 @@
 installCRDs: true
 
+# Sized from 72h Mimir P95/max across mgmt/openstack/production (req ≈ P95,
+# limit ≈ 2× max, no CPU limit). Chart keys: top-level `resources` = controller,
+# `webhook.resources`, `certController.resources` (a nested
+# `resources.controller` map is NOT a chart key — it was silently dropped,
+# leaving every ESO pod BestEffort).
 resources:
-  controller:
+  requests:
+    cpu: 5m
+    memory: 80Mi
+  limits:
+    memory: 256Mi
+webhook:
+  resources:
     requests:
-      cpu: 25m
-      memory: 64Mi
+      cpu: 5m
+      memory: 96Mi
     limits:
       memory: 256Mi
-  webhook:
+certController:
+  resources:
     requests:
-      cpu: 10m
-      memory: 32Mi
+      cpu: 5m
+      memory: 80Mi
     limits:
-      memory: 128Mi
-  certController:
-    requests:
-      cpu: 10m
-      memory: 32Mi
-    limits:
-      memory: 128Mi
+      memory: 256Mi

@@ -54,8 +54,9 @@ spec:
       port: 9090
     resources:
       requests:
-        # Measured (Mimir, 3d): peak ~9m, avg ~3m across mgmt+production.
-        cpu: 15m
+        # 72h Mimir across mgmt/openstack/production: CPU P95 ~9m, mem P95
+        # ~63Mi / max ~64Mi.
+        cpu: 10m
         memory: 64Mi
       limits:
         memory: 192Mi

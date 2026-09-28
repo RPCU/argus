@@ -13,6 +13,7 @@ resources:
   - neutron.yaml
   - nova.yaml
   - nova-compute-ssh-fix.yaml
+  - nova-placement-reservation.yaml
   - cinder.yaml
   - horizon.yaml
   - octavia.yaml

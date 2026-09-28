@@ -11,8 +11,23 @@ socketLB:
   # clusters/openstack/cilium.yaml.
   hostNamespaceOnly: false
 kubeProxyReplacement: true
+# Sized from 72h Mimir P95/max across mgmt/openstack/production (req ≈ P95,
+# limit ≈ 2× max, no CPU limit); was BestEffort. Keep in sync with the Sveltos
+# cilium bootstrap profile (infrastructure/sveltos/clusterprofiles/cilium.yaml).
+resources:
+  requests:
+    cpu: 140m
+    memory: 576Mi
+  limits:
+    memory: 1280Mi
 operator:
   replicas: 1
+  resources:
+    requests:
+      cpu: 10m
+      memory: 144Mi
+    limits:
+      memory: 512Mi
 # Enable CiliumLocalRedirectPolicy — used to redirect in-cluster
 # kubernetes.default.svc traffic to a node-local SNI-rewrite proxy when the
 # tenant API server is fronted by a shared SNI Gateway (Kamaji externalCluster-

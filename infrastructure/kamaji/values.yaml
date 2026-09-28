@@ -17,15 +17,13 @@ replicaCount: 1
 resources:
   requests:
     # Kamaji CONTROLLER manager (not etcd). replicaCount: 1 (single reconciler).
-    # Per-pod measured 0-2m CPU over 3d (Mimir); it's a low-churn reconciler.
-    # Trimmed 200m -> 50m to hand CPU budget to etcd + the tenant control planes,
-    # which matter more on the 2-worker mgmt fleet. Limit kept at 1 core for
-    # burst headroom.
-    cpu: 50m
-    memory: 256Mi
+    # 72h Mimir (mgmt/production): CPU P95 ~4m, mem P95 ~121Mi / max ~217Mi,
+    # 4 restarts → limit ≈ 2.5x max. No CPU limit (request-only policy, §8).
+    cpu: 5m
+    memory: 128Mi
   limits:
-    cpu: "1"
-    memory: 512Mi
+    cpu: null # drop the chart-default 200m CPU limit
+    memory: 576Mi
 kamaji-etcd:
   deploy: true
   clusterDomain: "mgmt.local"
@@ -52,9 +50,11 @@ kamaji-etcd:
     requests:
       # Measured (Mimir, 3d): peak ~132m across mgmt+production members,
       # steady-state avg ~40-50m. 500m was ~4x peak and blocked scheduling
-      # on a 2-node fleet; 150m is ~1.1x peak with headroom.
+      # on a 2-node fleet; 150m is ~1.1x peak with headroom. Memory: 72h
+      # P95 ~358Mi / max ~408Mi (above the old 256Mi request); no memory
+      # limit on purpose — an OOMKilled member drops every tenant CP's quorum.
       cpu: 150m
-      memory: 256Mi
+      memory: 368Mi
   # Spread the 3 etcd members across distinct nodes. Without this, node
   # churn (CAPI remediation) packed 2/3 members onto ONE worker (observed
   # 2026-07-07), so a single node degraded EVERY tenant control plane.

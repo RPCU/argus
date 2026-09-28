@@ -1,0 +1,117 @@
+# kubernetes-sigs/descheduler — rebalances pods after node churn. The
+# scheduler only places pods once; after a worker rollout the first new node
+# soaks up everything (mgmt 2026-09-28: one worker at 64 pods / 81% memory
+# requested, the other at 28 / 44%) and nothing ever moves back.
+#
+# Shared base: mgmt (clusters/mgmt/descheduler.yaml) + opt-in workload clusters
+# (Sveltos `descheduler` profile, label sveltos.argus.rpcu.io/descheduler).
+# NOT for the openstack baremetal cluster: yaook runs single-replica Galera /
+# rabbitmq / OVN pods whose eviction is an outage.
+#
+# Balance is judged on REQUESTS (the scheduler places evicted pods by
+# requests; also works without metrics-server), memory + pod count only — CPU
+# requests are p95-sized and near-uniform. Conservative by design.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: descheduler
+  namespace: descheduler
+spec:
+  interval: 30m
+  releaseName: descheduler
+  chart:
+    spec:
+      chart: descheduler
+      # renovate: datasource=helm depName=descheduler registryUrl=https://kubernetes-sigs.github.io/descheduler/
+      version: "0.36.0"
+      sourceRef:
+        kind: HelmRepository
+        name: descheduler
+        namespace: descheduler
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    # Long-running Deployment instead of the chart's 2-minute CronJob.
+    kind: Deployment
+    deschedulingInterval: 10m
+    replicas: 1
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        cpu: null # chart default 500m; request-only CPU policy
+        memory: 256Mi
+    deschedulerPolicy:
+      # Workers only: control-plane nodes are tainted, counting them as
+      # "underutilized" would overestimate where evicted pods can go.
+      nodeSelector: "!node-role.kubernetes.io/control-plane"
+      maxNoOfPodsToEvictPerNode: 5
+      maxNoOfPodsToEvictPerNamespace: 2
+      profiles:
+        - name: default
+          pluginConfig:
+            - name: DefaultEvictor
+              args:
+                # Only evict pods whose replacement fits another node.
+                nodeFit: true
+                podProtections:
+                  defaultDisabled:
+                    - "PodsWithLocalStorage"
+                  # Never evict PVC-backed pods (vault, etcd, Mimir, media apps).
+                  extraEnabled:
+                    - "PodsWithPVC"
+            - name: RemoveDuplicates
+              args:
+                namespaces:
+                  exclude: &protected
+                    - kube-system
+                    - flux-system
+                    - projectsveltos
+                    - kamaji-system
+                    # Kamaji tenant control planes (single replica): moving
+                    # them is a tenant API outage.
+                    - mgmt
+                    - kamaji-tenants
+                    - vault
+            - name: RemovePodsHavingTooManyRestarts
+              args:
+                podRestartThreshold: 100
+                includingInitContainers: true
+                namespaces:
+                  exclude: *protected
+            - name: RemovePodsViolatingNodeAffinity
+              args:
+                nodeAffinityType:
+                  - requiredDuringSchedulingIgnoredDuringExecution
+            - name: RemovePodsViolatingNodeTaints
+            - name: RemovePodsViolatingInterPodAntiAffinity
+            - name: RemovePodsViolatingTopologySpreadConstraint
+            - name: LowNodeUtilization
+              args:
+                evictableNamespaces:
+                  exclude: *protected
+                # Underutilized = below ALL of these; overutilized = above ANY
+                # of targetThresholds (percent of allocatable, by requests).
+                thresholds:
+                  memory: 50
+                  pods: 35
+                targetThresholds:
+                  memory: 70
+                  pods: 50
+          plugins:
+            balance:
+              enabled:
+                - RemoveDuplicates
+                - RemovePodsViolatingTopologySpreadConstraint
+                - LowNodeUtilization
+            deschedule:
+              enabled:
+                - RemovePodsHavingTooManyRestarts
+                - RemovePodsViolatingNodeTaints
+                - RemovePodsViolatingNodeAffinity
+                - RemovePodsViolatingInterPodAntiAffinity

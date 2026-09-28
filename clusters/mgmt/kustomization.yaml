@@ -28,6 +28,7 @@ resources:
   - crossplane-providers.yaml
   - crossplane-resources.yaml
   - dragonfly-operator.yaml
+  - descheduler.yaml
   - chihiro.yaml
   - vault.yaml
   - vault-unsealer.yaml

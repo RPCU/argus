@@ -1,0 +1,43 @@
+# Default ManagedResourceActivationPolicy for mgmt: activate only the managed
+# resource kinds mgmt uses (in-cluster objects, clusters/mgmt/crossplane,
+# crossplane-compositions, the Sveltos cert-manager profile).
+#
+# The chart's `provider.defaultActivations` can't do this: `crossplane core
+# init` only CREATES the `default` MRAP and ignores AlreadyExists, so the "*"
+# written at install time stuck, activating all 445 MRDs (681 CRDs, ~1.5-2 GiB
+# of kube-apiserver memory) for 15 kinds in use. The values file is also shared
+# with the openstack cluster. Managing the object here (prune: false) takes it
+# over; the init container never updates it.
+#
+# Active MRDs can't be deactivated, so this only stops NEW activations
+# (provider upgrades). Removing already-active unused CRDs is a separate,
+# manual step. Add a kind here BEFORE creating the first object of it.
+apiVersion: apiextensions.crossplane.io/v1alpha1
+kind: ManagedResourceActivationPolicy
+metadata:
+  name: default
+spec:
+  activate:
+    # provider-openstack (namespaced .m. API)
+    - applicationcredentialv3s.identity.openstack.m.crossplane.io
+    - roleassignmentv3s.identity.openstack.m.crossplane.io
+    - rolev3s.identity.openstack.m.crossplane.io
+    - userv3s.identity.openstack.m.crossplane.io
+    - networkv2s.networking.openstack.m.crossplane.io
+    - subnetv2s.networking.openstack.m.crossplane.io
+    - routerv2s.networking.openstack.m.crossplane.io
+    - routerinterfacev2s.networking.openstack.m.crossplane.io
+    # provider-vault (cluster-scoped API)
+    - authbackendconfigs.kubernetes.vault.upbound.io
+    - authbackendroles.kubernetes.vault.upbound.io
+    - authbackendroles.approle.vault.upbound.io
+    - authbackendrolesecretids.approle.vault.upbound.io
+    - backends.auth.vault.upbound.io
+    - mounts.vault.vault.upbound.io
+    - policies.vault.vault.upbound.io
+    - secretbackendconfigurls.pki.vault.upbound.io
+    - secretbackendintermediatecertrequests.pki.vault.upbound.io
+    - secretbackendroles.pki.vault.upbound.io
+    # provider-zitadel: mgmt only manages OIDC apps (the Zitadel platform is
+    # owned by the openstack cluster)
+    - oidcs.application.zitadel.didactiklabs.io

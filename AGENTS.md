@@ -527,6 +527,11 @@ cert-manager]`) pushes the Gateway (`*.cluster.rpcu.lan`, `vault-issuer`),
     `dependsOn: gateway-api-crds` (the always-on CRD-only profile), not
     `gateway-api`/`gateway-api-resources`. Chihiro enforces this via the field
     descriptions: enabling **Gateway API** requires **Cert-Manager Vault Issuer**.
+    **Sveltos owns** GatewayParameters `gwp-static-ip`, HTTPRoute `https-redirect`
+    and HTTPListenerPolicy `upgrades` on workload clusters; its copies carry
+    `kustomize.toolkit.fluxcd.io/prune: disabled` so Flux never prunes them.
+    Flux applying the openstack copies too made the two fight (GWP generation
+    70+, envoy rolled every 10-30 min).
 
 - **cluster-api-operator/** (v0.27.0, ns capi-operator-system) — chart-managed
   cert-manager disabled; providers managed separately.

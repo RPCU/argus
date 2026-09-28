@@ -531,7 +531,9 @@ cert-manager]`) pushes the Gateway (`*.cluster.rpcu.lan`, `vault-issuer`),
     and HTTPListenerPolicy `upgrades` on workload clusters; its copies carry
     `kustomize.toolkit.fluxcd.io/prune: disabled` so Flux never prunes them.
     Flux applying the openstack copies too made the two fight (GWP generation
-    70+, envoy rolled every 10-30 min).
+    70+, envoy rolled every 10-30 min). The pushed `kgateway` Flux Kustomization
+    `$patch: delete`s all four openstack objects from `infrastructure/kgateway`
+    (each patch `target` must be its own kind — a mis-targeted delete is a no-op).
 
 - **cluster-api-operator/** (v0.27.0, ns capi-operator-system) — chart-managed
   cert-manager disabled; providers managed separately.

@@ -123,12 +123,13 @@ data:
       path: ./infrastructure/kgateway
       prune: true
       patches:
-        # Strip the openstack-specific Gateway + HTTPListenerPolicy from the base
-        # kustomization — workload clusters get these from the templated ConfigMap
-        # pushed by this ClusterProfile (hostname *.<cluster>.rpcu.lan, vault-issuer,
-        # no Cilium lbipam annotation). Replace the resources list with only
-        # helmrelease.yaml so kustomize build skips gateway.yaml and
-        # httplistenerpolicy.yaml.
+        # Strip the openstack-specific objects from the base kustomization —
+        # workload clusters get their own Gateway, GatewayParameters, HTTPRoute
+        # and HTTPListenerPolicy from the templated ConfigMap pushed by
+        # gateway-api-resources (hostname *.<cluster>.rpcu.lan, vault-issuer,
+        # no Cilium lbipam annotation). If Flux applies them too, the two
+        # fight and every GatewayParameters flip rolls all envoy pods. Each
+        # patch's target must match its own kind, or the delete never applies.
         - patch: |
             $patch: delete
             apiVersion: gateway.networking.k8s.io/v1
@@ -141,12 +142,30 @@ data:
         - patch: |
             $patch: delete
             apiVersion: gateway.kgateway.dev/v1alpha1
+            kind: GatewayParameters
+            metadata:
+              name: gwp-static-ip
+          target:
+            kind: GatewayParameters
+            name: gwp-static-ip
+        - patch: |
+            $patch: delete
+            apiVersion: gateway.networking.k8s.io/v1
+            kind: HTTPRoute
+            metadata:
+              name: https-redirect
+          target:
+            kind: HTTPRoute
+            name: https-redirect
+        - patch: |
+            $patch: delete
+            apiVersion: gateway.kgateway.dev/v1alpha1
             kind: HTTPListenerPolicy
             metadata:
               name: upgrades
           target:
-            kind: Gateway
-            name: https
+            kind: HTTPListenerPolicy
+            name: upgrades
 ---
 # Gateway + Certificate + HTTPListenerPolicy for the workload cluster. The
 # Gateway hostname is templated with the cluster name (*.cluster.rpcu.lan).

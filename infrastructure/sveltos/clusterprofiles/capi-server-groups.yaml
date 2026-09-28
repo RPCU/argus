@@ -34,6 +34,10 @@ spec:
       - key: type
         operator: In
         values: ["workload", "mgmt"]
+      # CAPI Clusters only: the template reads .Cluster.spec.topology, which
+      # the chart's SveltosCluster mgmt/mgmt (also type=mgmt) doesn't have.
+      - key: cluster.x-k8s.io/cluster-name
+        operator: Exists
   policyRefs:
     - kind: ConfigMap
       name: capi-server-group

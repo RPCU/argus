@@ -106,6 +106,21 @@ spec:
     disk: 30
     isPublic: true
 ---
+# cis-xlarge with a 60 GB root disk. 30 GB workers hit kubelet DiskPressure
+# (images + OS ~21 GB, eviction at <10% free; production 2026-09-28). New
+# flavor instead of editing cis-xlarge: nova flavors are immutable.
+apiVersion: compute.openstack.m.crossplane.io/v1alpha1
+kind: FlavorV2
+metadata:
+  name: cis-xlarge-60
+spec:
+  forProvider:
+    name: cis-xlarge-60
+    vcpus: 3
+    ram: 16384
+    disk: 60
+    isPublic: true
+---
 apiVersion: compute.openstack.m.crossplane.io/v1alpha1
 kind: FlavorV2
 metadata:

@@ -19,6 +19,7 @@ resources:
   - kamaji-apiserver-proxy-certs.yaml
   - capi-server-groups.yaml
   - descheduler.yaml
+  - ballast.yaml
   - monitoring.yaml
 # Stamp every resource in this directory (ClusterProfiles + their backing
 # ConfigMaps/Secrets/EventSources/EventTriggers) with a common metadata label.

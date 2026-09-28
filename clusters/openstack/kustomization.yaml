@@ -16,4 +16,5 @@ resources:
   - golinky.yaml
   - yaook-operator.yaml
   - yaook-rabbitmq-probes.yaml
+  - ballast.yaml
   - fluxcd/

@@ -1,0 +1,65 @@
+# Ballast (https://github.com/Tight-Line/ballast) right-sizes pod requests and
+# limits from observed usage. It reads metrics.k8s.io (served by
+# prometheus-adapter from the in-cluster Prometheus, no metrics-server) into
+# its Valkey, and once a workload has 24h of samples it patches the pod's
+# resources at admission (mode `apply`). Chart defaults = the
+# homogeneous-large-fleet policy: CPU request avg*1.25, memory request p75,
+# memory limit p99*1.2, NO CPU limit (matches the fleet sizing policy, §8).
+#
+# The resources in our manifests/HelmReleases stay as they are: they are the
+# fallback until a profile is ready and whenever Ballast is off. Ballast only
+# changes the pod, never the Deployment/HelmRelease, so Flux doesn't fight it.
+#
+# Which pods: enrollment-policy.yaml (it also sets the identity label).
+# Off switch: `kubectl -n ballast-system create configmap ballast-kill-switch`
+# (pods are admitted unmodified), or suspend via BallastConfig.spec.suspended.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: ballast
+  namespace: ballast-system
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: ballast
+      version: 0.6.1
+      sourceRef:
+        kind: HelmRepository
+        name: ballast
+  install:
+    crds: CreateReplace
+  upgrade:
+    crds: CreateReplace
+  values:
+    dryRun:
+      measure: false
+      apply: false
+      # No in-place resize of running pods yet: new values only land when a
+      # pod is recreated. Flip once the recommendations have been reviewed.
+      resize: true
+    ballastConfig:
+      # Set by enrollment-policy.yaml to <namespace>--<workload>: unique per
+      # workload and stable across rollouts. The chart default (name +
+      # component) is missing on most pods here, and Ballast just drops a
+      # missing label from the key, so unrelated workloads would share one
+      # profile (e.g. every mimir component is name=mimir,instance=mimir).
+      identityLabels:
+        - ballast.rpcu.io/workload
+  postRenderers:
+    - kustomize:
+        patches:
+          # The chart ships failurePolicy Fail: with Ballast down, no enrolled
+          # pod could be created. Ignore = admit unmodified instead.
+          # IfNeeded: re-run after the enrollment MutatingAdmissionPolicy
+          # adds the mode label, whatever the admission plugin order.
+          - target:
+              kind: MutatingWebhookConfiguration
+              name: ballast
+            patch: |
+              - op: replace
+                path: /webhooks/0/failurePolicy
+                value: Ignore
+              - op: add
+                path: /webhooks/0/reinvocationPolicy
+                value: IfNeeded

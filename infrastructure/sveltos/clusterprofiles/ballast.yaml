@@ -1,0 +1,46 @@
+# Ballast (request/limit right-sizing) for OPT-IN workload clusters. Flux
+# takeover of the SAME base mgmt and openstack use, ./infrastructure/ballast
+# (see its helmrelease for how it works and enrollment-policy.yaml for which
+# pods). Needs metrics.k8s.io (prometheus-adapter from the monitoring stack)
+# and cert-manager. Gated by sveltos.argus.rpcu.io/ballast: enabled.
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: ballast
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  dependsOn:
+    - flux-instance
+    - cert-manager
+  clusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/ballast: enabled
+  policyRefs:
+    - name: ballast-flux-kustomization
+      namespace: projectsveltos
+      kind: ConfigMap
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ballast-flux-kustomization
+  namespace: projectsveltos
+data:
+  ballast-flux-kustomization.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: ballast
+      namespace: flux-system
+    spec:
+      interval: 30m
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/ballast
+      prune: true
+      wait: true
+      timeout: 10m

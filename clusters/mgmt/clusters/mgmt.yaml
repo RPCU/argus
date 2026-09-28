@@ -46,8 +46,10 @@ spec:
         value: 192.168.1.0/24
       - name: imageName
         value: hephaestus-kaas-26.05-v1.36.1
+      # 16 GB: on `large` (8 GB) the apiserver (~5 GB with the crossplane
+      # CRDs) OOM-thrashed the VM during a worker rollout (2026-09-28).
       - name: controlPlaneFlavor
-        value: large
+        value: large-16
       - name: workerFlavor
         value: large
       - name: apiServerFloatingIP

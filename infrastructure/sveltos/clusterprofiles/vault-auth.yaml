@@ -94,6 +94,10 @@ spec:
       type: mgmt
   eventSourceName: vault-auth-eso-ready
   syncMode: ContinuousWithDriftDetection
+  # Leave deployed resources in place if mgmt stops matching (e.g. a selector
+  # change): withdrawing would delete Vault auth backends / PKI roles
+  # (Crossplane) or server groups that the other registration still owns.
+  stopMatchingBehavior: LeavePolicies
   reloader: true
   policyRefs:
     - kind: ConfigMap

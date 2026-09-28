@@ -244,6 +244,12 @@ data:
     metadata:
       name: gwp-static-ip
       namespace: kgateway-system
+      annotations:
+        # Flux's kgateway Kustomization used to apply this object too (the
+        # two fought, rolling envoy every 10-30 min). Flux no longer applies
+        # it; this stops Flux pruning Sveltos' copy when it leaves the Flux
+        # inventory.
+        kustomize.toolkit.fluxcd.io/prune: disabled
     spec:
       kube:
         deployment:
@@ -268,6 +274,9 @@ data:
     metadata:
       name: https-redirect
       namespace: kgateway-system
+      annotations:
+        # Same as gwp-static-ip: keep Flux from pruning it.
+        kustomize.toolkit.fluxcd.io/prune: disabled
     spec:
       parentRefs:
         - name: https
@@ -303,11 +312,15 @@ data:
     metadata:
       name: upgrades
       namespace: kgateway-system
+      annotations:
+        # Same as gwp-static-ip: keep Flux from pruning it.
+        kustomize.toolkit.fluxcd.io/prune: disabled
     spec:
       targetRefs:
         - group: gateway.networking.k8s.io
           kind: Gateway
           name: https
+      idleTimeout: "3600s"
       upgradeConfig:
         enabledUpgrades:
           - "websocket"

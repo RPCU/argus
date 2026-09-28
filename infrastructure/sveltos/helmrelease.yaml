@@ -47,8 +47,11 @@ spec:
     # limit / no CPU request. Re-sized 2026-09 from 72h P95/max (addon
     # 309/331Mi, event 334/387Mi, classifier 216/266Mi, access 182/249Mi);
     # `cpu: null` drops the chart-merged 500m CPU limit (request-only policy).
-    # sveltos-agents and driftDetectionManager do NOT expose a `resources` key
-    # in this chart version, so they can't be tuned here.
+    # The per-cluster sveltos-agent / drift-detection Deployments are generated
+    # by classifier / addon-controller; their resources are set through the
+    # agent patch ConfigMaps below (`--sveltos-agent-config` /
+    # `--drift-detection-config`, JSON6902 applied via kustomize, default
+    # target Deployment).
     addonController:
       controller:
         resources:
@@ -57,6 +60,20 @@ spec:
             memory: 320Mi
           limits:
             memory: 768Mi
+      # drift-detection-manager, one per managed cluster. 72h Mimir across all
+      # 5: CPU avg <=4m / P95 21m / max 23m; memory P95 110Mi / max 142Mi. Was
+      # the built-in 100m/128Mi with a 500m CPU limit.
+      driftDetectionManagerPatchConfigMap:
+        data:
+          resources: |-
+            - op: replace
+              path: /spec/template/spec/containers/0/resources
+              value:
+                requests:
+                  cpu: 20m
+                  memory: 112Mi
+                limits:
+                  memory: 288Mi
     accessManager:
       manager:
         resources:
@@ -84,6 +101,21 @@ spec:
           limits:
             cpu: null
             memory: 576Mi
+      # sveltos-agent, one per managed cluster. 72h Mimir across all 5: CPU
+      # avg <=20m / P95 43m / max 44m; memory 280-477Mi per pod (P95 377Mi).
+      # The built-in 128Mi request / 512Mi limit was UNDER-sized for memory
+      # (peaks within 35Mi of the limit), 100m CPU over-sized.
+      agentPatchConfigMap:
+        data:
+          resources: |-
+            - op: replace
+              path: /spec/template/spec/containers/0/resources
+              value:
+                requests:
+                  cpu: 45m
+                  memory: 384Mi
+                limits:
+                  memory: 1Gi
     hcManager:
       manager:
         resources:

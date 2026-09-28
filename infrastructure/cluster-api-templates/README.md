@@ -303,8 +303,17 @@ This keeps the change explicit, auditable, and safely rolled out via GitOps.
   `externalClusterReference` + Gateway API; used by `clusterclass-kamaji-external`.
   Rotating either rolls the tenant control-plane Deployment (brief tenant API
   blip). Delete `-v7` / `-external` once every KamajiControlPlane has rolled.
-- **Current (2026-09-28): `openstack-kamaji-control-plane-v9` /
-  `-external-v3`** = `-v8` / `-external-v2` + relaxed `deployment.probes`
+- **Current (2026-09-28): `openstack-kamaji-control-plane-v10` /
+  `-external-v4`** = `-v9` / `-external-v3` + the same relaxed probes on
+  `apiServer`, `controllerManager` and `scheduler`. The CAPI Kamaji provider
+  (v0.21.0) only copies probes to the TenantControlPlane when
+  `deployment.probes` AND all three component `probes` are set; `-v9` /
+  `-external-v3` set only `deployment.probes`, so every tenant silently kept
+  Kamaji's 1s / 3x defaults. Verify with
+  `kubectl get tenantcontrolplane -A -o custom-columns=N:.metadata.name,P:.spec.controlPlane.deployment.probes`.
+  Delete `-v9` / `-external-v3` once every KamajiControlPlane has rolled.
+- `openstack-kamaji-control-plane-v9` /
+  `-external-v3` = `-v8` / `-external-v2` + relaxed `deployment.probes`
   (startup up to 5min, 5s timeouts; Kamaji's 1s / 3x10s defaults crashloop a
   tenant apiserver that can't finish `rbac/bootstrap-roles` in 30s on a
   CPU-contended host) and apiserver CPU request 250m. Delete `-v8` /

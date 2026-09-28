@@ -5,7 +5,7 @@
 # an EXTERNAL cluster (not the management cluster) via externalClusterReference.
 #
 # This is the same as openstack-kamaji but with:
-#   - controlPlane.templateRef → openstack-kamaji-control-plane-external-v3 (adds
+#   - controlPlane.templateRef → openstack-kamaji-control-plane-external-v4 (adds
 #     externalClusterReference + network.gateway)
 #   - network.serviceType: ClusterIP (not LoadBalancer)
 #   - API server exposed via Gateway API TLSRoute on the external cluster
@@ -36,7 +36,7 @@ spec:
     templateRef:
       apiVersion: controlplane.cluster.x-k8s.io/v1alpha2
       kind: KamajiControlPlaneTemplate
-      name: openstack-kamaji-control-plane-external-v3
+      name: openstack-kamaji-control-plane-external-v4
     # NOTE: no machineInfrastructure — Kamaji runs the control plane as pods
     # in the EXTERNAL cluster, not on dedicated OpenStack VMs.
 

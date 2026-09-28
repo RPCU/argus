@@ -14,6 +14,14 @@ spec:
       interval: 1h
   values:
     replicaCount: 1
+    # 72h Mimir (openstack/production): mem P95/max ~38Mi, CPU P95 ~2m. Was
+    # BestEffort (chart default `resources: {}`).
+    resources:
+      requests:
+        cpu: 5m
+        memory: 48Mi
+      limits:
+        memory: 192Mi
     secretTargets:
       authorizedSecretsAll: true
       enabled: true

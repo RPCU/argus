@@ -1,0 +1,62 @@
+# -----------------------------------------------------------------------------
+# Control plane template (KamajiControlPlane) — v8
+#
+# Same as v7 with the tenant control-plane containers right-sized from 72h
+# Mimir history of the `production` tenant CP (hosted on mgmt, ns mgmt):
+#   kube-apiserver          P95 ~1895Mi / max ~2095Mi, CPU P95 ~128m
+#                           (v7 requested 1Gi with NO limit — ~half of real use)
+#   kube-controller-manager P95 ~158Mi / max ~166Mi, CPU P95 ~29m
+#   kube-scheduler          P95 ~33Mi / max ~38Mi, CPU P95 ~3m
+# Policy: memory request ≈ P95, memory limit ≈ 2x max, CPU request-only.
+# -----------------------------------------------------------------------------
+apiVersion: controlplane.cluster.x-k8s.io/v1alpha2
+kind: KamajiControlPlaneTemplate
+metadata:
+  name: openstack-kamaji-control-plane-v8
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      dataStoreName: default
+      deployment:
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchLabels:
+                      kamaji.clastix.io/component: deployment
+                  topologyKey: kubernetes.io/hostname
+      apiServer:
+        extraArgs: []
+        resources:
+          requests:
+            cpu: 130m
+            memory: 1904Mi
+          limits:
+            memory: 4224Mi
+      controllerManager:
+        resources:
+          requests:
+            cpu: 30m
+            memory: 160Mi
+          limits:
+            memory: 384Mi
+      scheduler:
+        resources:
+          requests:
+            cpu: 5m
+            memory: 48Mi
+          limits:
+            memory: 192Mi
+      kubelet:
+        preferredAddressTypes:
+          - InternalIP
+          - ExternalIP
+          - Hostname
+      network:
+        serviceType: LoadBalancer
+      addons:
+        coreDNS: {}
+        konnectivity: {}

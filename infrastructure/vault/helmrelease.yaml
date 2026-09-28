@@ -17,6 +17,16 @@ spec:
     global:
       tlsDisable: true
     server:
+      # 72h Mimir (per replica): mem P95 ~433Mi / max ~452Mi, CPU P95 ~54m.
+      # Was BestEffort. req ≈ P95, limit ≈ 2x max, no CPU limit.
+      # NOTE: changing this rolls the StatefulSet — every Vault pod restarts
+      # SEALED (vault-unseal-controller must unseal them; verify after).
+      resources:
+        requests:
+          cpu: 55m
+          memory: 448Mi
+        limits:
+          memory: 960Mi
       # dataStorage backs the Raft integrated storage: one PVC per replica
       # (3x 10Gi on cinder-delete). mgmt has no default StorageClass, so it must
       # be requested explicitly.

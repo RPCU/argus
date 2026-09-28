@@ -18,6 +18,45 @@ spec:
     publishEndpoint: true
     replicas: 1
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
+  # central/worker/producer/minidns were BestEffort (sections absent). Adding
+  # a section switches on the CRD default `replicas: 3`, so pin the live 1.
+  # Sized from 72h Mimir p95 (request) / 2x max (limit), 2026-09-28.
+  central:
+    replicas: 1
+    resources:
+      central:
+        requests:
+          cpu: 40m
+          memory: 272Mi
+        limits:
+          memory: 576Mi
+  worker:
+    replicas: 1
+    resources:
+      worker:
+        requests:
+          cpu: 15m
+          memory: 176Mi
+        limits:
+          memory: 384Mi
+  producer:
+    replicas: 1
+    resources:
+      producer:
+        requests:
+          cpu: 10m
+          memory: 96Mi
+        limits:
+          memory: 256Mi
+  minidns:
+    replicas: 1
+    resources:
+      minidns:
+        requests:
+          cpu: 10m
+          memory: 128Mi
+        limits:
+          memory: 256Mi
   database:
     mysqlConfig:
       mysqld:
@@ -31,14 +70,14 @@ spec:
       resources:
         haproxy:
           requests:
-            cpu: 50m
-            memory: 192Mi
+            cpu: 10m
+            memory: 96Mi
           limits:
-            memory: 512Mi
+            memory: 320Mi
         service-reload:
           requests:
-            cpu: 10m
-            memory: 32Mi
+            cpu: 5m
+            memory: 16Mi
           limits:
             memory: 64Mi
         create-ca-bundle:
@@ -52,10 +91,10 @@ spec:
     resources:
       mariadb-galera:
         requests:
-          cpu: 200m
-          memory: 512Mi
+          cpu: 50m
+          memory: 1952Mi
         limits:
-          memory: 2Gi
+          memory: 3968Mi
     scheduleRuleWhenUnsatisfiable: ScheduleAnyway
     storageSize: 8Gi
     timeoutClient: 300
@@ -80,8 +119,8 @@ spec:
     resources:
       rabbitmq:
         requests:
-          cpu: 250m
-          memory: 1G
+          cpu: 295m
+          memory: 288Mi
         limits:
           # Yaook maps this into rabbitmq.conf default_worker_pool_size /
           # schedulers_online (NOT a CFS throttle). Without it RabbitMQ sizes
@@ -209,14 +248,14 @@ spec:
           # down.
           haproxy:
             requests:
-              cpu: 50m
-              memory: 192Mi
+              cpu: 10m
+              memory: 96Mi
             limits:
-              memory: 512Mi
+              memory: 320Mi
           service-reload:
             requests:
-              cpu: 10m
-              memory: 32Mi
+              cpu: 5m
+              memory: 16Mi
             limits:
               memory: 64Mi
           create-ca-bundle:
@@ -234,32 +273,32 @@ spec:
         # 2Gi backstop.
         mariadb-galera:
           requests:
-            cpu: 200m
-            memory: 512Mi
+            cpu: 50m
+            memory: 192Mi
           limits:
             memory: 2Gi
         backup-creator:
           requests:
-            cpu: 10m
-            memory: 64Mi
+            cpu: 5m
+            memory: 48Mi
           limits:
             memory: 256Mi
         backup-shifter:
           requests:
-            cpu: 10m
-            memory: 96Mi
+            cpu: 5m
+            memory: 48Mi
           limits:
             memory: 256Mi
         mysqld-exporter:
           requests:
-            cpu: 10m
-            memory: 32Mi
+            cpu: 5m
+            memory: 16Mi
           limits:
             memory: 128Mi
         replication-ports-blackbox-exporter:
           requests:
-            cpu: 10m
-            memory: 32Mi
+            cpu: 5m
+            memory: 16Mi
           limits:
             memory: 128Mi
       scheduleRuleWhenUnsatisfiable: ScheduleAnyway

@@ -25,22 +25,27 @@ prometheus:
     # cert-manager). See §8.
     enabled: false
 
+# Sized from 72h Mimir P95/max across mgmt/openstack/production (req ≈ P95,
+# limit ≈ 2× max, no CPU limit). Chart keys: top-level `resources` = controller,
+# `webhook.resources`, `cainjector.resources` (a nested `resources.controller`
+# map is NOT a chart key — Helm/the API silently dropped it, leaving BestEffort).
 resources:
-  controller:
+  requests:
+    cpu: 5m
+    memory: 112Mi
+  limits:
+    memory: 256Mi
+webhook:
+  resources:
     requests:
-      cpu: 25m
+      cpu: 5m
       memory: 64Mi
     limits:
-      memory: 256Mi
-  webhook:
+      memory: 192Mi
+cainjector:
+  resources:
     requests:
-      cpu: 10m
-      memory: 32Mi
+      cpu: 5m
+      memory: 160Mi
     limits:
-      memory: 128Mi
-  cainjector:
-    requests:
-      cpu: 10m
-      memory: 64Mi
-    limits:
-      memory: 256Mi
+      memory: 448Mi

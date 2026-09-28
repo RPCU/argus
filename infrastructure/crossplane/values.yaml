@@ -1,16 +1,21 @@
 args:
   - --enable-usages
   - --enable-realtime-compositions
-# Right-sized CPU requests to reclaim worker budget on the 2-worker mgmt
-# fleet (chart defaults were 100m each). Measured over 7d (Mimir): core
-# avg ~15m / P95 ~72m / max ~123m; rbac-manager P95 ~2m / max ~3m. Core
-# request set to 80m (above P95) so it isn't starved; rbac to 20m. CPU
-# request-only (no CPU limit); memory left at chart defaults.
+# Sized from 72h Mimir across mgmt/openstack/production (req ≈ P95, limit ≈
+# 2x max): core CPU P95 ~68m, mem P95 ~651Mi / max ~740Mi (2.5x the old 256Mi
+# request); rbac-manager P95 ~34Mi / max ~40Mi. `cpu: null` drops the chart's
+# 500m/100m CPU limits (request-only policy, §8).
 resourcesCrossplane:
   requests:
-    cpu: 80m
-    memory: 256Mi
+    cpu: 70m
+    memory: 656Mi
+  limits:
+    cpu: null
+    memory: 1536Mi
 resourcesRBACManager:
   requests:
-    cpu: 20m
-    memory: 256Mi
+    cpu: 5m
+    memory: 48Mi
+  limits:
+    cpu: null
+    memory: 192Mi

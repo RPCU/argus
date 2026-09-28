@@ -274,12 +274,18 @@ spec:
         # and query spikes. No CPU limit on purpose — CFS throttling a scrape
         # loop causes missed scrapes, and the same rationale is already applied
         # to the Ceph and OVN daemons elsewhere in this repo.
+        # 72h Mimir (per cluster, P95/max): openstack ~1339/1374Mi (pinned just
+        # under the old 1200MiB GOMEMLIMIT → GC-bound, CPU P95 ~294m), mgmt
+        # ~930/1050Mi, production ~629/673Mi. Shared base → sized for the
+        # busiest (openstack): req ≈ P95, limit ≈ 2x max. CPU stays 100m (not
+        # openstack's GC-inflated 294m, which the higher GOMEMLIMIT removes;
+        # mgmt/production run ~70m) so the base still fits 2-vCPU workers.
         resources:
           requests:
             cpu: 100m
-            memory: 512Mi
+            memory: 1344Mi
           limits:
-            memory: 1536Mi
+            memory: 2752Mi
         # GOMEMLIMIT is the key to "resilient instead of OOM-looping". A cgroup
         # memory limit alone is a CLIFF: Go happily grows the heap until the
         # kernel SIGKILLs it, so the pod dies, replays the WAL, and dies again.
@@ -291,7 +297,7 @@ spec:
           - name: prometheus
             env:
               - name: GOMEMLIMIT
-                value: "1200MiB"
+                value: "2200MiB"
         externalLabels:
           cluster: mgmt
         remoteWrite:
@@ -324,9 +330,10 @@ spec:
     # NOTE: the node-exporter subchart lives under the `prometheus-node-exporter`
     # key (not `nodeExporter`, which only controls enabled/forceDeployDashboards).
     prometheus-node-exporter:
+      # 72h Mimir: P95 ≤31Mi / max 33Mi, CPU P95 ≤3m (all clusters).
       resources:
         requests:
-          cpu: 25m
+          cpu: 5m
           memory: 32Mi
         limits:
           memory: 128Mi
@@ -358,14 +365,15 @@ spec:
       # above is NOT applied to the pod (it's a toggle namespace) — the actual
       # container resources MUST be set here under the hyphenated subchart key,
       # or the pod runs with resources: {} (QoS BestEffort), which is what the
-      # live pod did. Sized from 72h Mimir history (max/P95): mem ~248/175Mi,
-      # cpu ~26/24m. request ~= observed, mem limit ~= 2x max, CPU request-only.
+      # live pod did. Sized from 72h Mimir history across mgmt/openstack/
+      # production (P95/max): mem ~132/265Mi, cpu ~5m. request ~= P95, mem
+      # limit ~= 2x max, CPU request-only.
       resources:
         requests:
-          cpu: 25m
-          memory: 192Mi
+          cpu: 5m
+          memory: 144Mi
         limits:
-          memory: 384Mi
+          memory: 576Mi
       # Flux CRD RBAC: the customResourceState auto-generated rules cover the
       # resource types in config.spec.resources, but some chart versions don't
       # wire them into the ClusterRole correctly. Adding the same rules to the
@@ -702,9 +710,10 @@ spec:
     # --- Prometheus Operator ---
     prometheusOperator:
       enabled: true
+      # 72h Mimir: P95 ≤67Mi / max 68Mi, CPU P95 ~2m (all clusters).
       resources:
         requests:
-          cpu: 20m
-          memory: 64Mi
+          cpu: 5m
+          memory: 80Mi
         limits:
           memory: 256Mi

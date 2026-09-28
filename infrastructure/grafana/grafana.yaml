@@ -76,15 +76,14 @@ spec:
                       optional: true
               resources:
                 requests:
-                  # Measured over 7d (Mimir): avg ~29m, P95 ~104m, max ~187m —
-                  # dashboard rendering is genuinely bursty. Request set to 120m
-                  # (just above P95) so it's not CPU-starved under contention;
-                  # trimmed from the original 250m. 1000m limit kept for bursts.
-                  cpu: 120m
-                  memory: 512Mi
+                  # 72h Mimir: CPU P95 ~20m (an earlier 7d window saw P95
+                  # ~104m — dashboard rendering is bursty, so the request keeps
+                  # some margin), mem P95 ~348Mi / max ~374Mi. No CPU limit
+                  # (request-only policy, §8) so bursts are not throttled.
+                  cpu: 50m
+                  memory: 352Mi
                 limits:
-                  cpu: 1000m
-                  memory: 2Gi
+                  memory: 768Mi
 
   # Persistent storage for Grafana state
   persistentVolumeClaim:

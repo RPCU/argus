@@ -23,6 +23,13 @@ spec:
           command:
             - /chihiro
           image: zot.rpcu.io/public/chihiro:v0.7.0
+          # 72h Mimir: mem P95 ~23Mi / max ~25Mi, CPU P95 ~1m (was BestEffort).
+          resources:
+            requests:
+              cpu: 5m
+              memory: 32Mi
+            limits:
+              memory: 192Mi
           ports:
             - containerPort: 8080
               name: http

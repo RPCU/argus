@@ -98,12 +98,14 @@ spec:
         #   kubectl -n monitoring delete pvc storage-mimir-ingester-0
         #   flux -n flux-system reconcile kustomization mimir --with-source
         size: 10Gi
+      # 72h Mimir: P95 ~1336Mi / max ~1738Mi (85% of the old 2Gi limit), CPU
+      # P95 ~68m. req ≈ P95, limit ≈ 2x max.
       resources:
         requests:
-          cpu: 50m
-          memory: 256Mi
+          cpu: 70m
+          memory: 1344Mi
         limits:
-          memory: 2Gi
+          memory: 3520Mi
 
     store_gateway:
       replicas: 1
@@ -118,38 +120,43 @@ spec:
         size: 5Gi
       resources:
         requests:
-          # Measured (Mimir, 3d): peak ~6m, avg ~3m.
-          cpu: 10m
-          memory: 128Mi
+          # 72h Mimir: CPU P95 ~3m, mem P95/max ~44Mi. Limit kept generous
+          # (not 2x max): long-range queries load index-headers in bursts.
+          cpu: 5m
+          memory: 48Mi
         limits:
-          memory: 1Gi
+          memory: 512Mi
 
     distributor:
       replicas: 1
+      # 72h Mimir: CPU P95 ~60m, mem P95 ~93Mi / max ~186Mi.
       resources:
         requests:
-          cpu: 30m
-          memory: 64Mi
+          cpu: 60m
+          memory: 96Mi
         limits:
-          memory: 512Mi
+          memory: 384Mi
 
     querier:
       replicas: 1
+      # 72h Mimir: CPU P95 ~8m, mem P95 ~68Mi / max ~74Mi. Limit kept generous
+      # (query path — dashboard/long-range spikes).
       resources:
         requests:
-          cpu: 30m
-          memory: 128Mi
+          cpu: 10m
+          memory: 80Mi
         limits:
-          memory: 1Gi
+          memory: 512Mi
 
     query_frontend:
       replicas: 3
+      # 72h Mimir: CPU P95 ~4m, mem P95 ~55Mi / max ~58Mi.
       resources:
         requests:
-          cpu: 20m
-          memory: 128Mi
+          cpu: 5m
+          memory: 64Mi
         limits:
-          memory: 512Mi
+          memory: 256Mi
 
     compactor:
       replicas: 1
@@ -162,12 +169,14 @@ spec:
         # source blocks + the output at once; 2Gi was fine only because
         # compaction never ran. 10Gi for the real workload.
         size: 10Gi
+      # 72h Mimir: CPU P95 ~52m, mem P95 ~131Mi but bursts to ~795Mi while
+      # merging blocks (78% of the old 1Gi limit). Limit ≈ 2x max.
       resources:
         requests:
-          cpu: 30m
-          memory: 128Mi
+          cpu: 55m
+          memory: 144Mi
         limits:
-          memory: 1Gi
+          memory: 1600Mi
 
     # --- S3 storage & clean memberlist ring for single replica ---
     mimir:
@@ -280,9 +289,9 @@ spec:
       replicas: 1
       resources:
         requests:
-          # Measured (Mimir, 3d): peak ~9m, avg ~5m.
-          cpu: 15m
-          memory: 64Mi
+          # 72h Mimir: CPU P95 ~2m, mem P95/max ~24Mi.
+          cpu: 5m
+          memory: 32Mi
         limits:
           memory: 256Mi
     ruler:
@@ -306,7 +315,8 @@ spec:
       replicas: 1
       resources:
         requests:
-          cpu: 10m
+          # 72h Mimir: CPU P95 ~5m, mem P95/max ~13Mi.
+          cpu: 5m
           memory: 16Mi
         limits:
           memory: 64Mi

@@ -12,24 +12,24 @@ spec:
     resources:
       neutron-api:
         requests:
-          cpu: 200m
-          memory: 512Mi
+          cpu: 150m
+          memory: 2128Mi
         limits:
-          memory: 3Gi
+          memory: 4288Mi
   database:
     proxy:
       replicas: 1
       resources:
         haproxy:
           requests:
-            cpu: 50m
-            memory: 192Mi
+            cpu: 10m
+            memory: 96Mi
           limits:
-            memory: 512Mi
+            memory: 320Mi
         service-reload:
           requests:
-            cpu: 10m
-            memory: 32Mi
+            cpu: 5m
+            memory: 16Mi
           limits:
             memory: 64Mi
         create-ca-bundle:
@@ -44,8 +44,8 @@ spec:
     resources:
       mariadb-galera:
         requests:
-          cpu: 200m
-          memory: 512Mi
+          cpu: 60m
+          memory: 608Mi
         limits:
           memory: 2Gi
     timeoutClient: 300
@@ -76,8 +76,8 @@ spec:
     resources:
       rabbitmq:
         requests:
-          memory: 1G
-          cpu: 250m
+          memory: 320Mi
+          cpu: 310m
         limits:
           # Yaook maps this into rabbitmq.conf default_worker_pool_size /
           # schedulers_online (NOT a CFS throttle). Without it RabbitMQ sizes
@@ -101,7 +101,7 @@ spec:
     # The cause was unbounded client demand, from THREE compounding defaults:
     #   * `api_workers` was unset, so Neutron defaults it to the CPU count seen
     #     in the container. These pods have NO cpu limit, so that is the HOST's
-    #     core count (12 here) — not the 200m request. 12 API workers per pod.
+    #     core count (12 here) — not the CPU request. 12 API workers per pod.
     #   * yaook's default pool was `max_pool_size 5` + `max_overflow 50`, i.e.
     #     up to 55 connections per worker PROCESS (each worker has its own
     #     engine/pool).
@@ -303,23 +303,23 @@ spec:
         raftElectionTimerMs: 60000
         replicas: 3
         resources:
-          # The raft member itself. Single-threaded, so a 300m request is a real
-          # third-core of weight rather than a token value. 50x headroom over
-          # measured idle (~5m) — enough to win scheduling contests without
-          # starving other workloads on the same node.
+          # The raft member itself. Single-threaded; the request buys cpu.weight
+          # (the 2026-07-26 outage was BestEffort weight 1, not a small request).
+          # 2026-09-28: 300m -> 100m, still 10-20x the 72h p95 (~5m, max 10m) so
+          # a starved raft member can't miss elections; mem p95 ~16Mi (max 21Mi).
           ovsdb:
             requests:
-              cpu: 300m
-              memory: 512Mi
+              cpu: 100m
+              memory: 64Mi
             limits:
-              memory: 2Gi
+              memory: 512Mi
           # In the connection path for EVERY northd/neutron client (TLS is
           # terminated here, not in ovsdb). Starving this stalls connections
           # just as effectively as starving ovsdb.
           ssl-terminator:
             requests:
-              cpu: 100m
-              memory: 64Mi
+              cpu: 25m
+              memory: 32Mi
             limits:
               memory: 256Mi
         backup:
@@ -327,6 +327,13 @@ spec:
       northd:
         # northd remote probe interval (to nb or nb relay) can be adjusted individually
         remoteInactivityProbeMs: 60000
+        # DO NOT EDIT resources here casually (2026-09-28): this block is the
+        # NeutronOVNAgent spec. yaook applies ANY spec drift on a per-node
+        # stateful agent by DELETING it (StatefulInstancedResource), which
+        # raises the node's `maintenance-required-l2-agent` label and makes the
+        # L2-aware NovaComputeNode EVICT the node — cold-migrating every VM off
+        # it, node after node. Left untouched by the 72h right-size pass for
+        # that reason (p95 is <=30m / <=30Mi except metadata-agent ~470Mi).
         resources:
           northd:
             requests:

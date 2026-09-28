@@ -250,13 +250,16 @@ data:
           replicas: 3
         envoyContainer:
           resources:
-            limits:
-              memory: 4Gi
+            # Envoy dataplane on workload clusters (also backs atlas'
+            # https-external Gateway on production). 72h Mimir: production
+            # proxies P95 ~27Mi / max ~28Mi, CPU P95 ~5m. Limit deliberately
+            # generous (not 2x max) — an OOMKilled envoy drops live traffic.
+            # Was 256Mi/4Gi.
             requests:
-              # Envoy dataplane. 7d mem (Mimir): openstack (busiest) ~195Mi
-              # max. 1Gi request was ~5x the busiest pod; trimmed to 256Mi
-              # (~1.3x peak). Limit kept at 4Gi for burst headroom.
-              memory: 256Mi
+              cpu: 10m
+              memory: 48Mi
+            limits:
+              memory: 512Mi
         service:
           type: LoadBalancer
     ---

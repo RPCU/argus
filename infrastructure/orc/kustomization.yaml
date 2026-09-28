@@ -4,3 +4,18 @@
 # Version-pinned upstream URL (v2.5.0).
 resources:
   - https://github.com/k-orc/openstack-resource-controller/releases/download/v2.6.0/install.yaml
+patches:
+  # 72h Mimir (mgmt): mem P95 ~88Mi / max ~143Mi, CPU P95 ~5m. Upstream asks
+  # 10m/64Mi with a 500m CPU limit; req ≈ P95, limit ≈ 2x max, no CPU limit.
+  - target:
+      kind: Deployment
+      name: orc-controller-manager
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests:
+            cpu: 5m
+            memory: 96Mi
+          limits:
+            memory: 320Mi

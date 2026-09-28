@@ -7,6 +7,21 @@ metadata:
 spec:
   # renovate: datasource=github-releases depName=clastix/cluster-api-control-plane-provider-kamaji
   version: v0.21.0
+  # 72h Mimir: mem P95 ~124Mi / max ~126Mi against the upstream 128Mi limit,
+  # CPU P95 ~193m against a 500m limit (inflated by ~330 restarts/3d — each
+  # restart re-syncs caches). The restarts are leader-election losses (lease
+  # renew deadline) aggravated by CPU throttling + a slow mgmt apiserver.
+  # Replaces the provider manifest's container resources wholesale (no CPU
+  # limit — request-only policy, §8).
+  deployment:
+    containers:
+      - name: controller
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            memory: 320Mi
   manager:
     featureGates:
       ExternalClusterReference: true

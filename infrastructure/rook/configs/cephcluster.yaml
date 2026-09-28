@@ -45,35 +45,46 @@ spec:
   # the first OOM/eviction victims when VMs used memory — a direct stability
   # risk). Requests guarantee scheduling weight; memory limits bound blast
   # radius. No CPU limits (throttling an OSD/mon hurts tail latency).
-  # Rook auto-tunes osd_memory_target from the OSD memory request.
+  # osd_memory_target is derived from the OSD memory LIMIT, not the request
+  # (osd_memory_target_cgroup_limit_ratio 0.8 x POD_MEMORY_LIMIT: 4Gi limit ->
+  # 3435973836, verified live 2026-09-28) — keep the 4Gi limit; the request only
+  # drives scheduling. mon keeps its 2Gi limit for recovery spikes.
   #
-  # OSD cpu request is 500m, NOT the raw core count: eviction protection comes
-  # from the osd `system-node-critical` priorityClass above (not the request),
-  # and measured OSD usage peaks at ~350m. A 2-CPU request was a ~6x
-  # over-reservation that, on the smallest hyperconverged node (quinn, 8 cores
-  # vs 12 on lucy/makise), left <300m free and wedged the per-node OVN
-  # dataplane rollout (ovs-vswitchd/ovn-controller each request 300m and are
-  # node-pinned). With no CPU limit the OSD still bursts freely past 500m under
-  # recovery; the request only governs scheduling admission + cpu.weight.
+  # 2026-09-28 right-size from 72h Mimir (req ~ p95, no CPU limits): the
+  # hypervisors also run Nova VMs the scheduler cannot see, so pod requests are
+  # kept honest instead of padded. osd p95 ~260m/2.65Gi (max 325m/2.85Gi) ->
+  # 300m/2688Mi; mon p95 ~30m/640Mi (floor 50m: quorum latency); mgr p95
+  # ~20m/565Mi. Eviction protection comes from the `system-node-critical`
+  # priorityClass above, not the request. History: a 2-CPU OSD request once
+  # left <300m free on quinn (8 cores) and wedged the node-pinned OVN dataplane
+  # rollout; with no CPU limit the OSD still bursts freely under recovery.
   resources:
     mon:
       requests:
-        cpu: 300m
-        memory: 1Gi
+        cpu: 50m
+        memory: 656Mi
       limits:
         memory: 2Gi
     mgr:
       requests:
-        cpu: 100m
-        memory: 512Mi
+        cpu: 25m
+        memory: 576Mi
       limits:
         memory: 1Gi
     osd:
       requests:
-        cpu: 500m
-        memory: 4Gi
+        cpu: 300m
+        memory: 2688Mi
       limits:
         memory: 4Gi
+    # ceph-exporter DaemonSet-style per-node pods (were BestEffort). 72h p95
+    # ~15m/19Mi.
+    exporter:
+      requests:
+        cpu: 20m
+        memory: 32Mi
+      limits:
+        memory: 192Mi
   # cluster level storage configuration and selection
   storage:
     useAllNodes: false

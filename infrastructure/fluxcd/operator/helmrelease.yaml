@@ -17,10 +17,14 @@ spec:
   upgrade:
     crds: CreateReplace
   values:
-    # Right-sized CPU request to reclaim worker budget on the 2-worker mgmt
-    # fleet (chart default 100m). Measured P95 ~11m / peak ~45m (Mimir, 3d).
-    # CPU request-only; memory left at chart default.
+    # Sized from 72h Mimir P95/max across mgmt/openstack/production: mem P95
+    # ~258Mi / max ~292Mi (the 64Mi request was 4x under), CPU P95 ~8m.
+    # req ≈ P95, limit ≈ 2x max; the chart's default 2000m CPU limit is nulled
+    # (CPU request-only policy, §8).
     resources:
       requests:
-        cpu: 30m
-        memory: 64Mi
+        cpu: 10m
+        memory: 272Mi
+      limits:
+        cpu: null
+        memory: 640Mi

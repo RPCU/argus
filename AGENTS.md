@@ -299,8 +299,10 @@ FALSE` **unconditionally**. The cert-manager base NEVER emits a ServiceMonitor
     `monitoring.enabled: true` (creates the `rook-ceph-mgr` ServiceMonitor →
     `ceph_*`; without it Mimir has zero ceph metrics). priorityClassNames
     (mon/osd `system-node-critical`, mgr `system-cluster-critical`); resources
-    for mon/mgr/osd — **osd cpu request 500m** (NOT 2; measured peak ~350m;
-    over-reservation wedged OVN on quinn — §8), 5Gi req/8Gi limit, no CPU limit.
+    for mon/mgr/osd — **osd cpu request 300m** (NOT 2; 72h p95 ~260m, max
+    ~325m; over-reservation wedged OVN on quinn — §8), **4Gi memory limit is
+    load-bearing**: live `osd_memory_target` = 0.8 × the LIMIT (not the
+    request), so don't shrink it; no CPU limit.
   - `configs/cephblockpool.yaml` — RBD replica-2 nvme, `pg_autoscale_mode: on`
     - `target_size_ratio: 0.8`. ALL pools must use nvme-classed CRUSH rules (§8).
   - `configs/cephfilesystem.yaml` — `rpcu-fs` (replica-2 metadata + `data0` on
@@ -960,6 +962,48 @@ service => refusing to override"`. `cilium-dbg lrp list` STILL shows the mapping
   (immutable) config secret, `os-resetState` ERROR'd VMs to active (from a
   nova-api pod using `keystone-admin`), restart the eviction pod.
 
+### Hypervisor partition (VMs vs pods) — 2026-09-28
+
+lucy/makise/quinn run pods AND the CAPI VMs. qemu lives in `machine.slice`,
+OUTSIDE kubepods, so kube-scheduler can't see VM memory and nova (8Gi
+`reserved_host_memory_mb`) couldn't see pod memory — both double-booked the
+same RAM. 2026-09-26 the NovaComputeNode rollout packed ~48Gi of VMs onto quinn
+next to ~21Gi of pods → MemAvailable 0.3Gi for ~14h. Fix = a static per-host
+split that BOTH schedulers enforce:
+
+| host              | pods (kubelet allocatable) | VMs (placement budget) |
+| ----------------- | -------------------------- | ---------------------- |
+| lucy (12c/126Gi)  | ~46.7Gi / 8 cores          | 72Gi / 12 vCPU         |
+| makise (12c/63Gi) | ~25.7Gi / 7 cores          | 32Gi / 12 vCPU         |
+| quinn (8c/63Gi)   | ~25.6Gi / 4 cores          | 32Gi / 8 vCPU          |
+
+- k8s side: hephaestus `customNixOSModules.rpcuIaaSCP.hostPartition`
+  (kubelet `systemReserved` = host + VM share; `enforceNodeAllocatable: pods`
+  hard-caps kubepods) + `machine.slice` CPUWeight so VMs aren't starved.
+- nova side: `infrastructure/yaook/nova-placement-reservation.yaml` — CronJob
+  holding placement allocations for pseudo-consumers
+  `rpcu-k8s-reservation/<host>/<n>` = capacity − VM budget (chunked by
+  `max_unit`). Chosen over per-node `reserved_host_memory_mb` because ANY
+  `novaComputeConfig` edit evicts every node and there isn't room to evacuate
+  lucy. nova-compute leaves non-instance allocations alone (verified).
+  `nova-manage placement audit` lists them as orphans — expected; never
+  `--delete`. **Keep the budgets in sync with hephaestus.**
+- **Order matters**: pod requests must fit the new allocatable BEFORE the
+  hephaestus change lands (kubelet re-admits pods on restart).
+- N-1: losing makise or quinn reschedules every movable pod; losing lucy does
+  NOT fit (CPU) — hardware limit. VM headroom ≈ 40Gi / 10 vCPU fleet-wide.
+
+**Per-node yaook agents: editing their spec evicts VMs.** yaook applies ANY
+spec drift on a per-node stateful agent by DELETING it
+(`StatefulInstancedResource.reconcile`). For NovaComputeNode that's the
+eviction (live/cold migrate or evacuate — there is NO "stop in place" mode;
+SHUTOFF VMs are cold-migrated too; only SHELVED_OFFLOADED instances are
+skipped). NovaComputeNodes are L2-aware, so deleting a node's NeutronOVNAgent
+(ANY change to `neutron.yaml` `setup.ovn.controller.*`, incl. `resources`)
+raises `maintenance.yaook.cloud/maintenance-required-l2-agent` and evicts
+that node's VMs too. Treat `novaComputeConfig`, `compute.resources` and
+`setup.ovn.controller.*` as VM-evicting changes.
+
 ### yaook BestEffort starvation (recurring)
 
 **When a yaook service misbehaves, check `.status.qosClass` FIRST.** These pods
@@ -1109,8 +1153,17 @@ CreateReplace` with no cert-manager dependency (self-signed webhook certs), so
   (only `Provider`/`ClusterProviderConfig` are `v1`). `v1` fails the server
   dry-run and cascades crossplane-zitadel → crossplane-resources →
   grafana-alerting + chihiro to `Ready=False`.
-- **mgmt workload sizing policy**: mem request ≈ P95/current, mem limit ≈ 2×
-  observed max, **CPU request-only (no limit)** — from 72h Mimir history. Crossplane
+- **Fleet sizing policy** (all clusters, last full pass 2026-09-28): mem request
+  ≈ 72h P95, mem limit ≈ 2× 72h max (≥1.25× max), **CPU request-only (no
+  limit)** — from 72h Mimir history. Exceptions: rabbitmq keeps CPU limits (yaook
+  maps them to Erlang schedulers), Dragonfly keeps CPU+mem limits (threads /
+  maxmemory derive from them), flux keeps mem limits (tmpfs), Galera 50m CPU
+  floor, OVN raft members CPU floors (NB/SB 100m, relay/northd 50m). Several
+  charts silently dropped invented keys (cert-manager, ESO, OCCM, cinder-csi,
+  csi-driver-nfs, capi-operator) → pods ran BestEffort; always check with
+  `helm template` that `resources` reach the pod. The per-node yaook agents
+  (NovaComputeNode, NeutronOVNAgent = `setup.ovn.controller.*`) are NOT sized
+  by this policy — see "Hypervisor partition". Crossplane
   providers get resources via a `DeploymentRuntimeConfig` + `runtimeConfigRef`
   (vault 448Mi/896Mi/40m, openstack 384/768/40m, zitadel 256/640/30m, random
   128/256/20m). KSM under the hyphenated `kube-state-metrics:` key. kgateway
@@ -1159,7 +1212,14 @@ env; pre-commit quality gates; 1-minute Git sync.
 
 ---
 
-**Last Updated**: August 2026 — **Added a Kyverno policy-engine Sveltos add-on
+**Last Updated**: 2026-09-28 — **Fleet-wide requests/limits pass + hypervisor
+partition.** Right-sized every repo-managed workload on openstack, mgmt and the
+Sveltos bases from 72h Mimir (fixed 6 charts whose `resources` keys were
+silently dropped; kamaji tenant apiservers via new
+`controlplane-kamaji-v8`/`-external-v2`; cilium agent OOMs on production; vault
+and yaook operators no longer BestEffort). Added the nova placement reservation
+CronJob (§8 "Hypervisor partition"); OVN per-node agents deliberately untouched
+(VM eviction trap). — Prior: August 2026 — **Added a Kyverno policy-engine Sveltos add-on
 with OIDC-user guardrails.** New `infrastructure/kyverno/` component: the Helm
 chart base (HelmRepository/HelmRelease/namespace, chart v3.9.0 / app v1.19.0,
 `kyverno` ns, single-replica controllers, webhook `resourceFilters` excluding

@@ -9,6 +9,18 @@ metadata:
 spec:
   # renovate: datasource=github-releases depName=kubernetes-sigs/cluster-api
   version: v1.14.2
+  # 72h Mimir: mem P95 ~99Mi / max ~125Mi, CPU P95 ~12m (was BestEffort).
+  # Replaces the provider manifest's container resources wholesale (no CPU
+  # limit — request-only policy, §8).
+  deployment:
+    containers:
+      - name: manager
+        resources:
+          requests:
+            cpu: 15m
+            memory: 112Mi
+          limits:
+            memory: 320Mi
   manager:
     featureGates:
       ClusterTopology: true

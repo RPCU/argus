@@ -13,8 +13,8 @@ spec:
     resources:
       mariadb-galera:
         requests:
-          cpu: 200m
-          memory: 512Mi
+          cpu: 50m
+          memory: 208Mi
         limits:
           memory: 2Gi
     timeoutClient: 300
@@ -23,14 +23,14 @@ spec:
       resources:
         haproxy:
           requests:
-            cpu: 50m
-            memory: 192Mi
+            cpu: 10m
+            memory: 96Mi
           limits:
-            memory: 512Mi
+            memory: 320Mi
         service-reload:
           requests:
-            cpu: 10m
-            memory: 32Mi
+            cpu: 5m
+            memory: 16Mi
           limits:
             memory: 64Mi
         create-ca-bundle:
@@ -55,8 +55,10 @@ spec:
     resources:
       glance-api:
         requests:
-          cpu: 200m
-          memory: 512Mi
+          cpu: 15m
+          memory: 272Mi
+        # Kept at 2Gi (72h max only ~274Mi): image uploads/imports stream
+        # through glance-api, so leave room for bursts.
         limits:
           memory: 2Gi
   glanceConfig:

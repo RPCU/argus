@@ -17,3 +17,12 @@ spec:
         namespace: yaook
   install:
     createNamespace: true
+  values:
+    operator:
+      # Was BestEffort. 72h p95 9m/814Mi, max 11m/827Mi (2026-09-28).
+      resources:
+        requests:
+          cpu: 10m
+          memory: 816Mi
+        limits:
+          memory: 1664Mi

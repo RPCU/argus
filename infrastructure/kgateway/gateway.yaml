@@ -47,14 +47,16 @@ spec:
       replicas: 3
     envoyContainer:
       resources:
-        limits:
-          memory: 4Gi
+        # Envoy dataplane, sized from 72h Mimir (per pod): openstack (busiest)
+        # P95 ~100Mi / max ~197Mi, CPU P95 ~19m; mgmt P95 <60Mi. req ≈ P95; the
+        # limit is deliberately above 2x max (512Mi) because an OOMKilled envoy
+        # drops live traffic (config reloads / connection floods spike RSS).
+        # Was 256Mi/4Gi — the 4Gi limit was an unbounded-in-practice budget.
         requests:
-          # Envoy dataplane. 7d mem (Mimir): openstack (busiest) ~195Mi max,
-          # mgmt 29-153Mi, production 26-72Mi. 1Gi request was ~5x the busiest
-          # pod; trimmed to 256Mi (~1.3x peak). Limit kept at 4Gi for burst
-          # headroom (config reloads / connection floods).
-          memory: 256Mi
+          cpu: 20m
+          memory: 112Mi
+        limits:
+          memory: 512Mi
     service:
       type: LoadBalancer
       extraAnnotations:

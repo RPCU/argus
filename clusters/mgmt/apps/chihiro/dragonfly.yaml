@@ -10,7 +10,10 @@ spec:
       # over-reservation; 15m (~1.5x peak) frees reservation while the
       # 600m limit still absorbs any burst.
       cpu: 15m
-      memory: 500Mi
+      # 72h Mimir: mem P95 ~46Mi / max ~50Mi (500Mi was 10x). The limits stay:
+      # Dragonfly sizes its proactor threads from the CPU limit and needs
+      # 256MiB per thread under the memory limit, so both are functional.
+      memory: 64Mi
     limits:
       cpu: 600m
       memory: 750Mi

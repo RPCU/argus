@@ -1,0 +1,209 @@
+# Hypervisor partition: nova side (AGENTS.md section 8, "Hypervisor partition").
+#
+# THE PROBLEM
+# -----------
+# lucy/makise/quinn are hyperconverged: the OpenStack control plane (pods) and
+# the CAPI VMs (qemu) share each host. qemu runs in machine.slice, OUTSIDE
+# kubepods, so neither scheduler sees the other:
+#   - kube-scheduler ignores VM memory (kubelet only subtracts systemReserved);
+#   - nova only subtracts `reserved_host_memory_mb` (8Gi) / `reserved_host_cpus`
+#     (2) and so offers the pods' memory to VMs.
+# 2026-09-26 the NovaComputeNode rollout packed 4 VMs (~48Gi) onto quinn next to
+# ~21Gi of pods on a 63Gi host → MemAvailable 0.3Gi for ~14h.
+#
+# THE FIX
+# -------
+# Each host gets a static VM budget. The k8s side is hephaestus
+# `customNixOSModules.rpcuIaaSCP.hostPartition` (kubelet systemReserved =
+# host + VM share). The nova side is THIS CronJob: it holds a placement
+# allocation for pseudo-consumers `rpcu-k8s-reservation/<host>/<n>` equal to
+# (placement capacity - VM budget), so the scheduler can only place VMs into
+# the budget. KEEP THE BUDGETS BELOW IN SYNC WITH hephaestus.
+#
+# WHY NOT `reserved_host_memory_mb` per node in nova.yaml: ANY novaComputeConfig
+# edit flags every NovaComputeNode for recreation (cold-migrating all VMs off,
+# see "Nova / compute" in AGENTS.md) — and with the budgets enforced there is
+# not enough room to evacuate lucy. Placement allocations apply instantly with
+# no nova-compute restart. nova-compute's resource tracker leaves them alone:
+# `_remove_deleted_instances_allocations` skips consumers that are not
+# instances (InstanceNotFound → continue; verified on nova 2026.1).
+# Only `nova-manage placement audit --delete` would remove them (it will list
+# them as orphaned — expected); this CronJob re-creates them anyway.
+#
+# One allocation per resource class may not exceed the inventory `max_unit`
+# (VCPU max_unit = physical cores), so the reservation is split over several
+# consumers per host.
+#
+# If VMs already exceed a budget, the reservation shrinks to "everything still
+# free" (logged as OVER BUDGET) — existing VMs are never touched, but nothing
+# new lands on that host until it drains.
+#
+# Run now: kubectl create job -n yaook --from=cronjob/nova-placement-reservation nova-reservation-now
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nova-placement-reservation
+  namespace: yaook
+data:
+  # VM budget per hypervisor, in placement units (flavor RAM MB / vCPU).
+  # Sized from 72h Mimir (2026-09-28): pods p95 lucy 34.8Gi / makise 18.2Gi /
+  # quinn 19.3Gi; VMs today 48 / 32 / 16 Gi. Leaves ~40Gi / 10 vCPU of VM
+  # headroom fleet-wide for CAPI surge (one xlarge = 16Gi / 3 vCPU).
+  budgets.json: |
+    {
+      "lucy":   {"MEMORY_MB": 73728, "VCPU": 12},
+      "makise": {"MEMORY_MB": 32768, "VCPU": 12},
+      "quinn":  {"MEMORY_MB": 32768, "VCPU": 8}
+    }
+  reserve.py: |
+    import json, logging, os, uuid
+    from keystoneauth1 import session
+    from keystoneauth1.identity import v3
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    log = logging.getLogger()
+    budgets = json.load(open("/config/budgets.json"))
+
+    auth = v3.Password(
+        auth_url=os.environ["OS_AUTH_URL"],
+        username=os.environ["OS_USERNAME"],
+        password=os.environ["OS_PASSWORD"],
+        project_name=os.environ["OS_PROJECT_NAME"],
+        user_domain_name=os.environ["OS_USER_DOMAIN_NAME"],
+        project_domain_name=os.environ["OS_PROJECT_DOMAIN_NAME"],
+    )
+    sess = session.Session(auth=auth, verify=False)
+    ep = {"service_type": "placement", "interface": "internal"}
+    hdr = {"OpenStack-API-Version": "placement 1.28"}
+    project_id, user_id = auth.get_project_id(sess), auth.get_user_id(sess)
+
+    def get(path):
+        r = sess.get(path, endpoint_filter=ep, headers=hdr)
+        r.raise_for_status()
+        return r.json()
+
+    def consumer(host, i):
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, f"rpcu-k8s-reservation/{host}/{i}"))
+
+    rc = 0
+    rps = {rp["name"]: rp["uuid"] for rp in get("/resource_providers")["resource_providers"]}
+    for host, budget in budgets.items():
+        rp = rps.get(host)
+        if rp is None:
+            log.error("%s: no resource provider", host)
+            rc = 1
+            continue
+        inv = get(f"/resource_providers/{rp}/inventories")["inventories"]
+        usage = get(f"/resource_providers/{rp}/usages")["usages"]
+        # Current reservation consumers on this RP (at most 16 per host).
+        current = {}
+        for i in range(16):
+            a = get(f"/allocations/{consumer(host, i)}")
+            if a["allocations"]:
+                current[i] = a
+        mine = {k: sum(a["allocations"][rp]["resources"].get(k, 0) for a in current.values()) for k in budget}
+        want = {}
+        for k, vm_budget in budget.items():
+            cap = int((inv[k]["total"] - inv[k]["reserved"]) * inv[k]["allocation_ratio"])
+            vms = usage.get(k, 0) - mine[k]
+            w = max(0, cap - vm_budget)
+            if vms + w > cap:
+                log.warning("%s: OVER BUDGET %s: VMs use %d > budget %d — reserving only what is free", host, k, vms, vm_budget)
+                w = max(0, cap - vms)
+            want[k] = w
+        # Split into chunks <= max_unit, one chunk per resource class per consumer.
+        chunks = []
+        remaining = dict(want)
+        while any(remaining.values()):
+            c = {}
+            for k in remaining:
+                n = min(remaining[k], inv[k]["max_unit"])
+                if n:
+                    c[k] = n
+                    remaining[k] -= n
+            chunks.append(c)
+        for i in range(max(len(chunks), max(current, default=-1) + 1)):
+            res = chunks[i] if i < len(chunks) else {}
+            cur = current.get(i)
+            have = cur["allocations"][rp]["resources"] if cur else {}
+            if have == res:
+                continue
+            gen = cur["consumer_generation"] if cur else None
+            body = {
+                "allocations": {rp: {"resources": res}} if res else {},
+                "project_id": project_id,
+                "user_id": user_id,
+                "consumer_generation": gen,
+            }
+            if os.environ.get("DRY_RUN"):
+                log.info("%s/%d: DRY_RUN would reserve %s (was %s)", host, i, res, have)
+                continue
+            r = sess.put(f"/allocations/{consumer(host, i)}", json=body, endpoint_filter=ep,
+                         headers=hdr, raise_exc=False)
+            if r.status_code >= 300:
+                log.error("%s/%d: PUT %s failed %d %s", host, i, res, r.status_code, r.text)
+                rc = 1
+            else:
+                log.info("%s/%d: reserved %s (was %s)", host, i, res, have)
+        log.info("%s: VM budget %s, reservation %s", host, budget, want)
+    raise SystemExit(rc)
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nova-placement-reservation
+  namespace: yaook
+  labels:
+    app: nova-placement-reservation
+spec:
+  # Idempotent (no-op when already in place); frequent enough to re-assert
+  # after a nova-compute recreation or an inventory change.
+  schedule: "*/10 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 300
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: nova-placement-reservation
+        spec:
+          restartPolicy: OnFailure
+          automountServiceAccountToken: false
+          containers:
+            - name: reserve
+              # The nova image already ships keystoneauth1 and is cached on
+              # every node. Bump alongside the yaook nova release.
+              image: registry.yaook.cloud/yaook/nova-2026.1:1.1.155
+              imagePullPolicy: IfNotPresent
+              command: ["python3", "/config/reserve.py"]
+              env:
+                - name: OS_AUTH_URL
+                  value: https://keystone.yaook.svc:5000/v3
+                - name: PYTHONWARNINGS
+                  value: ignore
+              envFrom:
+                - secretRef:
+                    name: keystone-admin
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 96Mi
+                limits:
+                  memory: 256Mi
+              volumeMounts:
+                - name: config
+                  mountPath: /config
+                  readOnly: true
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+          volumes:
+            - name: config
+              configMap:
+                name: nova-placement-reservation

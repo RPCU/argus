@@ -19,18 +19,62 @@ spec:
     # priority class (same rationale as openstack-cinder-csi).
     driver:
       name: nfs.csi.k8s.io
+    # Resources are PER CONTAINER (`controller.resources.<container>`,
+    # `node.resources.<container>`); a flat `controller.resources.requests` is
+    # not a chart key and was ignored (chart defaults 10m/20Mi applied). Sized
+    # from 72h Mimir P95/max across mgmt/production (req ≈ P95, limit ≈ 2× max).
+    # The controller's ~260 restarts/3d on mgmt are leader-election losses
+    # (lease renew timeouts against a slow mgmt apiserver), not OOMs.
     controller:
       replicas: 1
       resources:
-        requests:
-          cpu: 25m
-          memory: 32Mi
-        limits:
-          memory: 128Mi
+        csiProvisioner:
+          requests:
+            cpu: 10m
+            memory: 96Mi
+          limits:
+            memory: 256Mi
+        csiResizer:
+          requests:
+            cpu: 10m
+            memory: 80Mi
+          limits:
+            memory: 256Mi
+        csiSnapshotter:
+          requests:
+            cpu: 10m
+            memory: 80Mi
+          limits:
+            memory: 256Mi
+        livenessProbe:
+          requests:
+            cpu: 5m
+            memory: 32Mi
+          limits:
+            memory: 128Mi
+        nfs:
+          requests:
+            cpu: 5m
+            memory: 48Mi
+          limits:
+            memory: 192Mi
     node:
       resources:
-        requests:
-          cpu: 10m
-          memory: 32Mi
-        limits:
-          memory: 128Mi
+        livenessProbe:
+          requests:
+            cpu: 5m
+            memory: 32Mi
+          limits:
+            memory: 128Mi
+        nodeDriverRegistrar:
+          requests:
+            cpu: 5m
+            memory: 32Mi
+          limits:
+            memory: 128Mi
+        nfs:
+          requests:
+            cpu: 5m
+            memory: 48Mi
+          limits:
+            memory: 192Mi

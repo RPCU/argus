@@ -48,10 +48,13 @@ secret:
 extraVolumes: []
 extraVolumeMounts: []
 
+# Sized from 72h Mimir P95/max (mgmt/production; req ≈ P95, limit ≈ 2× max, no
+# CPU limit). The chart key is top-level `resources` (applied to the DaemonSet
+# container); the old nested `resources.cloudControllerManager` map was not a
+# chart key and was silently dropped (pods ran BestEffort).
 resources:
-  cloudControllerManager:
-    requests:
-      cpu: 50m
-      memory: 64Mi
-    limits:
-      memory: 256Mi
+  requests:
+    cpu: 15m
+    memory: 96Mi
+  limits:
+    memory: 256Mi

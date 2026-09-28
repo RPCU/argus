@@ -8,9 +8,15 @@
 cert-manager:
   enabled: false
 
+# The chart key is `resources.manager` — a flat top-level `resources` was
+# silently ignored (the chart default 100m/100Mi + 100m CPU limit applied).
+# Sized from 72h Mimir: mem P95 ~84Mi / max ~119Mi, CPU P95 ~5m; the ~10
+# restarts/3d are leader-election losses against the mgmt apiserver, not OOMs.
 resources:
-  requests:
-    cpu: 50m
-    memory: 128Mi
-  limits:
-    memory: 512Mi
+  manager:
+    requests:
+      cpu: 5m
+      memory: 96Mi
+    limits:
+      cpu: null
+      memory: 320Mi

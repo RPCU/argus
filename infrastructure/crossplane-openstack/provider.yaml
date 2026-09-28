@@ -13,10 +13,11 @@ spec:
             # cpu ~42/31m. request ~= P95, mem limit ~= 2x max, CPU request-only
             # (no CPU limit — see AGENTS.md Section 8 rationale).
             - name: package-runtime
+              # 72h Mimir (mgmt/openstack/production): P95 ~251Mi / max ~361Mi, CPU P95 ~24m.
               resources:
                 requests:
-                  cpu: 40m
-                  memory: 384Mi
+                  cpu: 25m
+                  memory: 256Mi
                 limits:
                   memory: 768Mi
 ---

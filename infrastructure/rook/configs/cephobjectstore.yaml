@@ -25,3 +25,10 @@ spec:
     port: 80
     # securePort: 443 todo
     instances: 1
+    # Was BestEffort. 72h p95 ~16m/339Mi (max 32m/353Mi); Mimir's S3 backend.
+    resources:
+      requests:
+        cpu: 20m
+        memory: 352Mi
+      limits:
+        memory: 768Mi

@@ -7,11 +7,65 @@
 # with the cluster's Kubernetes minor (v1.35.x). CSI sidecar images (attacher,
 # provisioner, etc.) are left at the chart defaults — they are already pinned
 # to versions compatible with k8s 1.35.
+# Sized from 72h Mimir P95/max across mgmt/production (req ≈ P95, limit ≈ 2×
+# max, no CPU limit). Chart keys are PER CONTAINER under `csi.<sidecar>.resources`
+# (`csi.plugin.resources` covers the cinder-csi-plugin container in BOTH the
+# controller Deployment and the node DaemonSet; `csi.livenessprobe` likewise).
+# The old top-level `resources.csi.*` map was not a chart key and was silently
+# ignored, so every cinder-csi pod ran BestEffort.
 csi:
   plugin:
     image:
       repository: registry.k8s.io/provider-os/cinder-csi-plugin
       tag: "v1.36.0"
+    resources:
+      requests:
+        cpu: 5m
+        memory: 80Mi
+      limits:
+        memory: 256Mi
+  attacher:
+    resources:
+      requests:
+        cpu: 5m
+        memory: 48Mi
+      limits:
+        memory: 192Mi
+  provisioner:
+    resources:
+      requests:
+        cpu: 5m
+        memory: 48Mi
+      limits:
+        memory: 192Mi
+  snapshotter:
+    resources:
+      requests:
+        cpu: 5m
+        memory: 48Mi
+      limits:
+        memory: 192Mi
+  resizer:
+    resources:
+      requests:
+        cpu: 5m
+        memory: 80Mi
+      limits:
+        memory: 256Mi
+  livenessprobe:
+    resources:
+      requests:
+        cpu: 5m
+        memory: 32Mi
+      limits:
+        memory: 128Mi
+  nodeDriverRegistrar:
+    resources:
+      requests:
+        cpu: 5m
+        memory: 32Mi
+      limits:
+        memory: 128Mi
 
 # Share the cloud-config secret rendered by openstack-ccm-identity — same
 # /etc/config/cloud.conf + /etc/config/clouds.yaml layout, same OpenStack
@@ -42,18 +96,3 @@ storageClass:
   retain:
     isDefault: false
     allowVolumeExpansion: true
-
-resources:
-  csi:
-    plugin:
-      requests:
-        cpu: 50m
-        memory: 64Mi
-      limits:
-        memory: 256Mi
-    controller:
-      requests:
-        cpu: 25m
-        memory: 32Mi
-      limits:
-        memory: 128Mi

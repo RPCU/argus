@@ -18,13 +18,12 @@ spec:
         namespace: kgateway-system
   values:
     # kgateway control-plane (controller) container resources. Sized from 72h
-    # Mimir history (max/P95): mem ~168/167Mi, cpu ~14/14m. request ~= observed,
-    # mem limit ~= 2x max, CPU request-only (no CPU limit — see AGENTS.md
-    # Section 8 rationale). The live pod previously ran with resources: {}
-    # (QoS BestEffort).
+    # Mimir history across mgmt/openstack/production (P95/max): mem ~150/156Mi,
+    # cpu ~9m. request ~= P95, mem limit ~= 2x max, CPU request-only (no CPU
+    # limit — see AGENTS.md Section 8 rationale).
     resources:
       requests:
-        cpu: 20m
-        memory: 192Mi
+        cpu: 10m
+        memory: 160Mi
       limits:
         memory: 384Mi

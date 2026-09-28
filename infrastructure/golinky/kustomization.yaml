@@ -3,3 +3,17 @@ resources:
   - https://github.com/didactiklabs/golinky/releases/download/v0.4.0/bundle.yaml
 patches:
   - path: golinky-service-patch.yaml
+  # 72h Mimir (openstack): CPU P95 <1m, mem P95/max ~11Mi. Upstream bundle
+  # asks 100m/64Mi with a 500m CPU limit; request-only policy (§8).
+  - target:
+      kind: Deployment
+      name: golinky
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests:
+            cpu: 5m
+            memory: 32Mi
+          limits:
+            memory: 128Mi

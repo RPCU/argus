@@ -4,6 +4,7 @@ resources:
   - helmrepo.yaml
   - helmrelease-crds.yaml
   - helmrelease.yaml
+  - etcd-pdb.yaml
 configMapGenerator:
   - name: kamaji-values
     files:

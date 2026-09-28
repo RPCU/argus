@@ -1,0 +1,14 @@
+# kamaji-etcd (the tenant control planes' datastore) has no PDB in the chart:
+# draining a worker holding 2 of the 3 members evicts both at once and the
+# tenant APIs lose quorum. Allow one member down at a time. Shared base — also
+# reaches atlas production (same ./infrastructure/kamaji path).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kamaji-etcd
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kamaji-etcd
+      app.kubernetes.io/instance: kamaji

@@ -358,6 +358,26 @@ spec:
       workers: 4
     scheduler:
       workers: 4
+    # SPREAD VMs across hypervisors (2026-09-28). The default weighers rank
+    # hosts by ABSOLUTE free RAM/CPU/disk from the compute-node records, which
+    # ignore the pod partition (placement reservation, nova-placement-
+    # reservation.yaml) — lucy (2x the RAM) always looked emptiest and got
+    # every VM until its placement budget was full (it ended at 11/12 cores
+    # busy while makise idled). Instead: no capacity weighers, prefer the host
+    # with the FEWEST instances, and let a cluster's soft-anti-affinity server
+    # group (capi-<cluster>) win over the global count. The placement budgets
+    # stay the hard per-host cap.
+    # SAFE TO EDIT: NovaDeployment.spec.novaConfig is NOT rendered into the
+    # NovaComputeNodes (they only get compute.configTemplates[].novaComputeConfig
+    # — yaook op/nova resources.py _collect_nova_compute_config), so this
+    # restarts api/scheduler/conductor only, no compute recreation / eviction.
+    filter_scheduler:
+      ram_weight_multiplier: 0.0
+      cpu_weight_multiplier: 0.0
+      disk_weight_multiplier: 0.0
+      num_instances_weight_multiplier: -1.0
+      soft_anti_affinity_weight_multiplier: 2.0
+      shuffle_best_same_weighed_hosts: true
     database:
       max_pool_size: 20
       max_overflow: 30

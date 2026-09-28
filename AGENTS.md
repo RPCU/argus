@@ -1031,6 +1031,17 @@ enable one Cluster at a time so surges fit the placement budget. Workers only:
 a kubeadm CP would need the group before Sveltos (which waits for the CP) can
 create it. No nova/yaook config needed (default filters + soft-anti-affinity
 weigher). VCPU budgets are 16/16/12 so rollouts can surge.
+**Nova spreads by instance count, not free RAM** (nova.yaml
+`novaConfig.filter_scheduler`): the default RAM/CPU/disk weighers use absolute
+free capacity from the compute-node records (blind to the placement
+reservation), so the biggest host (lucy) got every VM until its budget was full
+and ran 11/12 cores busy. Now ram/cpu/disk multipliers 0,
+`num_instances_weight_multiplier: -1`, `soft_anti_affinity_weight_multiplier:
+2`, shuffle ties. `NovaDeployment.spec.novaConfig` does NOT reach the
+NovaComputeNodes (only `compute.configTemplates[].novaComputeConfig` does) —
+safe to edit, no eviction. `kamaji-etcd` now has a PDB (maxUnavailable 1,
+`infrastructure/kamaji/etcd-pdb.yaml`): draining a worker with 2 of 3 members
+used to break tenant-API quorum.
 
 **Per-node yaook agents: editing their spec evicts VMs.** yaook applies ANY
 spec drift on a per-node stateful agent by DELETING it

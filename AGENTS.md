@@ -988,7 +988,7 @@ split that BOTH schedulers enforce:
 | ----------------- | -------------------------- | ---------------------- |
 | lucy (12c/126Gi)  | ~46.7Gi / 8 cores          | 72Gi / 12 vCPU         |
 | makise (12c/63Gi) | ~25.7Gi / 7 cores          | 32Gi / 12 vCPU         |
-| quinn (8c/63Gi)   | ~25.6Gi / 4 cores          | 32Gi / 8 vCPU          |
+| quinn (8c/63Gi)   | ~25.6Gi / 5 cores          | 32Gi / 8 vCPU          |
 
 - k8s side: hephaestus `customNixOSModules.rpcuIaaSCP.hostPartition`
   (kubelet `systemReserved` = host + VM share; `enforceNodeAllocatable: pods`

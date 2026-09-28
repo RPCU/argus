@@ -77,6 +77,10 @@ rules:
   - apiGroups: ["pki.vault.upbound.io"]
     resources: ["secretbackendroles"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # capi-server-groups profile (deploymentType: Local): per-cluster ORC ServerGroup.
+  - apiGroups: ["openstack.k-orc.cloud"]
+    resources: ["servergroups"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

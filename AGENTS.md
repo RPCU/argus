@@ -986,9 +986,9 @@ split that BOTH schedulers enforce:
 
 | host              | pods (kubelet allocatable) | VMs (placement budget) |
 | ----------------- | -------------------------- | ---------------------- |
-| lucy (12c/126Gi)  | ~46.7Gi / 8 cores          | 72Gi / 12 vCPU         |
-| makise (12c/63Gi) | ~25.7Gi / 7 cores          | 32Gi / 12 vCPU         |
-| quinn (8c/63Gi)   | ~25.6Gi / 5 cores          | 32Gi / 8 vCPU          |
+| lucy (12c/126Gi)  | ~46.7Gi / 8 cores          | 72Gi / 16 vCPU         |
+| makise (12c/63Gi) | ~25.7Gi / 7 cores          | 32Gi / 16 vCPU         |
+| quinn (8c/63Gi)   | ~25.6Gi / 5 cores          | 32Gi / 12 vCPU         |
 
 - k8s side: hephaestus `customNixOSModules.rpcuIaaSCP.hostPartition`
   (kubelet `systemReserved` = host + VM share; `enforceNodeAllocatable: pods`
@@ -1005,6 +1005,19 @@ split that BOTH schedulers enforce:
   hephaestus change lands (kubelet re-admits pods on restart).
 - N-1: losing makise or quinn reschedules every movable pod; losing lucy does
   NOT fit (CPU) — hardware limit. VM headroom ≈ 40Gi / 10 vCPU fleet-wide.
+
+**VM spreading (server groups).** Nova packs by free RAM, so a cluster's
+workers can all land on one hypervisor. The Sveltos `capi-server-groups`
+profile (deploymentType Local) renders an ORC `ServerGroup` `capi-<cluster>`
+(`soft-anti-affinity`) per Cluster in ns `mgmt`, in the cluster's OWN project
+(credentials from its `identityRef` variable — mgmt=openstack,
+production/platform=production, test=lab). ClusterClass variable
+`workerServerGroup: true` sets `serverGroup.filter.name` on the workers'
+OpenStackMachineTemplate. Default false (flipping it rolls every worker) —
+enable one Cluster at a time so surges fit the placement budget. Workers only:
+a kubeadm CP would need the group before Sveltos (which waits for the CP) can
+create it. No nova/yaook config needed (default filters + soft-anti-affinity
+weigher). VCPU budgets are 16/16/12 so rollouts can surge.
 
 **Per-node yaook agents: editing their spec evicts VMs.** yaook applies ANY
 spec drift on a per-node stateful agent by DELETING it

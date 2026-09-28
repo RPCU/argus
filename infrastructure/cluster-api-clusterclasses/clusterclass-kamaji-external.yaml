@@ -295,10 +295,44 @@ spec:
           required:
             - enabled
 
+    - name: workerServerGroup
+      required: false
+      schema:
+        openAPIV3Schema:
+          type: boolean
+          default: false
+          description: >-
+            Put the worker VMs in the cluster's soft-anti-affinity server group
+            `capi-<cluster>` (created by the Sveltos `capi-server-groups`
+            profile) so nova spreads them across hypervisors. Flipping it rolls
+            every worker.
+
   # ---------------------------------------------------------------------------
   # Patches
   # ---------------------------------------------------------------------------
   patches:
+    # Spread workers across hypervisors: soft-anti-affinity server group per
+    # cluster (ORC ServerGroup rendered by the Sveltos `capi-server-groups`
+    # profile). Workers only — a kubeadm control plane would need the group
+    # before Sveltos (which waits for the CP) could create it.
+    - name: workerServerGroup
+      enabledIf: "{{ if .workerServerGroup }}true{{ end }}"
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            kind: OpenStackMachineTemplate
+            matchResources:
+              machineDeploymentClass:
+                names:
+                  - default-worker
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/serverGroup
+              valueFrom:
+                template: |
+                  filter:
+                    name: capi-{{ .builtin.cluster.name }}
+
     - name: identityRef
       definitions:
         - selector:

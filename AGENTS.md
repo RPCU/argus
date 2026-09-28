@@ -1250,7 +1250,13 @@ CreateReplace` with no cert-manager dependency (self-signed webhook certs), so
   mgmt.yaml). KCP doesn't requeue for that timestamp — it acts on its next
   reconcile (≤ resync), so set a time in the past or touch the KCP.
 - **Tenant apiservers on a busy host crashloop** on Kamaji's default probes
-  (1s/3×10s startup); `-v9`/`-external-v3` relax them.
+  (1s/3×10s startup); `-v10`/`-external-v4` relax them. **The CAPI Kamaji
+  provider drops `deployment.probes` unless `apiServer`/`controllerManager`/
+  `scheduler` `probes` are ALL set too** (`-v9`/`-external-v3` only set the
+  deployment ones → TCP `probes: nil` → 1s/3× defaults → single tenant
+  apiserver SIGKILLed on any VM steal spike → Cilium ICMP-rejects the LB
+  NodePort → every workload-cluster controller exits on `no route to host`).
+  Check the TCP, not the KCP.
 - **Rollouts pile pods onto the first new node** → descheduler (see
   infrastructure/descheduler).
 
@@ -1295,7 +1301,10 @@ env; pre-commit quality gates; 1-minute Git sync.
 
 ---
 
-**Last Updated**: 2026-09-28 — **Cheap RabbitMQ probes** via a MutatingAdmissionPolicy
+**Last Updated**: 2026-09-28 — **Tenant CP probes actually applied**
+(`controlplane-kamaji-v10`/`-external-v4`: component-level probes so the CAPI
+Kamaji provider stops dropping them; fixes production controller restart storms).
+Earlier the same day: **Cheap RabbitMQ probes** via a MutatingAdmissionPolicy
 (`clusters/openstack/yaook-rabbitmq-probes.yaml`, ~2.3 cores saved fleet-wide once
 brokers restart). Earlier the same day: **Fleet-wide requests/limits pass + hypervisor
 partition.** Right-sized every repo-managed workload on openstack, mgmt and the

@@ -25,6 +25,10 @@ metadata:
   name: capi-server-groups
 spec:
   syncMode: Continuous
+  # Leave deployed resources in place if mgmt stops matching (e.g. a selector
+  # change): withdrawing would delete Vault auth backends / PKI roles
+  # (Crossplane) or server groups that the other registration still owns.
+  stopMatchingBehavior: LeavePolicies
   clusterSelector:
     matchExpressions:
       - key: type

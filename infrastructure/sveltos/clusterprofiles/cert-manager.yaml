@@ -90,6 +90,10 @@ spec:
       type: mgmt
   eventSourceName: cert-manager-ready
   syncMode: ContinuousWithDriftDetection
+  # Leave deployed resources in place if mgmt stops matching (e.g. a selector
+  # change): withdrawing would delete Vault auth backends / PKI roles
+  # (Crossplane) or server groups that the other registration still owns.
+  stopMatchingBehavior: LeavePolicies
   reloader: true
   policyRefs:
     # force: true lets a REGENERATED per-cluster ClusterProfile adopt Vault PKI

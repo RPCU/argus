@@ -1,0 +1,64 @@
+# Per-cluster soft-anti-affinity server group, so nova spreads each cluster's
+# worker VMs across the hypervisors (lucy/makise/quinn) instead of packing
+# them (2026-09-28: both production workers sat on lucy).
+#
+# For every CAPI Cluster (type workload or mgmt) Sveltos renders, LOCALLY on
+# mgmt (deploymentType: Local), an ORC `ServerGroup` named after the cluster in
+# the Cluster's namespace. ORC creates the OpenStack server group `capi-<cluster>`
+# in the cluster's OWN project: the credentials come from the Cluster's
+# `identityRef` topology variable (clusters live in different projects —
+# openstack / production / lab), and a server group only works for VMs of the
+# same project.
+#
+# The ClusterClass variable `workerServerGroup: true` then points the workers'
+# OpenStackMachineTemplate at it (`serverGroup.filter.name`). Enable it per
+# Cluster, ONE cluster at a time: it rolls every worker of that cluster, and
+# the VM surges must fit the nova placement budget.
+#
+# Nova side needs no config: the default scheduler already runs the
+# ServerGroup filters and the ServerGroupSoftAntiAffinityWeigher (verified
+# nova.conf has no [filter_scheduler] override). soft-anti-affinity never
+# refuses a placement; it only prefers hosts with fewer group members.
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: capi-server-groups
+spec:
+  syncMode: Continuous
+  clusterSelector:
+    matchExpressions:
+      - key: type
+        operator: In
+        values: ["workload", "mgmt"]
+  policyRefs:
+    - kind: ConfigMap
+      name: capi-server-group
+      namespace: projectsveltos
+      deploymentType: Local
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: capi-server-group
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/template: "true"
+data:
+  servergroup.yaml: |
+    {{- $id := dict "name" "mgmt-cloud-config" "cloudName" "openstack" }}
+    {{- range .Cluster.spec.topology.variables }}
+    {{- if eq .name "identityRef" }}{{ $id = .value }}{{ end }}
+    {{- end }}
+    apiVersion: openstack.k-orc.cloud/v1alpha1
+    kind: ServerGroup
+    metadata:
+      name: capi-{{ .Cluster.metadata.name }}
+      namespace: {{ .Cluster.metadata.namespace }}
+    spec:
+      cloudCredentialsRef:
+        secretName: {{ $id.name }}
+        cloudName: {{ default "openstack" $id.cloudName }}
+      managementPolicy: managed
+      resource:
+        name: capi-{{ .Cluster.metadata.name }}
+        policy: soft-anti-affinity

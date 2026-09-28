@@ -50,11 +50,15 @@ data:
   # Sized from 72h Mimir (2026-09-28): pods p95 lucy 34.8Gi / makise 18.2Gi /
   # quinn 19.3Gi; VMs today 48 / 32 / 16 Gi. Leaves ~40Gi / 10 vCPU of VM
   # headroom fleet-wide for CAPI surge (one xlarge = 16Gi / 3 vCPU).
+  # VCPU budgets raised 12/12/8 -> 16/16/12 (2026-09-28) so worker rollouts
+  # (server-group spreading) can surge; CPU is compressible and machine.slice
+  # CPUWeight (hephaestus) bounds what the VMs actually get. Memory stays the
+  # hard limit.
   budgets.json: |
     {
-      "lucy":   {"MEMORY_MB": 73728, "VCPU": 12},
-      "makise": {"MEMORY_MB": 32768, "VCPU": 12},
-      "quinn":  {"MEMORY_MB": 32768, "VCPU": 8}
+      "lucy":   {"MEMORY_MB": 73728, "VCPU": 16},
+      "makise": {"MEMORY_MB": 32768, "VCPU": 16},
+      "quinn":  {"MEMORY_MB": 32768, "VCPU": 12}
     }
   reserve.py: |
     import json, logging, os, uuid

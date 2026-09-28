@@ -20,6 +20,13 @@ spec:
     version: v1.36.1
     controlPlane:
       replicas: 1
+      # Force the KCP to replace its machine: the topology controller patched
+      # the CP OpenStackMachineTemplate IN PLACE (same name) for the
+      # large -> large-16 flavor change, and KCP judges machines by the
+      # template reference, so it saw nothing to roll (2026-09-28). Bump this
+      # whenever a CP template change must be rolled out.
+      rollout:
+        after: "2026-09-28T12:50:00Z"
     workers:
       machineDeployments:
         - class: default-worker

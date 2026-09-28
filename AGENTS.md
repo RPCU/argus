@@ -376,6 +376,19 @@ Resources` (checks BOTH `request.object` and `request.oldObject` so DELETE is
   kubelet-proxy (admission can't see GET/LIST/WATCH, so read/list is an RBAC
   concern, not covered here). Platform reconcilers (Flux/Sveltos agent/Kyverno)
   auth as SAs and are never matched. Chihiro toggle `kyverno` (default OFF).
+- **descheduler/** (chart v0.36.0, ns descheduler) — kubernetes-sigs
+  descheduler as a Deployment (10m interval). Rebalances pods after node churn:
+  a worker rollout leaves the first new node holding most pods (mgmt 2026-09-28:
+  64 pods / 81% mem requested vs 28 / 44%) and the scheduler never moves them
+  back. `LowNodeUtilization` on REQUESTS (memory + pods only; CPU requests are
+  p95-sized and uniform) — underutilized <50% mem & <35% pods, overutilized >70%
+  mem or >50% pods; control-plane nodes excluded via policy `nodeSelector`;
+  PVC-backed pods protected (`PodsWithPVC`); kube-system/flux/sveltos/kamaji/
+  tenant-CP (`mgmt`, `kamaji-tenants`)/vault namespaces excluded; max 5
+  evictions/node, 2/namespace per cycle, PDBs honoured. Deployed on mgmt
+  (`clusters/mgmt/descheduler.yaml`) + opt-in Sveltos `descheduler` profile
+  (label `sveltos.argus.rpcu.io/descheduler: enabled`; production on). NOT on
+  openstack (single-replica yaook Galera/rabbitmq/OVN — eviction = outage).
 - **golinky/** (v0.3.1) — link shortener; `LoadBalancer` pinned `10.0.0.241`.
 - **openstack-ccm/** (chart v2.35.0 / app v1.35.0) — LoadBalancer via Octavia +
   Node init (removes the CAPO cloud-provider taint). Replaces Cilium LB on mgmt.
@@ -1196,6 +1209,32 @@ CreateReplace` with no cert-manager dependency (self-signed webhook certs), so
   top-level `resources`. sveltos per-controller (agents/driftDetectionManager not
   tunable in 1.12.7). Not editable here: kube-apiserver/etcd static pods, Kamaji
   tenant CPs.
+
+### CAPI VM sizing (2026-09-28 incidents)
+
+- **30 GB root disks → DiskPressure.** Worker OS + images ≈ 21 GB; kubelet
+  evicts below 10% free. A rollout (every image pulled at once onto fresh
+  nodes) pushed production over → evictions incl. the platform/test Kamaji
+  tenant control planes (hosted on production). `cis-xlarge-60` (3c/16G/60G)
+  now backs production + mgmt workers. New flavor, never edit one: nova
+  flavors are immutable.
+- **mgmt control plane needs 16 GB (`large-16`).** On `large` (8 GB) the
+  apiserver (~5 GB with the crossplane CRDs) OOM-thrashed the guest during a
+  worker rollout (~100 MB free, 740 major faults/s) → mgmt AND production APIs
+  down. Recovered by nova hard reboot, then KCP roll to `large-16`. Pause worker
+  rollouts (`cluster.x-k8s.io/paused` on the MachineDeployment) while the CP is
+  sick.
+- **CP template edits don't roll the KCP by themselves.** The topology
+  controller patched the CP OpenStackMachineTemplate IN PLACE (same name) for a
+  `controlPlaneFlavor` change; KCP judges machines by template reference, saw
+  them "up to date" and never rolled. Force it with
+  `topology.controlPlane.rollout.after` in the Cluster (clusters/mgmt/clusters/
+  mgmt.yaml). KCP doesn't requeue for that timestamp — it acts on its next
+  reconcile (≤ resync), so set a time in the past or touch the KCP.
+- **Tenant apiservers on a busy host crashloop** on Kamaji's default probes
+  (1s/3×10s startup); `-v9`/`-external-v3` relax them.
+- **Rollouts pile pods onto the first new node** → descheduler (see
+  infrastructure/descheduler).
 
 ### Kamaji
 

@@ -1,0 +1,44 @@
+# descheduler for OPT-IN workload clusters — rebalances pods after node churn
+# (worker rollouts leave the first new node holding most pods). Flux takeover of
+# the SAME base mgmt uses, ./infrastructure/descheduler (see its helmrelease for
+# the policy). Gated by sveltos.argus.rpcu.io/descheduler: enabled.
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: descheduler
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  dependsOn:
+    - flux-instance
+  clusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/descheduler: enabled
+  policyRefs:
+    - name: descheduler-flux-kustomization
+      namespace: projectsveltos
+      kind: ConfigMap
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: descheduler-flux-kustomization
+  namespace: projectsveltos
+data:
+  descheduler-flux-kustomization.yaml: |
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: descheduler
+      namespace: flux-system
+    spec:
+      interval: 30m
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/descheduler
+      prune: true
+      wait: true
+      timeout: 5m

@@ -1,0 +1,144 @@
+# -----------------------------------------------------------------------------
+# external-v3: = previous + relaxed deployment.probes (startup up to 5min, 5s
+# timeouts) and apiserver CPU request 250m (cpu.weight during startup bursts).
+#
+# Control plane template (KamajiControlPlaneTemplate) — external-v2
+#
+# Same as `-external` with the tenant control-plane containers right-sized from
+# 72h Mimir history of the external tenants hosted on production
+# (kamaji-tenants: platform kcp-103eff73 / test kcp-3efd920c):
+#   kube-apiserver          P95 ~2007Mi / max ~2128Mi (platform), CPU P95 ~136m
+#                           (`-external` requested 1Gi with NO limit)
+#   kube-controller-manager P95 ~133Mi / max ~149Mi, CPU P95 ~37m
+#   kube-scheduler          P95 ~29Mi / max ~30Mi, CPU P95 ~3m
+# Policy: memory request ≈ P95, memory limit ≈ 2x max, CPU request-only.
+#
+# Based on v7 but adds externalClusterReference + network.gateway for hosting
+# the tenant control plane on an EXTERNAL cluster (not the mgmt cluster).
+#
+# Key differences from v7:
+#   - deployment.externalClusterReference: deploys TCP components to a remote
+#     cluster via its kubeconfig secret (ExternalClusterReference feature gate
+#     required on the Kamaji controller).
+#   - network.serviceType: ClusterIP (not LoadBalancer) — the API server is
+#     exposed via a Gateway API TLSRoute, not a cloud LB.
+#   - network.gateway: configures the TLSRoute to attach to a Gateway listener.
+#
+# The externalClusterReference fields are patched per-cluster by the
+# ClusterClass: kubeconfigSecretName defaults to <cluster-name>-kubeconfig,
+# deploymentNamespace defaults to kamaji-tenants, gateway reference defaults to
+# the "https" Gateway in kgateway-system with sectionName "kcp".
+# -----------------------------------------------------------------------------
+apiVersion: controlplane.cluster.x-k8s.io/v1alpha2
+kind: KamajiControlPlaneTemplate
+metadata:
+  name: openstack-kamaji-control-plane-external-v3
+  namespace: mgmt
+spec:
+  template:
+    spec:
+      dataStoreName: default
+      deployment:
+        # Relaxed probes (Kamaji defaults: 1s timeout, 3x10s startup). On a
+        # CPU-contended host the tenant apiserver can't finish its
+        # rbac/bootstrap-roles post-start hook in 30s and crashloops forever
+        # (platform tenant on production, 2026-09-28: 28 restarts/24h).
+        probes:
+          startup:
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          liveness:
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readiness:
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchLabels:
+                      kamaji.clastix.io/component: deployment
+                  topologyKey: kubernetes.io/hostname
+        externalClusterReference:
+          deploymentNamespace: kamaji-tenants
+          kubeconfigSecretName: placeholder
+          kubeconfigSecretKey: value
+      apiServer:
+        extraArgs:
+          # Stop the apiserver from reconciling the kubernetes.default Service
+          # endpoint. On an external Kamaji control plane the apiserver advertises
+          # its own (in-tenant, unreachable-from-workers) address 10.x.x.x:6443 as
+          # the kubernetes.default endpoint. That endpoint is useless — workers
+          # reach the API server through the node-local Caddy proxy + Cilium LRP
+          # (see infrastructure/sveltos/clusterprofiles/kamaji-apiserver-proxy.yaml)
+          # — AND it actively breaks that proxy: Cilium syncs the apiserver-managed
+          # ClusterIP Service entry (10.x.x.x:6443 backend) before/independently of
+          # the LRP, and on any node that joins AFTER the LRP is created the agent
+          # keeps the ClusterIP backend instead of converting it to LocalRedirect,
+          # so kubernetes.default:443 blackholes there. With reconciler-type=none
+          # the Service carries no apiserver endpoint, leaving the LRP as the sole
+          # owner of the ClusterIP on every node (including late joiners).
+          # The ClusterClass oidc patch appends the --oidc-* flags after this.
+          - --endpoint-reconciler-type=none
+        resources:
+          requests:
+            cpu: 250m
+            memory: 2016Mi
+          limits:
+            memory: 4288Mi
+      controllerManager:
+        resources:
+          requests:
+            cpu: 40m
+            memory: 144Mi
+          limits:
+            memory: 384Mi
+      scheduler:
+        resources:
+          requests:
+            cpu: 5m
+            memory: 32Mi
+          limits:
+            memory: 192Mi
+      kubelet:
+        preferredAddressTypes:
+          - InternalIP
+          - ExternalIP
+          - Hostname
+      network:
+        # ClusterIP (not LoadBalancer): the tenant API server + konnectivity are
+        # exposed via Gateway API TLSRoutes (SNI passthrough), NOT a per-tenant
+        # Octavia LB. Kamaji auto-creates the apiserver TLSRoute here and, since
+        # konnectivity is enabled, a second TLSRoute for the konnectivity-server
+        # (hardcoded listener name "konnectivity-server", port 8132) against the
+        # same gateway parentRefs — the Gateway MUST carry both listeners.
+        serviceType: ClusterIP
+        # certSANs: the external FQDN the tenant API server is reached by. The
+        # in-cluster kubernetes.default.svc path is steered by a Cilium Local
+        # Redirect Policy to a node-local SNI-rewrite proxy that forwards to the
+        # Gateway with SNI=<this FQDN>; the served apiserver cert must therefore
+        # be valid for it. Patched per-cluster from the gatewayHostname variable.
+        certSANs:
+          - placeholder.invalid
+        gateway:
+          name: https
+          namespace: kgateway-system
+          # Patched to "<fqdn>:<port>" by the ClusterClass. The port suffix is
+          # mandatory: the Kamaji CAPI provider builds
+          # Cluster.spec.controlPlaneEndpoint from this field only, defaulting to
+          # 443 when no port is present, and that endpoint is what ends up in
+          # every generated kubeconfig. It strips the suffix before using the
+          # value for the TLSRoute hostname and the apiserver cert SANs.
+          hostname: placeholder.invalid
+          # TLSRoute ParentReference.Port — must equal the kcp listener port on
+          # the target Gateway (see the Sveltos gateway-api profile).
+          port: 6443
+      addons:
+        coreDNS: {}
+        konnectivity: {}

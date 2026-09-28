@@ -303,3 +303,9 @@ This keeps the change explicit, auditable, and safely rolled out via GitOps.
   `externalClusterReference` + Gateway API; used by `clusterclass-kamaji-external`.
   Rotating either rolls the tenant control-plane Deployment (brief tenant API
   blip). Delete `-v7` / `-external` once every KamajiControlPlane has rolled.
+- **Current (2026-09-28): `openstack-kamaji-control-plane-v9` /
+  `-external-v3`** = `-v8` / `-external-v2` + relaxed `deployment.probes`
+  (startup up to 5min, 5s timeouts; Kamaji's 1s / 3x10s defaults crashloop a
+  tenant apiserver that can't finish `rbac/bootstrap-roles` in 30s on a
+  CPU-contended host) and apiserver CPU request 250m. Delete `-v8` /
+  `-external-v2` once every KamajiControlPlane has rolled.

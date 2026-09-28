@@ -172,7 +172,10 @@ spec:
           labels:
             app: nova-placement-reservation
         spec:
-          restartPolicy: OnFailure
+          # Never (not OnFailure): a failed run keeps its pod, so the logs
+          # survive for `failedJobsHistoryLimit` (OnFailure restarts in place
+          # and the pod is deleted on backoff, taking the logs with it).
+          restartPolicy: Never
           automountServiceAccountToken: false
           containers:
             - name: reserve

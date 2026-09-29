@@ -22,7 +22,7 @@ spec:
             - --config=/config.yaml
           command:
             - /chihiro
-          image: zot.rpcu.io/public/chihiro:v0.8.0
+          image: zot.rpcu.io/public/chihiro:v0.8.1
           # 72h Mimir: mem P95 ~23Mi / max ~25Mi, CPU P95 ~1m (was BestEffort).
           resources:
             requests:

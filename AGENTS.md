@@ -147,7 +147,10 @@ cluster-api-providers`). The capi-janitor-openstack operator; purges dangling
   **annotation** from a `capoVersion` `select` form field (default sentinel
   `"default"`; options `default`/`v0.14.4`) and add-on opt-in labels via toggles.
   A `select` (not free-text) is required — chihiro hard-errors on an empty
-  `{{ chihiro.* }}` create-form placeholder.
+  `{{ chihiro.* }}` create-form placeholder. Since v0.8.0 `deploy.yaml` sets
+  `CHIHIRO_SVELTOS_ENABLED=true`: each cluster card shows the Sveltos
+  ClusterProfiles targeting it (via ClusterSummary) and per-deployment status;
+  `rbacs.yaml` grants read on `config.projectsveltos.io` `clustersummaries`.
 - `dragonfly-operator.yaml` — Dragonfly (Redis-compatible) for chihiro sessions.
 - `vault.yaml` — `./infrastructure/vault`, dependsOn kgateway +
   openstack-cinder-csi. HA Vault (3-node Raft, no Consul); chart Ingress off,
@@ -1336,7 +1339,9 @@ env; pre-commit quality gates; 1-minute Git sync.
 
 ---
 
-**Last Updated**: 2026-09-28 — **Tenant CP probes actually applied**
+**Last Updated**: 2026-09-29 — **chihiro v0.8.0 with Sveltos add-on status**
+(`clusters/mgmt/apps/chihiro`: image bump, `CHIHIRO_SVELTOS_ENABLED=true`,
+read RBAC on `clustersummaries`). Earlier: 2026-09-28 — **Tenant CP probes actually applied**
 (`controlplane-kamaji-v10`/`-external-v4`: component-level probes so the CAPI
 Kamaji provider stops dropping them; fixes production controller restart storms).
 Earlier the same day: **Cheap RabbitMQ probes** via a MutatingAdmissionPolicy

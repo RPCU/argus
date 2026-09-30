@@ -30,6 +30,16 @@ spec:
     # Re-notify about a still-firing group at most this often.
     repeat_interval: 4h
     routes:
+      # Informational only: sustained high node CPU is a warning, visible in
+      # Grafana but not worth a Discord message. Matched first so it never
+      # falls through to the routes below.
+      - receiver: discord
+        object_matchers:
+          - - alertname
+            - =
+            - NodeCPUHigh
+        mute_time_intervals:
+          - always
       # Critical alerts re-notify more aggressively than the 4h default.
       - receiver: discord
         object_matchers:

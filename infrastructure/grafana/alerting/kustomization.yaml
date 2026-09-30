@@ -4,6 +4,7 @@ resources:
   - folder.yaml
   - notification-template-discord.yaml
   - contactpoint-discord.yaml
+  - mutetiming-always.yaml
   - notification-policy.yaml
   - rules-node.yaml
   - rules-storage.yaml

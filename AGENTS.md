@@ -322,7 +322,11 @@ FALSE` **unconditionally**. The cert-manager base NEVER emits a ServiceMonitor
   - `contactpoint-discord.yaml` (`receivers[]` form, needs operator ≥5.21.0;
     mgmt runs 5.24.0; URL injected via `valuesFrom`→`targetPath: url`).
   - `notification-policy.yaml` (single global tree; root `discord`; grouped by
-    folder/alertname/cluster; critical re-notify hourly).
+    folder/alertname/cluster; critical re-notify hourly; `NodeCPUHigh` routed
+    first with `mute_time_intervals: [always]` — still evaluated and visible in
+    Grafana, never sent to Discord).
+  - `mutetiming-always.yaml` — `GrafanaMuteTiming` `always` (00:00–24:00 every
+    day) for informational alerts that shouldn't notify.
   - `rules-node.yaml` (interval 1m): `NodeCPUHigh` (>85%, **1h**), `NodeMemoryHigh`
     (>90% MemAvailable, **1h**), `NodeDiskSpaceLow` (>85%, 15m), `NodeNotReady`
     (critical, 10m).
@@ -1384,7 +1388,7 @@ env; pre-commit quality gates; 1-minute Git sync.
 
 ---
 
-**Last Updated**: 2026-09-30 — **chihiro moved to hestia/OpenChoreo**: argus
+**Last Updated**: 2026-09-30 — **`NodeCPUHigh` no longer notifies Discord** (warning only; muted by a route + the `always` mute timing, still visible in Grafana). Earlier: **chihiro moved to hestia/OpenChoreo**: argus
 keeps only its support objects (OIDC chain, session key, Vault push,
 `chihiro-external` SA + `chihiro-viewer-role`); deployment, Service/LB,
 HTTPRoute, Dragonfly and form config removed. Earlier the same day: chihiro secrets pushed to Vault

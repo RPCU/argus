@@ -3,9 +3,11 @@
 #
 # WHO: OIDC humans only. Every policy carries the same two matchConditions,
 # evaluated by the API server BEFORE any rule or webhook runs:
-#   - the username is a numeric Zitadel user id (`--oidc-username-claim=sub`,
-#     no prefix) — certificates (kubernetes-admin, which CAPI and Sveltos push
-#     with), ServiceAccounts, nodes and system:* identities never match;
+#   - the username is a Zitadel user: `https://rpcu-gabeck.eu1.zitadel.cloud#<id>`
+#     (`--oidc-username-claim=sub`; an EMPTY --oidc-username-prefix counts as
+#     unset, so the API server prepends "<issuer>#") or a bare numeric id —
+#     certificates (kubernetes-admin, which CAPI and Sveltos push with),
+#     ServiceAccounts, nodes and system:* identities never match;
 #   - not in system:masters / kubeadm:cluster-admins (break-glass certs).
 # Platform reconcilers are therefore never evaluated, so these policies can't
 # block Sveltos, Flux, CNI/CSI or the kubelet.

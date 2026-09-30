@@ -228,7 +228,10 @@ FALSE` **unconditionally**. The cert-manager base NEVER emits a ServiceMonitor
   `caSecretName: openchoreo-agent-ca`: with generateCerts each 90-day renewal
   mints a new self-signed cert that no longer matches the DataPlane CR's
   clientCA. Chart Gateway (and its TLS listener validation) disabled: DataPlanes
-  route through the cluster's `kgateway-system/https`. Server trust:
+  route through the cluster's `kgateway-system/https`. `agent-extra-rbac.yaml`
+  grants the agent SA kinds the chart role lacks (`dragonflydb.io/dragonflies`
+  for hestia's `dragonfly` trait) — extend it when a hestia trait renders a new
+  CRD kind. Server trust:
   `rpcu-ca-trust` (cluster-gateway chains pki-int.mgmt → root-mgmt). Consumed by
   mgmt directly and by the `openchoreo-data-plane` Sveltos profile (label
   `sveltos.argus.rpcu.io/openchoreo-data-plane: enabled`, dependsOn

@@ -223,7 +223,10 @@ FALSE` **unconditionally**. The cert-manager base NEVER emits a ServiceMonitor
   `sveltos.argus.rpcu.io/openchoreo-data-plane: enabled`, dependsOn
   flux-instance + trust-manager, so also needs the cert-manager label), which
   copies the CA Secret from mgmt via templateResourceRefs. Enabled on
-  `production` by label; chihiro has an `openchoreoDataPlane` toggle.
+  `production` by label; chihiro has an `openchoreoDataPlane` toggle. The
+  `openchoreo-control-plane` profile (label on `platform`) copies only the CA's
+  public `ca.crt` to Secret `rpcu/openchoreo-agent-ca` on platform, which every
+  hestia DataPlane CR uses as `clientCA.secretKeyRef`.
 - **trust-manager/** (v0.18.0) — `setup/` (chart) + `configs/bundle.yaml` (RPCU root CA).
 - **cilium/** (v1.18.6) — `ciliumloadbalancerippool.yaml` (10.0.0.240-253),
   `ciliuml2announcementpolicy.yaml`, `values.yaml`.

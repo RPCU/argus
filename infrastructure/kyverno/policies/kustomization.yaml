@@ -14,11 +14,15 @@
 #
 # HOW: most policies set `autogen.validatingAdmissionPolicy.enabled`, so
 # Kyverno turns them into native ValidatingAdmissionPolicies evaluated inside
-# the API server (and drops their webhook). Only two still go through Kyverno:
+# the API server (and drops their webhook). The rest go through Kyverno:
 #   - oidc-protect-addons needs lookups (which Flux Kustomization owns this
 #     object?) — OIDC requests only, failurePolicy Ignore;
-#   - oidc-cluster-admin-crd-roles generates per-CRD ClusterRoles —
-#     GeneratingPolicy webhooks are always failurePolicy Ignore.
+#   - oidc-protect-platform-secret-consumers (lookups: Sveltos Secrets of the
+#     namespace, exec target pod) — OIDC requests only, failurePolicy Fail;
+#   - oidc-cluster-admin-crd-roles / oidc-tenant-secret-access generate
+#     per-CRD ClusterRoles and per-namespace Secret RoleBindings —
+#     GeneratingPolicy webhooks are always failurePolicy Ignore;
+#   - oidc-revoke-tenant-secret-access (DeletingPolicy, every 2 min).
 #
 # WHAT pairs with the RBAC in oidc-rbac.yaml (no impersonate/escalate/bind,
 # no writes to admission policies, which admission can't protect itself).
@@ -30,5 +34,10 @@ resources:
   - oidc-protect-nodes.yaml
   - oidc-restrict-serviceaccount-bindings.yaml
   - oidc-restrict-privileged-workloads.yaml
+  - oidc-restrict-flux-deputy.yaml
+  - oidc-restrict-external-secrets.yaml
   - oidc-protect-addons.yaml
+  - oidc-protect-platform-secret-consumers.yaml
   - oidc-cluster-admin-crd-roles.yaml
+  - oidc-tenant-secret-access.yaml
+  - oidc-revoke-tenant-secret-access.yaml

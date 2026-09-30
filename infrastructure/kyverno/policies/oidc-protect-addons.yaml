@@ -73,7 +73,7 @@ spec:
       expression: >-
         variables.ksName != '' && variables.ksNamespace != '' &&
         dyn(resource.List('kustomize.toolkit.fluxcd.io/v1', 'kustomizations', variables.ksNamespace,
-          {'projectsveltos.io/reason': 'Resources'}).items).exists(k, k.metadata.name == variables.ksName)
+          {'projectsveltos.io/reason': 'Resources'}).items).filter(i, i.metadata.?labels.orValue({})[?'projectsveltos.io/reason'].orValue('') == 'Resources').exists(k, k.metadata.name == variables.ksName)
     - name: objectHrIsAddon
       expression: >-
         variables.hrName != '' && variables.hrNamespace != '' &&
@@ -83,13 +83,13 @@ spec:
            (h.metadata.labels[?'kustomize.toolkit.fluxcd.io/name'].orValue('') != '' &&
             dyn(resource.List('kustomize.toolkit.fluxcd.io/v1', 'kustomizations',
               h.metadata.labels[?'kustomize.toolkit.fluxcd.io/namespace'].orValue(h.metadata.namespace),
-              {'projectsveltos.io/reason': 'Resources'}).items).exists(k,
+              {'projectsveltos.io/reason': 'Resources'}).items).filter(i, i.metadata.?labels.orValue({})[?'projectsveltos.io/reason'].orValue('') == 'Resources').exists(k,
                 k.metadata.name == h.metadata.labels['kustomize.toolkit.fluxcd.io/name']))))
     - name: namespaceIsAddon
       expression: >-
         variables.nsKsName != '' && variables.nsKsNamespace != '' &&
         dyn(resource.List('kustomize.toolkit.fluxcd.io/v1', 'kustomizations', variables.nsKsNamespace,
-          {'projectsveltos.io/reason': 'Resources'}).items).exists(k, k.metadata.name == variables.nsKsName)
+          {'projectsveltos.io/reason': 'Resources'}).items).filter(i, i.metadata.?labels.orValue({})[?'projectsveltos.io/reason'].orValue('') == 'Resources').exists(k, k.metadata.name == variables.nsKsName)
   validations:
     - expression: "!variables.objectKsIsAddon && !variables.objectHrIsAddon && !variables.namespaceIsAddon"
       messageExpression: >-

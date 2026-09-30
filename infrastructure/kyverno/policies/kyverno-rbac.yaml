@@ -1,8 +1,11 @@
 # Extra permissions for the Kyverno controllers, merged into their chart
 # roles through Kyverno's aggregation labels.
 #
-# admission-controller: oidc-protect-addons resolves add-on ownership by
-# listing Flux Kustomizations and HelmReleases.
+# admission-controller:
+#   - oidc-protect-addons resolves add-on ownership by listing Flux
+#     Kustomizations and HelmReleases;
+#   - oidc-protect-platform-secret-consumers lists a namespace's
+#     Sveltos-pushed Secrets and reads the target pod of exec/attach.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -16,10 +19,18 @@ rules:
   - apiGroups: ["helm.toolkit.fluxcd.io"]
     resources: ["helmreleases"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets", "pods"]
+    verbs: ["get", "list", "watch"]
 ---
-# background-controller: oidc-cluster-admin-crd-roles creates one ClusterRole
-# per CRD. Creating a role that grants access to a CRD it doesn't itself hold
-# requires `escalate` on clusterroles (RBAC's anti-escalation check).
+# background-controller:
+#   - oidc-cluster-admin-crd-roles creates one ClusterRole per CRD. Creating a
+#     role that grants access to a CRD it doesn't itself hold requires
+#     `escalate` on clusterroles (RBAC's anti-escalation check);
+#   - oidc-tenant-secret-access creates RoleBindings to
+#     oidc-cluster-admin:secrets (`bind` on that role only), after listing the
+#     namespace's Secrets, the oidc-cluster-admin bindings and Flux
+#     Kustomizations.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -40,12 +51,28 @@ rules:
         "delete",
         "escalate",
       ]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterroles"]
+    resourceNames: ["oidc-cluster-admin:secrets"]
+    verbs: ["bind"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["rolebindings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterrolebindings"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["apiextensions.k8s.io"]
     resources: ["customresourcedefinitions"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["namespaces", "secrets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["kustomize.toolkit.fluxcd.io"]
+    resources: ["kustomizations"]
+    verbs: ["get", "list", "watch"]
 ---
 # reports-controller: a GeneratingPolicy is only reported Ready once the
-# reports controller can list/watch its trigger kind (CRDs).
+# reports controller can list/watch its trigger kinds (CRDs, Namespaces).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -55,4 +82,23 @@ metadata:
 rules:
   - apiGroups: ["apiextensions.k8s.io"]
     resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+---
+# cleanup-controller: oidc-revoke-tenant-secret-access deletes the
+# per-namespace Secret grant where a Sveltos-pushed Secret appears.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kyverno:oidc-guardrails:cleanup
+  labels:
+    rbac.kyverno.io/aggregate-to-cleanup-controller: "true"
+rules:
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["rolebindings"]
+    verbs: ["get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets"]
     verbs: ["get", "list", "watch"]

@@ -1,27 +1,17 @@
+# chihiro itself runs from hestia (OpenChoreo): env "production" on mgmt
+# (chihiro.mgmt.rpcu.lan + LB 172.16.255.11) and env "public" on the production
+# cluster (chihiro.rpcu.io). What stays here is what argus owns for it:
+#   - the chihiro-system namespace, target of the Crossplane Zitadel Oidc
+#     connection secret (clusters/mgmt/crossplane/zitadel/oidc-chihiro.yaml);
+#   - the OIDC remap and the generated session key;
+#   - chihiro-viewer-role, used by the public instance's chihiro-external SA
+#     (the mgmt instance gets its own role from hestia's rbac trait);
+#   - the Vault push feeding both OpenChoreo deployments.
 namespace: chihiro-system
 resources:
   - namespace.yaml
-  - deploy.yaml
-  - svc.yaml
-  - httproute.yaml
   - rbacs.yaml
-  - dragonfly.yaml
   - session-key.yaml
   - oidc.yaml
   - external-sa.yaml
   - vault-push.yaml
-
-# chihiro-config is generated from the standalone config.yaml rather than being
-# embedded as a block scalar in a ConfigMap, so the file is real YAML (editor,
-# yamllint and prettier all see it) instead of an opaque indented string.
-#
-# The generated name carries a content hash and kustomize rewrites the
-# Deployment's volumes[].configMap.name to match. That is load-bearing here:
-# the config is mounted with `subPath`, and subPath mounts NEVER receive
-# ConfigMap updates. Without the hash a config change would sit in the
-# ConfigMap while pods kept serving the old file until manually restarted.
-# The hash makes the Deployment spec change, so Flux rolls the pods.
-configMapGenerator:
-  - name: chihiro-config
-    files:
-      - config.yaml

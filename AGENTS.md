@@ -141,27 +141,27 @@ cluster-api-providers`). The capi-janitor-openstack operator; purges dangling
   `369994019545117645`, project administration `370001231734928333`) since those
   MRs are owned by openstack. Writes `chihiro-oidc-conn`
   (`attribute.client_id`/`client_secret`) into chihiro-system.
-- `chihiro.yaml` — chihiro app (`./clusters/mgmt/apps/chihiro`). `oidc.yaml` ESO
-  remaps `chihiro-oidc-conn` → `chihiro-oidc` (`clientId`/`clientSecret`).
-  **Vault push for hestia/OpenChoreo** (`vault-push.yaml`): ExternalSecret
-  `chihiro-vault-bundle` gathers `clientId`/`clientSecret`/`session_key` and a
-  kubeconfig for the `chihiro-external` SA (`external-sa.yaml`, bound to
-  `chihiro-viewer-role`, server `https://172.16.255.212:6443`), then PushSecrets
-  write them to `secrets-mgmt/chihiro` (OpenChoreo env `production`, on mgmt)
-  and `secrets-production/chihiro` (+ kubeconfig; env `public`, production
-  cluster, chihiro.rpcu.io). Vault access: Crossplane `Policy`/`AuthBackendRole`
+- `chihiro.yaml` — chihiro's **argus-owned support objects**
+  (`./clusters/mgmt/apps/chihiro`); **chihiro itself is deployed by hestia /
+  OpenChoreo**: env `production` on mgmt (`chihiro.mgmt.rpcu.lan` + LB
+  `172.16.255.11`) and env `public` on the production cluster
+  (`chihiro.rpcu.io`). Its form config (`cluster.template` with the
+  `sveltos.argus.rpcu.io/*` labels and `capo-version` annotation) now lives in
+  hestia's `openchoreo/namespaces/rpcu/projects/testing/chihiro.yaml`. What stays
+  here: the `chihiro-system` namespace (target of the Crossplane Zitadel Oidc
+  connection secret), `oidc.yaml` ESO remap `chihiro-oidc-conn` → `chihiro-oidc`
+  (`clientId`/`clientSecret`), the generated session key, the
+  `chihiro-viewer-role` ClusterRole (bound to the public instance's
+  `chihiro-external` SA), and the **Vault push** (`vault-push.yaml`):
+  ExternalSecret `chihiro-vault-bundle` gathers `clientId`/`clientSecret`/
+  `session_key` + a kubeconfig for `chihiro-external` (`external-sa.yaml`,
+  server `https://172.16.255.212:6443`); PushSecrets write them to
+  `secrets-mgmt/chihiro` (env production) and `secrets-production/chihiro`
+  (+ kubeconfig, env public). Vault access: Crossplane `Policy`/`AuthBackendRole`
   `chihiro-push` (`clusters/mgmt/crossplane/vault/chihiro-push.yaml`, role on
   a Crossplane-managed `clusters/mgmt` Kubernetes auth mount — Crossplane gets
-  403 on the hand-made `kubernetes` mount — SA `chihiro-system/chihiro-vault-push`, write
-  only on those two paths).
-  `cm.yaml` `cluster.template` writes the `sveltos.argus.rpcu.io/capo-version`
-  **annotation** from a `capoVersion` `select` form field (default sentinel
-  `"default"`; options `default`/`v0.14.4`) and add-on opt-in labels via toggles.
-  A `select` (not free-text) is required — chihiro hard-errors on an empty
-  `{{ chihiro.* }}` create-form placeholder. Since v0.8.0 (now v0.8.3: add-ons and parameters on a dedicated `/clusters/<ns>/<name>` page, opened via the card's "More details" button) `deploy.yaml` sets
-  `CHIHIRO_SVELTOS_ENABLED=true`: each cluster card shows the Sveltos
-  ClusterProfiles targeting it (via ClusterSummary) and per-deployment status;
-  `rbacs.yaml` grants read on `config.projectsveltos.io` `clustersummaries`.
+  403 on the hand-made `kubernetes` mount — SA `chihiro-system/chihiro-vault-push`,
+  write only on those two paths).
 - `dragonfly-operator.yaml` — Dragonfly (Redis-compatible) for chihiro sessions.
 - `trust-manager.yaml` — trust-manager on mgmt: `trust-manager-setup` (shared
   `./infrastructure/trust-manager/setup` base, dependsOn cert-manager) +
@@ -1384,7 +1384,10 @@ env; pre-commit quality gates; 1-minute Git sync.
 
 ---
 
-**Last Updated**: 2026-09-30 — chihiro secrets pushed to Vault
+**Last Updated**: 2026-09-30 — **chihiro moved to hestia/OpenChoreo**: argus
+keeps only its support objects (OIDC chain, session key, Vault push,
+`chihiro-external` SA + `chihiro-viewer-role`); deployment, Service/LB,
+HTTPRoute, Dragonfly and form config removed. Earlier the same day: chihiro secrets pushed to Vault
 (`secrets-mgmt/chihiro`, `secrets-production/chihiro`) + `chihiro-external` SA
 for the OpenChoreo deployments; `openchoreo-control-plane` profile publishes the
 agent CA cert to platform. Earlier the same day: **OpenChoreo data-plane agents as code**: mgmt

@@ -549,96 +549,15 @@ data:
 ---
 # Sveltos ClusterProfiles + backing ConfigMaps for the new management cluster.
 # Pushed as raw manifests so the new cluster can manage its own workload
-# clusters with the same profiles the current mgmt cluster uses.
+# clusters with the same profiles the current mgmt cluster uses — except
+# oidc-rbac (and the OIDC guardrails), which are not carried over: the old
+# copy bound kube-user to cluster-admin.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: capi-management-sveltos-profiles
   namespace: projectsveltos
 data:
-  oidc-rbac-clusterprofile.yaml: |
-    apiVersion: config.projectsveltos.io/v1beta1
-    kind: ClusterProfile
-    metadata:
-      name: oidc-rbac
-      namespace: projectsveltos
-    spec:
-      syncMode: ContinuousWithDriftDetection
-      clusterSelector:
-        matchLabels:
-          type: workload
-          sveltos.argus.rpcu.io/oidc-rbac: enabled
-      policyRefs:
-        - name: oidc-rbac
-          namespace: projectsveltos
-          kind: ConfigMap
-  oidc-rbac-configmap.yaml: |
-    apiVersion: v1
-    kind: ConfigMap
-    metadata:
-      name: oidc-rbac
-      namespace: projectsveltos
-    data:
-      oidc-rbac.yaml: |
-        apiVersion: rbac.authorization.k8s.io/v1
-        kind: ClusterRoleBinding
-        metadata:
-          name: oidc-kube-admin
-        roleRef:
-          apiGroup: rbac.authorization.k8s.io
-          kind: ClusterRole
-          name: cluster-admin
-        subjects:
-          - apiGroup: rbac.authorization.k8s.io
-            kind: Group
-            name: kube-admin
-        ---
-        apiVersion: rbac.authorization.k8s.io/v1
-        kind: ClusterRoleBinding
-        metadata:
-          name: oidc-kube-user
-        roleRef:
-          apiGroup: rbac.authorization.k8s.io
-          kind: ClusterRole
-          name: cluster-admin
-        subjects:
-          - apiGroup: rbac.authorization.k8s.io
-            kind: Group
-            name: kube-user
-        ---
-        apiVersion: rbac.authorization.k8s.io/v1
-        kind: ClusterRole
-        metadata:
-          name: system:kube-apiserver-to-kubelet
-        rules:
-          - apiGroups: [""]
-            resources:
-              - nodes/proxy
-              - nodes/log
-              - nodes/spec
-              - nodes/metrics
-              - pods/log
-              - pods/exec
-              - pods/portforward
-            verbs: ["*"]
-          - apiGroups: ["metrics.k8s.io"]
-            resources:
-              - nodes
-              - pods
-            verbs: ["get", "list"]
-        ---
-        apiVersion: rbac.authorization.k8s.io/v1
-        kind: ClusterRoleBinding
-        metadata:
-          name: system:kube-apiserver-kubelet
-        roleRef:
-          apiGroup: rbac.authorization.k8s.io
-          kind: ClusterRole
-          name: system:kube-apiserver-to-kubelet
-        subjects:
-          - apiGroup: rbac.authorization.k8s.io
-            kind: User
-            name: kube-apiserver-kubelet-client
   cilium-clusterprofile.yaml: |
     apiVersion: config.projectsveltos.io/v1beta1
     kind: ClusterProfile

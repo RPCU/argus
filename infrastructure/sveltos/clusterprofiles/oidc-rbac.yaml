@@ -49,9 +49,10 @@ metadata:
 data:
   oidc-rbac.yaml: |
     {{- /*
-      Staged rollout: the guarded model (oidc-cluster-admin + the Kyverno
-      guardrails from kyverno.yaml) only applies where the cluster also has
-      sveltos.argus.rpcu.io/kyverno: enabled. Elsewhere the legacy
+      The guarded model (oidc-cluster-admin + the Kyverno guardrails from
+      kyverno.yaml) applies where the cluster has
+      sveltos.argus.rpcu.io/kyverno: enabled — chihiro sets it on every
+      cluster it creates; label other clusters by hand. Elsewhere the legacy
       cluster-admin bindings stay exactly as they were.
       Bindings: kube-admin, plus one per group listed in the workload
       Cluster's `chihiro.io/groups` annotation (comma-separated, trimmed,

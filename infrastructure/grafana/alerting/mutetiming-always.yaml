@@ -1,0 +1,18 @@
+# A mute timing covering all of time. Routes that reference it never notify,
+# while their rules keep evaluating and stay visible in Grafana (Alerting →
+# Alert rules). Used for informational alerts that don't warrant a Discord ping.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaMuteTiming
+metadata:
+  name: always
+  namespace: monitoring
+spec:
+  allowCrossNamespaceImport: true
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana-central"
+  name: always
+  time_intervals:
+    - times:
+        - start_time: "00:00"
+          end_time: "24:00"

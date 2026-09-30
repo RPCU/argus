@@ -1,6 +1,8 @@
 # OpenChoreo data-plane agent on mgmt (planeID "mgmt"), plus the SHARED agent CA
 # that every data-plane agent (mgmt and Sveltos-enabled workload clusters) signs
 # its client cert with. See infrastructure/openchoreo-data-plane/helmrelease.yaml.
+# The agent's server CA (rpcu-ca-trust) is distributed by trust-manager
+# (clusters/mgmt/trust-manager.yaml).
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -17,6 +19,8 @@ spec:
   timeout: 5m
   dependsOn:
     - name: cert-manager-issuer
+    # rpcu-ca-trust (agent's server CA) comes from the mgmt trust-manager Bundle.
+    - name: trust-manager-configs
   postBuild:
     substitute:
       OPENCHOREO_PLANE_ID: mgmt

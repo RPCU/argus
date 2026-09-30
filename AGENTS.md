@@ -152,13 +152,19 @@ cluster-api-providers`). The capi-janitor-openstack operator; purges dangling
   ClusterProfiles targeting it (via ClusterSummary) and per-deployment status;
   `rbacs.yaml` grants read on `config.projectsveltos.io` `clustersummaries`.
 - `dragonfly-operator.yaml` — Dragonfly (Redis-compatible) for chihiro sessions.
+- `trust-manager.yaml` — trust-manager on mgmt: `trust-manager-setup` (shared
+  `./infrastructure/trust-manager/setup` base, dependsOn cert-manager) +
+  `trust-manager-configs` (`./clusters/mgmt/trust-manager`: Bundle
+  `rpcu-ca-trust` from the `root-mgmt` + `root-rpcu` Secrets' `ca.crt` in
+  cert-manager → ConfigMap/Secret `rpcu-ca-trust` in every namespace, same as
+  workload clusters).
 - `openchoreo-data-plane.yaml` — OpenChoreo data-plane agent on mgmt
   (`./clusters/mgmt/apps/openchoreo-data-plane`, planeID `mgmt` via postBuild
   `OPENCHOREO_PLANE_ID`), dependsOn cert-manager-issuer. Reuses the
   `infrastructure/openchoreo-data-plane` base and adds the **shared agent CA**
   (`agent-ca.yaml`: 10y ECDSA Certificate `openchoreo-agent-ca` from the
-  `selfsigned` ClusterIssuer) plus a static `rpcu-ca-trust` ConfigMap (public
-  root-mgmt cert; mgmt has no trust-manager). Every DataPlane CR in hestia
+  `selfsigned` ClusterIssuer); its server CA `rpcu-ca-trust` comes from mgmt's
+  trust-manager (dependsOn `trust-manager-configs`). Every DataPlane CR in hestia
   trusts that CA as `clientCA`; re-keying it means updating all of them.
 - `vault.yaml` — `./infrastructure/vault`, dependsOn kgateway +
   openstack-cinder-csi. HA Vault (3-node Raft, no Consul); chart Ingress off,
@@ -1362,7 +1368,8 @@ env; pre-commit quality gates; 1-minute Git sync.
 ---
 
 **Last Updated**: 2026-09-30 — **OpenChoreo data-plane agents as code**: mgmt
-(`clusters/mgmt/openchoreo-data-plane.yaml`, shared agent CA) and opt-in
+(`clusters/mgmt/openchoreo-data-plane.yaml`, shared agent CA; trust-manager
+now on mgmt for `rpcu-ca-trust`) and opt-in
 workload clusters (Sveltos `openchoreo-data-plane` profile; `production`
 labelled, chihiro `openchoreoDataPlane` toggle). Earlier: 2026-09-29 — **chihiro v0.8.3** ("More details" button opens the cluster page). Earlier the same day: **chihiro v0.8.0 with Sveltos add-on status**
 (`clusters/mgmt/apps/chihiro`: image bump, `CHIHIRO_SVELTOS_ENABLED=true`,

@@ -1,0 +1,42 @@
+# trust-manager on mgmt — same shared base as openstack and the Sveltos
+# trust-manager profile (./infrastructure/trust-manager/setup), plus a mgmt
+# Bundle that distributes the root-mgmt + root-rpcu CAs to every namespace as
+# the "rpcu-ca-trust" ConfigMap/Secret (key ca.crt), matching workload clusters.
+# First consumer: the OpenChoreo data-plane agent (verifies the platform
+# cluster-gateway, which chains pki-int.mgmt.rpcu.lan → root-mgmt).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: trust-manager-setup
+  namespace: flux-system
+spec:
+  interval: 30m0s
+  dependsOn:
+    - name: cert-manager
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  path: ./infrastructure/trust-manager/setup
+  prune: true
+  wait: true
+  timeout: 5m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: trust-manager-configs
+  namespace: flux-system
+spec:
+  interval: 30m0s
+  dependsOn:
+    - name: trust-manager-setup
+    - name: cert-manager-issuer
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  path: ./clusters/mgmt/trust-manager
+  prune: true
+  wait: true
+  timeout: 5m

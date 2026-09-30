@@ -1,0 +1,30 @@
+# Shared OpenChoreo agent CA. Source of truth for:
+#   - mgmt's own agent (chart CA Issuer, caSecretName: openchoreo-agent-ca);
+#   - workload clusters: the openchoreo-data-plane Sveltos ClusterProfile reads
+#     this Secret (templateResourceRefs) and copies it into each opted-in cluster;
+#   - hestia: every DataPlane CR's clientCA is this CA's certificate.
+#
+# Long-lived (10y) because re-keying it means updating every DataPlane CR's
+# clientCA in hestia. The private key reaches every opted-in cluster, so an
+# admin of one plane could mint an agent cert for another; acceptable while all
+# planes are ours.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: openchoreo-agent-ca
+  namespace: openchoreo-data-plane
+spec:
+  isCA: true
+  commonName: openchoreo-agent-ca
+  subject:
+    organizations:
+      - OpenChoreo
+  secretName: openchoreo-agent-ca
+  duration: 87600h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    kind: ClusterIssuer
+    name: selfsigned

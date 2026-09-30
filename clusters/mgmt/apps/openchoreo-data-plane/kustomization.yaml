@@ -1,0 +1,4 @@
+resources:
+  - ../../../../infrastructure/openchoreo-data-plane
+  - agent-ca.yaml
+  - rpcu-ca-trust.yaml

@@ -1,0 +1,92 @@
+# openchoreo-data-plane for OPT-IN workload clusters — runs the OpenChoreo
+# data-plane agent so the cluster can be a DataPlane of the OpenChoreo control
+# plane on the platform cluster (hestia).
+#
+# Pushes three things:
+#   1. the openchoreo-data-plane Namespace;
+#   2. the SHARED agent CA Secret, copied from mgmt
+#      (openchoreo-data-plane/openchoreo-agent-ca, see
+#      clusters/mgmt/apps/openchoreo-data-plane/agent-ca.yaml) — the chart's CA
+#      Issuer signs the agent's client cert with it;
+#   3. a Flux Kustomization onto the SAME base mgmt uses
+#      (./infrastructure/openchoreo-data-plane) with planeID = the cluster name.
+#
+# After enabling, the plane only connects once hestia has a DataPlane CR whose
+# planeID is the cluster name (openchoreo/namespaces/rpcu/platform/infra/
+# dataplanes/<cluster>.yaml). Until then the agent retries.
+#
+# Gated by the opt-in label sveltos.argus.rpcu.io/openchoreo-data-plane: enabled.
+#
+# dependsOn trust-manager: the agent verifies the cluster-gateway against the
+# rpcu-ca-trust ConfigMap that trust-manager distributes (and cert-manager
+# issues the agent cert), so the cluster also needs
+# sveltos.argus.rpcu.io/cert-manager: enabled.
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: openchoreo-data-plane
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  dependsOn:
+    - flux-instance
+    - trust-manager
+  clusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/openchoreo-data-plane: enabled
+  templateResourceRefs:
+    - resource:
+        apiVersion: v1
+        kind: Secret
+        name: openchoreo-agent-ca
+        namespace: openchoreo-data-plane
+      identifier: agentCA
+  policyRefs:
+    - name: openchoreo-data-plane
+      namespace: projectsveltos
+      kind: ConfigMap
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openchoreo-data-plane
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/template: "true"
+data:
+  openchoreo-data-plane.yaml: |
+    apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: openchoreo-data-plane
+    ---
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: openchoreo-agent-ca
+      namespace: openchoreo-data-plane
+    type: kubernetes.io/tls
+    data:
+      tls.crt: {{ index (getResource "agentCA").data "tls.crt" }}
+      tls.key: {{ index (getResource "agentCA").data "tls.key" }}
+      ca.crt: {{ index (getResource "agentCA").data "ca.crt" }}
+    ---
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: openchoreo-data-plane
+      namespace: flux-system
+    spec:
+      interval: 10m
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+      path: ./infrastructure/openchoreo-data-plane
+      prune: true
+      wait: true
+      timeout: 5m
+      postBuild:
+        substitute:
+          OPENCHOREO_PLANE_ID: {{ .Cluster.metadata.name }}

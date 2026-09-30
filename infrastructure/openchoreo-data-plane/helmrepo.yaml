@@ -1,0 +1,9 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: openchoreo
+  namespace: openchoreo-data-plane
+spec:
+  type: oci
+  interval: 1h
+  url: oci://ghcr.io/openchoreo/helm-charts

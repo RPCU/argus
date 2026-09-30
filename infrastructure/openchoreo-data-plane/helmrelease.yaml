@@ -1,0 +1,48 @@
+# The cluster agent dials the OpenChoreo control plane's cluster-gateway on the
+# platform cluster (hestia) and applies the resources OpenChoreo renders for
+# this plane (Deployments, Services, HTTPRoutes, ExternalSecrets, ...).
+#
+# Agent TLS: generateCerts is OFF on purpose. With generateCerts the chart signs
+# the agent cert with a per-cluster self-signed issuer, so every 90-day renewal
+# yields a new cert that no longer matches the clientCA pinned in the platform's
+# DataPlane CR, and the agent silently disconnects. Instead the chart's CA
+# Issuer signs it with the SHARED agent CA (Secret openchoreo-agent-ca, created
+# on mgmt and copied to workload clusters by the Sveltos profile). Every
+# DataPlane CR trusts that one CA, so renewals are transparent.
+#
+# Server trust: the cluster-gateway cert chains pki-int.mgmt.rpcu.lan → root-mgmt,
+# so the agent trusts the rpcu-ca-trust ConfigMap (root-mgmt + root-rpcu), which
+# trust-manager distributes on workload clusters and mgmt ships statically.
+#
+# The chart's own Gateway is disabled: DataPlane CRs route through the cluster's
+# existing kgateway-system/https Gateway (*.<cluster>.rpcu.lan wildcard).
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: openchoreo-data-plane
+  namespace: openchoreo-data-plane
+spec:
+  interval: 10m
+  releaseName: openchoreo-data-plane
+  chart:
+    spec:
+      chart: openchoreo-data-plane
+      version: 1.2.2
+      interval: 24h
+      sourceRef:
+        kind: HelmRepository
+        name: openchoreo
+        namespace: openchoreo-data-plane
+  values:
+    gateway:
+      enabled: false
+      tls:
+        enabled: false
+    clusterAgent:
+      planeID: ${OPENCHOREO_PLANE_ID}
+      serverUrl: wss://cluster-gateway.platform.rpcu.lan/ws
+      tls:
+        enabled: true
+        generateCerts: false
+        caSecretName: openchoreo-agent-ca
+        serverCAConfigMap: rpcu-ca-trust

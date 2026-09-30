@@ -20,6 +20,7 @@ metadata:
     sveltos.argus.rpcu.io/vault-auth: enabled
     sveltos.argus.rpcu.io/openstack-integration: enabled
     sveltos.argus.rpcu.io/monitoring: enabled
+    sveltos.argus.rpcu.io/openchoreo-data-plane: enabled
 spec:
   clusterNetwork:
     pods:

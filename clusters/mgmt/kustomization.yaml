@@ -31,6 +31,7 @@ resources:
   - descheduler.yaml
   - ballast.yaml
   - chihiro.yaml
+  - openchoreo-data-plane.yaml
   - vault.yaml
   - vault-unsealer.yaml
   - sveltos.yaml

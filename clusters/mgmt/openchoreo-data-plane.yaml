@@ -1,0 +1,22 @@
+# OpenChoreo data-plane agent on mgmt (planeID "mgmt"), plus the SHARED agent CA
+# that every data-plane agent (mgmt and Sveltos-enabled workload clusters) signs
+# its client cert with. See infrastructure/openchoreo-data-plane/helmrelease.yaml.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: openchoreo-data-plane
+  namespace: flux-system
+spec:
+  interval: 30m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  path: ./clusters/mgmt/apps/openchoreo-data-plane
+  prune: true
+  timeout: 5m
+  dependsOn:
+    - name: cert-manager-issuer
+  postBuild:
+    substitute:
+      OPENCHOREO_PLANE_ID: mgmt

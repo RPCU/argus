@@ -95,6 +95,7 @@ cluster:
         sveltos.argus.rpcu.io/dragonfly: {{ chihiro.dragonfly }}
         # sveltos.argus.rpcu.io/kyverno: "enabled"
         sveltos.argus.rpcu.io/monitoring: {{ chihiro.monitoring }}
+        sveltos.argus.rpcu.io/openchoreo-data-plane: {{ chihiro.openchoreoDataPlane }}
         sveltos.argus.rpcu.io/kamaji-apiserver-proxy: "enabled"
         dike.rpcu.io/enabled: "true"
         type: workload
@@ -306,6 +307,17 @@ cluster:
       false_value: disabled
       editable: true
       path: "metadata.labels.'sveltos.argus.rpcu.io/monitoring'"
+    openchoreoDataPlane:
+      label: "OpenChoreo Data Plane"
+      description: "Run the OpenChoreo data-plane agent (Sveltos) so the cluster can be an OpenChoreo DataPlane (planeID = cluster name; needs a matching DataPlane CR in hestia). Requires Cert-Manager Vault Issuer."
+      type: boolean
+      default: false
+      true_value: enabled
+      false_value: disabled
+      editable: true
+      path: "metadata.labels.'sveltos.argus.rpcu.io/openchoreo-data-plane'"
+      visible_groups:
+        - kube-admin
     # ── External Kamaji cluster options ──────────────────────────────────
     # gatewayName selects which Gateway the tenant API server TLSRoute
     # attaches to. gatewayHostname is a CONSTRAINED select: each option is

@@ -1,0 +1,58 @@
+# Give oidc-cluster-admin write access to every CRD, present and future,
+# without listing them: for each CustomResourceDefinition, generate a
+# ClusterRole granting full access to its resources, labelled for aggregation
+# into oidc-cluster-admin (see oidc-rbac.yaml). A new CRD is writable within
+# seconds; deleting the CRD deletes its role (synchronize).
+#
+# Skipped: the Sveltos and Kyverno APIs (the guardrails' own machinery).
+# Admission policies/webhooks are built-in APIs, not CRDs, so they never get
+# a role here — oidc-cluster-admin keeps read-only access to them.
+#
+# GeneratingPolicy webhooks are always failurePolicy Ignore in Kyverno and
+# generation happens in the background controller, so a CRD created by
+# Sveltos/Flux is never blocked; if Kyverno is down, the role appears on the
+# next CRD update or re-sync.
+apiVersion: policies.kyverno.io/v1
+kind: GeneratingPolicy
+metadata:
+  name: oidc-cluster-admin-crd-roles
+  annotations:
+    policies.kyverno.io/title: oidc-cluster-admin access to every CRD
+    policies.kyverno.io/category: Argus Platform
+spec:
+  evaluation:
+    generateExisting:
+      enabled: true
+    synchronize:
+      enabled: true
+  webhookConfiguration:
+    timeoutSeconds: 5
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apiextensions.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["customresourcedefinitions"]
+  matchConditions:
+    - name: not-guardrail-apis
+      expression: >-
+        !object.spec.group.endsWith('projectsveltos.io') &&
+        !(object.spec.group in ['kyverno.io', 'policies.kyverno.io', 'reports.kyverno.io', 'wgpolicyk8s.io', 'openreports.io'])
+  variables:
+    - name: role
+      expression: >-
+        {
+          "apiVersion": dyn("rbac.authorization.k8s.io/v1"),
+          "kind": dyn("ClusterRole"),
+          "metadata": dyn({
+            "name": "oidc-cluster-admin:crd:" + object.metadata.name,
+            "labels": {"rbac.argus.rpcu.io/aggregate-to-oidc-cluster-admin": "true"}
+          }),
+          "rules": dyn([{
+            "apiGroups": [object.spec.group],
+            "resources": [object.spec.names.plural, object.spec.names.plural + "/*"],
+            "verbs": ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+          }])
+        }
+  generate:
+    - expression: generator.Apply("", [variables.role])

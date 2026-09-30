@@ -160,6 +160,14 @@ the bare `kube-admin` group to `cluster-admin`). If you set a non-empty
 `groupsPrefix`, you must rename the binding subjects to `<prefix>kube-admin`
 accordingly.
 
+On **workload clusters**, OIDC access comes from the Sveltos `oidc-rbac`
+profile (`infrastructure/sveltos/clusterprofiles/oidc-rbac.yaml`), guarded by
+the Kyverno OIDC guardrails (`infrastructure/kyverno/policies/`). Those
+guardrails recognise OIDC humans by their username being the numeric Zitadel
+user id — i.e. `usernameClaim: sub` with an **empty `usernamePrefix`**. If you
+change either, update the `oidc-user` matchCondition in every policy there,
+or the guardrails stop applying.
+
 ### OpenStack credentials (`identityRef`)
 
 CAPO validates `identityRef` as **required** at admission time, so it must be

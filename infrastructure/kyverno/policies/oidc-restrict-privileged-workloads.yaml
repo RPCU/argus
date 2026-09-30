@@ -1,0 +1,77 @@
+# Deny OIDC humans workloads that reach the node (which would expose every
+# credential on it): privileged containers, hostPath volumes, host
+# network/PID/IPC, host ports, and capabilities beyond the Pod Security
+# "baseline" set. Checked on Pods (incl. `kubectl debug` ephemeral
+# containers) and on every workload template humans submit. Workloads
+# deployed through GitOps (Flux/Sveltos ServiceAccounts) are not affected.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: oidc-restrict-privileged-workloads
+  annotations:
+    policies.kyverno.io/title: No privileged or host-level workloads from OIDC users
+    policies.kyverno.io/category: Argus Platform
+    policies.kyverno.io/severity: high
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  evaluation:
+    background:
+      enabled: false
+  autogen:
+    validatingAdmissionPolicy:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: [CREATE, UPDATE]
+        resources:
+          ["pods", "pods/ephemeralcontainers", "replicationcontrollers"]
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: [CREATE, UPDATE]
+        resources: ["deployments", "daemonsets", "statefulsets", "replicasets"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: [CREATE, UPDATE]
+        resources: ["jobs", "cronjobs"]
+  matchConditions:
+    # OIDC humans only (see kustomization.yaml).
+    - name: oidc-user
+      expression: "request.userInfo.username.matches('^[0-9]+$')"
+    - name: not-break-glass
+      expression: >-
+        !has(request.userInfo.groups) ||
+        !request.userInfo.groups.exists(g, g in ['system:masters', 'kubeadm:cluster-admins'])
+  variables:
+    - name: podSpec
+      expression: >-
+        request.resource.resource == 'pods' ? object.spec :
+        request.resource.resource == 'cronjobs' ? object.spec.jobTemplate.spec.template.spec :
+        object.spec.template.spec
+    - name: containers
+      expression: >-
+        dyn(variables.podSpec.containers) +
+        dyn(variables.podSpec.?initContainers.orValue([])) +
+        dyn(variables.podSpec.?ephemeralContainers.orValue([]))
+    - name: baselineCapabilities
+      expression: >-
+        ['AUDIT_WRITE', 'CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'FSETID', 'KILL', 'MKNOD',
+         'NET_BIND_SERVICE', 'SETFCAP', 'SETGID', 'SETPCAP', 'SETUID', 'SYS_CHROOT']
+  validations:
+    - expression: >-
+        !variables.podSpec.?hostNetwork.orValue(false) &&
+        !variables.podSpec.?hostPID.orValue(false) &&
+        !variables.podSpec.?hostIPC.orValue(false)
+      message: OIDC users may not run workloads in the host network, PID or IPC namespace.
+    - expression: "!variables.podSpec.?volumes.orValue([]).exists(v, has(v.hostPath))"
+      message: OIDC users may not mount hostPath volumes.
+    - expression: "!variables.containers.exists(c, c.?securityContext.?privileged.orValue(false))"
+      message: OIDC users may not run privileged containers.
+    - expression: "!variables.containers.exists(c, c.?ports.orValue([]).exists(p, p.?hostPort.orValue(0) != 0))"
+      message: OIDC users may not use host ports.
+    - expression: >-
+        variables.containers.all(c,
+          c.?securityContext.?capabilities.?add.orValue([]).all(cap, cap in variables.baselineCapabilities))
+      message: OIDC users may only add capabilities from the Pod Security "baseline" set.

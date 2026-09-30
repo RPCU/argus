@@ -1,0 +1,39 @@
+# Deny OIDC humans any change to Nodes: cordon/drain/uncordon, labels and
+# taints, deletion, and the kubelet API through nodes/proxy (CONNECT).
+# Reading Nodes is unaffected (admission never sees GET/LIST/WATCH).
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: oidc-protect-nodes
+  annotations:
+    policies.kyverno.io/title: Protect cluster Nodes from OIDC users
+    policies.kyverno.io/category: Argus Platform
+    policies.kyverno.io/severity: high
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  evaluation:
+    background:
+      enabled: false
+  autogen:
+    validatingAdmissionPolicy:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE, DELETE, CONNECT]
+        resources: ["nodes", "nodes/*"]
+  matchConditions:
+    # OIDC humans only (see kustomization.yaml).
+    - name: oidc-user
+      expression: "request.userInfo.username.matches('^[0-9]+$')"
+    - name: not-break-glass
+      expression: >-
+        !has(request.userInfo.groups) ||
+        !request.userInfo.groups.exists(g, g in ['system:masters', 'kubeadm:cluster-admins'])
+  validations:
+    - expression: "false"
+      message: >-
+        Cluster Nodes are managed by the platform. OIDC users may not change,
+        delete or proxy to Nodes (including cordon/drain, labels and taints).

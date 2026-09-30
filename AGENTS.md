@@ -417,24 +417,43 @@ FALSE` **unconditionally**. The cert-manager base NEVER emits a ServiceMonitor
   Composition `external-network` (Network+Subnet+RouterV2) + patch-and-transform
   Function. Kept as its own Kustomization to avoid pruning the in-use XRD.
 - **external-secrets/** (v2.3.0).
-- **kyverno/** (chart v3.9.0 / app v1.19.0) — policy engine for OPT-IN workload
-  clusters (Sveltos `kyverno` add-on, label `.../kyverno`, default OFF). Base =
-  HelmRepository/HelmRelease/namespace (`kyverno` ns, single-replica controllers,
-  `resourceFilters` exclude kube-system/flux-system/projectsveltos/kyverno so a
-  bad policy can't wedge the platform reconcilers). `policies/` (own Flux
-  Kustomization pushed second, `dependsOn: kyverno`) holds two `ClusterPolicy`
-  guardrails, both `validationFailureAction: Enforce`, **scoped to OIDC users
-  only** (matched on the bare Zitadel groups `kube-admin`/`kube-user` — the only
-  identities carrying them; SAs/kubeadm/nodes never do): `protect-sveltos-resources`
-  denies CREATE/UPDATE/DELETE on any resource labelled `projectsveltos.io/reason:
-Resources` (checks BOTH `request.object` and `request.oldObject` so DELETE is
-  covered — a missing label resolves to null, precondition false); `protect-kube-system`
-  denies writes in the `kube-system` namespace + on the `kube-system` Namespace
-  object; `protect-nodes` denies CREATE/UPDATE/DELETE + CONNECT on `Node`
-  (+ `nodes/status`, `nodes/proxy`) — blocks cordon/drain, labels, taints and
-  kubelet-proxy (admission can't see GET/LIST/WATCH, so read/list is an RBAC
-  concern, not covered here). Platform reconcilers (Flux/Sveltos agent/Kyverno)
-  auth as SAs and are never matched. Chihiro toggle `kyverno` (default OFF).
+- **kyverno/** (chart v3.9.1 / app v1.19.1) — Kyverno + the **OIDC guardrails**
+  for workload clusters (Sveltos `kyverno` add-on; staged: clusters with both
+  `.../oidc-rbac` and `.../kyverno` enabled). Base = HelmRepository/HelmRelease/
+  namespace (`kyverno` ns, single-replica controllers, webhook scope at chart
+  defaults). `policies/` (own Flux Kustomization pushed second, `dependsOn:
+kyverno`) — CEL policies (`policies.kyverno.io/v1`; `ClusterPolicy` is removed
+  in 1.20), all with the same two `matchConditions` evaluated by the API server
+  before anything runs: **username is a numeric Zitadel id** (`sub`, no prefix)
+  and not `system:masters`/`kubeadm:cluster-admins`. So only OIDC humans are
+  ever evaluated — the `kubernetes-admin` cert CAPI/Sveltos push with (group
+  `kubeadm:cluster-admins`, NOT system:masters), SAs, nodes are never matched.
+  Six `ValidatingPolicy`s set `autogen.validatingAdmissionPolicy` → native VAPs
+  (no webhook, failurePolicy Fail, can't wedge the platform):
+  `oidc-protect-platform-namespaces` (all writes incl. `*/*` subresources and
+  CONNECT — exec/scale/evict/debug/tokens — in kube-system/kube-public/
+  kube-node-lease/flux-system/projectsveltos/kyverno + any ns labelled
+  `projectsveltos.io/reason`), `oidc-protect-platform-objects` (Sveltos-labelled,
+  Helm releases whose `meta.helm.sh/release-namespace` is a platform ns — e.g.
+  Cilium's cluster-scoped objects —, Kyverno-managed, the oidc-cluster-admin
+  roles, platform Namespace objects; checks object AND oldObject),
+  `oidc-protect-platform-apis` (Sveltos, Kyverno, admissionregistration,
+  apiregistration, flowcontrol groups), `oidc-protect-nodes` (incl. CONNECT
+  nodes/proxy), `oidc-restrict-serviceaccount-bindings` (no ClusterRoleBinding to
+  SAs / `system:*`), `oidc-restrict-privileged-workloads` (PSS-baseline subset on
+  Pods incl. ephemeral containers and every workload template: no privileged,
+  hostPath, host net/PID/IPC, hostPort, non-baseline caps). Two stay Kyverno
+  webhooks: `oidc-protect-addons` (lookup: object's or namespace's Flux
+  Kustomization — directly or via its HelmRelease — labelled
+  `projectsveltos.io/reason` ⇒ platform add-on; own Flux apps like atlas are
+  not; failurePolicy Ignore, OIDC-only) and the GeneratingPolicy
+  `oidc-cluster-admin-crd-roles` (one ClusterRole per CRD, label
+  `rbac.argus.rpcu.io/aggregate-to-oidc-cluster-admin`, skips Sveltos/Kyverno
+  groups; gpol webhooks are always Ignore). `kyverno-rbac.yaml` aggregates list
+  on Kustomizations/HelmReleases to the admission controller and clusterroles
+  create/escalate to the background controller. Admission never protects
+  Validating/MutatingAdmissionPolicy objects themselves (API server exemption)
+  — RBAC does (oidc-cluster-admin has no write on admissionregistration).
 - **descheduler/** (chart v0.36.0, ns descheduler) — kubernetes-sigs
   descheduler as a Deployment (10m interval). Rebalances pods after node churn:
   a worker rollout leaves the first new node holding most pods (mgmt 2026-09-28:
@@ -486,9 +505,18 @@ Resources` (checks BOTH `request.object` and `request.oldObject` so DELETE is
 
   ClusterProfiles (all gated by labels; `type: workload` + a per-addon opt-in
   label unless noted):
-  - `oidc-rbac.yaml` — binds `kube-admin`→`cluster-admin` on child clusters,
-    plus one CRB per name in the Cluster's `chihiro.io/groups` annotation (read
-    via `templateResourceRefs` `WorkloadCluster`). Label `.../oidc-rbac`.
+  - `oidc-rbac.yaml` — OIDC access for `kube-admin` plus one CRB per name in
+    the Cluster's `chihiro.io/groups` annotation (read via
+    `templateResourceRefs` `WorkloadCluster`). Label `.../oidc-rbac`. **Staged**
+    in the template: clusters that also have `.../kyverno: enabled` get the
+    guarded model — aggregated ClusterRole `oidc-cluster-admin` (base role
+    `oidc-cluster-admin:base`: read everything; write the built-in groups;
+    NO impersonate/escalate/bind/approve/sign, NO write to admissionregistration/
+    apiregistration/flowcontrol; CRD write via Kyverno-generated per-CRD roles),
+    CRBs `oidc-cluster-admin:kube-admin` / `oidc-cluster-admin:group:<g>`, and
+    `driftExclusions` on the aggregated role's `/rules`. Others keep the legacy
+    `oidc-kube-admin` / `oidc-group-<g>` → `cluster-admin` bindings (rendered
+    byte-identical to before). Phase 2: drop the gate everywhere.
   - `cilium.yaml` — CNI bootstrap via inline templated `helmCharts` (v1.18.6;
     values from the mgmt `Cluster` — apiserver host/port, pod CIDR, domain
     REQUIRED). Label `.../cilium`.
@@ -548,23 +576,12 @@ Dragonfly` CRD) via a Flux takeover of the SAME base mgmt uses,
     per-cluster values/secrets. The Dragonfly INSTANCE is app-owned by the
     consuming repo (e.g. atlas production's zot registry uses one as its Redis
     remoteCache), NOT this add-on. Default OFF.
-  - `kyverno.yaml` (`dependsOn: flux-instance`, label `.../kyverno`, default OFF)
-    — Kyverno policy engine via Flux takeover. TWO Flux Kustomization CRs pushed:
-    `kyverno` (`./infrastructure/kyverno`, the Helm chart = CRDs + controllers)
-    then `kyverno-policies` (`./infrastructure/kyverno/policies`, `dependsOn:
-kyverno` so the `ClusterPolicy` CRs never land before their CRDs). The two
-    ClusterPolicies are **scoped to OIDC users only** — matched on the bare
-    Zitadel groups `kube-admin`/`kube-user` (the only identities carrying them:
-    `usernameClaim: sub` + empty groupsPrefix; SAs are `system:serviceaccounts:*`,
-    node/kubeadm are `system:*`). Platform reconcilers (Flux, Sveltos agent,
-    Kyverno) authenticate as SAs and are never matched. `protect-sveltos-resources`
-    denies CREATE/UPDATE/DELETE on anything labelled `projectsveltos.io/reason:
-Resources` (checks BOTH `request.object` and `request.oldObject` so DELETE is
-    covered too); `protect-kube-system` denies writes in the `kube-system`
-    namespace + on the `kube-system` Namespace object. Both `validationFailureAction:
-Enforce`. HelmRelease also excludes kube-system/flux-system/projectsveltos/
-    kyverno from the webhook `resourceFilters` (belt-and-suspenders so a bad policy
-    can't wedge the platform reconcilers).
+  - `kyverno.yaml` (`dependsOn: flux-instance`, labels `.../oidc-rbac` AND
+    `.../kyverno` — staged, see oidc-rbac) — Kyverno + OIDC guardrails via Flux
+    takeover. TWO Flux Kustomization CRs pushed: `kyverno`
+    (`./infrastructure/kyverno`, the chart) then `kyverno-policies`
+    (`./infrastructure/kyverno/policies`, `dependsOn: kyverno`). See the
+    `kyverno/` component entry for the policies.
   - `gateway-api-crds.yaml` (`dependsOn: flux-instance`, ALL workload clusters,
     no opt-in) — Gateway API CRDs (cert-manager gateway-shim needs them).
   - `gateway-api.yaml` (label `.../gateway-api`) — TWO profiles: `gateway-api`
@@ -1388,7 +1405,7 @@ env; pre-commit quality gates; 1-minute Git sync.
 
 ---
 
-**Last Updated**: 2026-09-30 — **`NodeCPUHigh` no longer notifies Discord** (warning only; muted by a route + the `always` mute timing, still visible in Grafana). Earlier: **chihiro moved to hestia/OpenChoreo**: argus
+**Last Updated**: 2026-09-30 — **OIDC guardrails reworked (phase 1, staged)**: `oidc-cluster-admin` (no impersonate/escalate/bind, no admission-policy writes, per-CRD roles generated by Kyverno) replaces `cluster-admin` for OIDC groups on clusters opted in with `.../kyverno`; Kyverno `ClusterPolicy`s replaced by CEL `ValidatingPolicy`s (mostly native VAPs, OIDC-only matchConditions on numeric Zitadel usernames) covering platform namespaces incl. exec/scale/tokens, Sveltos/Kyverno/Flux-takeover add-ons, Nodes, SA escalation and privileged workloads. Earlier: **`NodeCPUHigh` no longer notifies Discord** (warning only; muted by a route + the `always` mute timing, still visible in Grafana). Earlier: **chihiro moved to hestia/OpenChoreo**: argus
 keeps only its support objects (OIDC chain, session key, Vault push,
 `chihiro-external` SA + `chihiro-viewer-role`); deployment, Service/LB,
 HTTPRoute, Dragonfly and form config removed. Earlier the same day: chihiro secrets pushed to Vault

@@ -1,0 +1,54 @@
+# openchoreo-control-plane — publishes the PUBLIC certificate of the shared
+# OpenChoreo agent CA (mgmt: openchoreo-data-plane/openchoreo-agent-ca, see
+# clusters/mgmt/apps/openchoreo-data-plane/agent-ca.yaml) to the cluster that
+# runs the OpenChoreo control plane (platform, managed by hestia).
+#
+# hestia's DataPlane CRs reference it as clientCA.secretKeyRef
+# {namespace: rpcu, name: openchoreo-agent-ca, key: ca.crt}, so every data-plane
+# agent signed by the shared CA is trusted without pasting PEMs into git, and a
+# CA rotation propagates automatically. Only ca.crt is copied, never the key.
+#
+# Target namespace rpcu is the OpenChoreo tenant namespace created by hestia;
+# Sveltos retries until it exists.
+#
+# Gated by the label sveltos.argus.rpcu.io/openchoreo-control-plane: enabled.
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: openchoreo-control-plane
+  namespace: projectsveltos
+spec:
+  syncMode: ContinuousWithDriftDetection
+  clusterSelector:
+    matchLabels:
+      type: workload
+      sveltos.argus.rpcu.io/openchoreo-control-plane: enabled
+  templateResourceRefs:
+    - resource:
+        apiVersion: v1
+        kind: Secret
+        name: openchoreo-agent-ca
+        namespace: openchoreo-data-plane
+      identifier: agentCA
+  policyRefs:
+    - name: openchoreo-control-plane
+      namespace: projectsveltos
+      kind: ConfigMap
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openchoreo-control-plane
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/template: "true"
+data:
+  openchoreo-agent-ca.yaml: |
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: openchoreo-agent-ca
+      namespace: rpcu
+    type: Opaque
+    data:
+      ca.crt: {{ index (getResource "agentCA").data "ca.crt" }}

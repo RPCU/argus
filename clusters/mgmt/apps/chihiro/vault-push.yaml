@@ -28,7 +28,7 @@ spec:
       version: v2
       auth:
         kubernetes:
-          mountPath: kubernetes
+          mountPath: clusters/mgmt
           role: chihiro-push
           serviceAccountRef:
             name: chihiro-vault-push
@@ -45,7 +45,7 @@ spec:
       version: v2
       auth:
         kubernetes:
-          mountPath: kubernetes
+          mountPath: clusters/mgmt
           role: chihiro-push
           serviceAccountRef:
             name: chihiro-vault-push

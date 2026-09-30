@@ -22,6 +22,7 @@ resources:
   - ballast.yaml
   - monitoring.yaml
   - openchoreo-data-plane.yaml
+  - openchoreo-control-plane.yaml
 # Stamp every resource in this directory (ClusterProfiles + their backing
 # ConfigMaps/Secrets/EventSources/EventTriggers) with a common metadata label.
 # This is what lets the capi-management ClusterProfile reuse the PARENT

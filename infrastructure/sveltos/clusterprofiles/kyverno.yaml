@@ -1,7 +1,6 @@
-# Kyverno + the OIDC guardrails, on every workload cluster chihiro manages
-# (app.kubernetes.io/managed-by: chihiro) that grants OIDC access
+# Kyverno + the OIDC guardrails, on workload clusters that grant OIDC access
 # (sveltos.argus.rpcu.io/oidc-rbac: enabled): the guardrails travel with the
-# oidc-cluster-admin role from oidc-rbac.yaml, which uses the same condition. Delivered as a Flux
+# oidc-cluster-admin role from oidc-rbac.yaml (staged: see clusterSelector). Delivered as a Flux
 # takeover (same pattern as dragonfly / csi-driver-nfs / external-dns).
 #
 # TWO things are pushed, ordered by dependsOn so the policies never land
@@ -27,12 +26,14 @@ spec:
   syncMode: ContinuousWithDriftDetection
   dependsOn:
     - flux-instance
-  # Must match the guarded branch of oidc-rbac.yaml.
+  # Staged rollout: clusters opted in with the kyverno label first (matching
+  # the guarded branch in oidc-rbac.yaml); drop that label from the selector
+  # once verified to guard every OIDC cluster.
   clusterSelector:
     matchLabels:
       type: workload
-      app.kubernetes.io/managed-by: chihiro
       sveltos.argus.rpcu.io/oidc-rbac: enabled
+      sveltos.argus.rpcu.io/kyverno: enabled
   policyRefs:
     - name: kyverno-flux-kustomizations
       namespace: projectsveltos

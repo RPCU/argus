@@ -1,0 +1,55 @@
+# Flux's controllers run as cluster-admin with no default ServiceAccount, so a
+# Kustomization or HelmRelease an OIDC user creates in their own namespace
+# (pointing at their own Git/OCI/Helm source) would be applied by Flux as
+# cluster-admin — anywhere, bypassing every guardrail. Require OIDC users to
+# set spec.serviceAccountName: Flux then impersonates that ServiceAccount of
+# the object's namespace, whose rights the user can only grant inside that
+# namespace (oidc-restrict-serviceaccount-bindings blocks cluster-wide ones).
+# Platform Flux objects (flux-system, add-ons) are untouched: OIDC users can't
+# edit them anyway, and Flux/Sveltos never match these conditions.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: oidc-restrict-flux-deputy
+  annotations:
+    policies.kyverno.io/title: OIDC users' Flux objects must run as a namespace ServiceAccount
+    policies.kyverno.io/category: Argus Platform
+    policies.kyverno.io/severity: high
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  evaluation:
+    background:
+      enabled: false
+  autogen:
+    validatingAdmissionPolicy:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["kustomize.toolkit.fluxcd.io"]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: ["kustomizations"]
+      - apiGroups: ["helm.toolkit.fluxcd.io"]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: ["helmreleases"]
+  matchConditions:
+    # OIDC humans only (see kustomization.yaml).
+    - name: oidc-user
+      # The API server prefixes non-email OIDC usernames with "<issuer>#"
+      # (an empty --oidc-username-prefix counts as unset); a bare numeric id
+      # is accepted too in case the prefix is ever set to "-".
+      expression: >-
+        request.userInfo.username.startsWith('https://rpcu-gabeck.eu1.zitadel.cloud#') ||
+        request.userInfo.username.matches('^[0-9]+$')
+    - name: not-break-glass
+      expression: >-
+        !has(request.userInfo.groups) ||
+        !request.userInfo.groups.exists(g, g in ['system:masters', 'kubeadm:cluster-admins'])
+  validations:
+    - expression: "object.spec.?serviceAccountName.orValue('') != ''"
+      message: >-
+        Set spec.serviceAccountName: Flux runs as cluster-admin by default, so
+        OIDC users' Kustomizations and HelmReleases must run as a
+        ServiceAccount of their own namespace.

@@ -163,10 +163,12 @@ accordingly.
 On **workload clusters**, OIDC access comes from the Sveltos `oidc-rbac`
 profile (`infrastructure/sveltos/clusterprofiles/oidc-rbac.yaml`), guarded by
 the Kyverno OIDC guardrails (`infrastructure/kyverno/policies/`). Those
-guardrails recognise OIDC humans by their username being the numeric Zitadel
-user id — i.e. `usernameClaim: sub` with an **empty `usernamePrefix`**. If you
-change either, update the `oidc-user` matchCondition in every policy there,
-or the guardrails stop applying.
+guardrails recognise OIDC humans by their username: with `usernameClaim: sub`
+and an **empty `usernamePrefix`** the API server presents it as
+`https://rpcu-gabeck.eu1.zitadel.cloud#<numeric id>` (an empty prefix counts as
+unset, so Kubernetes prepends `<issuer>#`; only `-` disables it). If you change
+the issuer, the claim or the prefix, update the `oidc-user` matchCondition in
+every policy there, or the guardrails stop applying.
 
 ### OpenStack credentials (`identityRef`)
 

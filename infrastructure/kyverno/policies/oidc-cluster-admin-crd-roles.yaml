@@ -38,6 +38,12 @@ spec:
       expression: >-
         !object.spec.group.endsWith('projectsveltos.io') &&
         !(object.spec.group in ['kyverno.io', 'policies.kyverno.io', 'reports.kyverno.io', 'wgpolicyk8s.io', 'openreports.io'])
+    # Kyverno labels each generated role with the trigger's name
+    # (generate.kyverno.io/trigger-name, max 63 chars). A longer CRD name
+    # makes the role invalid and fails the WHOLE background batch (up to 100
+    # CRDs), so such CRDs get no role instead.
+    - name: name-fits-label
+      expression: size(object.metadata.name) <= 63
   variables:
     - name: role
       expression: >-

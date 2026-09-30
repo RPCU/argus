@@ -229,6 +229,18 @@ data:
         resources: ["secrets"]
         verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
     ---
+    # The OIDC groups bound below, for Kyverno's oidc-tenant-secret-access:
+    # when access groups change in chihiro, Sveltos re-renders this and the
+    # per-namespace Secret grants are rewritten with the current groups.
+    # In kube-system, so OIDC users can't edit it.
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: oidc-access-groups
+      namespace: kube-system
+    data:
+      groups: "kube-admin{{ range (splitList "," $groups) }}{{ $g := trim . }}{{ if $g }},{{ $g }}{{ end }}{{ end }}"
+    ---
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:

@@ -17,6 +17,7 @@ metadata:
     sveltos.argus.rpcu.io/cert-manager: enabled
     sveltos.argus.rpcu.io/cilium: enabled
     sveltos.argus.rpcu.io/oidc-rbac: enabled
+    sveltos.argus.rpcu.io/kyverno: enabled
     sveltos.argus.rpcu.io/vault-auth: enabled
     sveltos.argus.rpcu.io/openstack-integration: enabled
     sveltos.argus.rpcu.io/monitoring: enabled

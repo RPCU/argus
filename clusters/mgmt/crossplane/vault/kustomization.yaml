@@ -4,3 +4,4 @@ resources:
   - approles.yaml
   - external-secret.yaml
   - pki-int.yaml
+  - chihiro-push.yaml

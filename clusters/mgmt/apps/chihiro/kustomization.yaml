@@ -8,6 +8,8 @@ resources:
   - dragonfly.yaml
   - session-key.yaml
   - oidc.yaml
+  - external-sa.yaml
+  - vault-push.yaml
 
 # chihiro-config is generated from the standalone config.yaml rather than being
 # embedded as a block scalar in a ConfigMap, so the file is real YAML (editor,

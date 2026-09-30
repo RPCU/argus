@@ -1,0 +1,49 @@
+# Vault access for chihiro's PushSecrets (clusters/mgmt/apps/chihiro/vault-push.yaml):
+# write-only-to-its-own-path policy + a Kubernetes-auth role on mgmt's own
+# `kubernetes` mount bound to the chihiro-system/chihiro-vault-push SA.
+#
+# chihiro runs from hestia/OpenChoreo, which reads its secrets from the
+# DataPlane cluster's Vault mount: secrets-mgmt (production env, mgmt) and
+# secrets-production (public env, production cluster). The sources stay on
+# mgmt in chihiro-system (Crossplane Zitadel Oidc connection secret, generated
+# session key, chihiro-external SA token), so they are pushed from here.
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata:
+  name: chihiro-push
+spec:
+  forProvider:
+    name: chihiro-push
+    policy: |
+      path "secrets-mgmt/data/chihiro" {
+        capabilities = ["create", "read", "update", "patch"]
+      }
+      path "secrets-mgmt/metadata/chihiro" {
+        capabilities = ["read", "update", "patch", "list"]
+      }
+      path "secrets-production/data/chihiro" {
+        capabilities = ["create", "read", "update", "patch"]
+      }
+      path "secrets-production/metadata/chihiro" {
+        capabilities = ["read", "update", "patch", "list"]
+      }
+  providerConfigRef:
+    name: default
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata:
+  name: chihiro-push
+spec:
+  forProvider:
+    backend: kubernetes
+    roleName: chihiro-push
+    boundServiceAccountNames:
+      - chihiro-vault-push
+    boundServiceAccountNamespaces:
+      - chihiro-system
+    tokenPolicies:
+      - chihiro-push
+    tokenTtl: 3600
+  providerConfigRef:
+    name: default

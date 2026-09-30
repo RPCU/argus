@@ -151,7 +151,8 @@ cluster-api-providers`). The capi-janitor-openstack operator; purges dangling
   and `secrets-production/chihiro` (+ kubeconfig; env `public`, production
   cluster, chihiro.rpcu.io). Vault access: Crossplane `Policy`/`AuthBackendRole`
   `chihiro-push` (`clusters/mgmt/crossplane/vault/chihiro-push.yaml`, role on
-  mgmt's `kubernetes` mount, SA `chihiro-system/chihiro-vault-push`, write
+  a Crossplane-managed `clusters/mgmt` Kubernetes auth mount — Crossplane gets
+  403 on the hand-made `kubernetes` mount — SA `chihiro-system/chihiro-vault-push`, write
   only on those two paths).
   `cm.yaml` `cluster.template` writes the `sveltos.argus.rpcu.io/capo-version`
   **annotation** from a `capoVersion` `select` form field (default sentinel

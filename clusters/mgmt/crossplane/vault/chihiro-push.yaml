@@ -1,6 +1,10 @@
 # Vault access for chihiro's PushSecrets (clusters/mgmt/apps/chihiro/vault-push.yaml):
-# write-only-to-its-own-path policy + a Kubernetes-auth role on mgmt's own
-# `kubernetes` mount bound to the chihiro-system/chihiro-vault-push SA.
+# write-only-to-its-own-path policy + a Kubernetes-auth role bound to the
+# chihiro-system/chihiro-vault-push SA, on a Crossplane-managed auth mount
+# `clusters/mgmt` (same convention as the workload clusters' clusters/<name>).
+# The hand-made `kubernetes` mount is off limits to Crossplane's Vault identity
+# (403 on auth/kubernetes/role/*), so mgmt gets its own managed mount. Vault
+# runs on mgmt, so the mount uses Vault's local SA JWT + CA (no CA in git).
 #
 # chihiro runs from hestia/OpenChoreo, which reads its secrets from the
 # DataPlane cluster's Vault mount: secrets-mgmt (production env, mgmt) and
@@ -30,13 +34,37 @@ spec:
   providerConfigRef:
     name: default
 ---
+apiVersion: auth.vault.upbound.io/v1alpha1
+kind: Backend
+metadata:
+  name: mgmt
+spec:
+  forProvider:
+    path: clusters/mgmt
+    type: kubernetes
+  providerConfigRef:
+    name: default
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendConfig
+metadata:
+  name: mgmt
+spec:
+  forProvider:
+    backendRef:
+      name: mgmt
+    kubernetesHost: https://kubernetes.default.svc
+  providerConfigRef:
+    name: default
+---
 apiVersion: kubernetes.vault.upbound.io/v1alpha1
 kind: AuthBackendRole
 metadata:
   name: chihiro-push
 spec:
   forProvider:
-    backend: kubernetes
+    backendRef:
+      name: mgmt
     roleName: chihiro-push
     boundServiceAccountNames:
       - chihiro-vault-push

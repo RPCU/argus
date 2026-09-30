@@ -23,13 +23,13 @@ spec:
         capabilities = ["create", "read", "update", "patch"]
       }
       path "secrets-mgmt/metadata/chihiro" {
-        capabilities = ["read", "update", "patch", "list"]
+        capabilities = ["create", "read", "update", "patch", "list"]
       }
       path "secrets-production/data/chihiro" {
         capabilities = ["create", "read", "update", "patch"]
       }
       path "secrets-production/metadata/chihiro" {
-        capabilities = ["read", "update", "patch", "list"]
+        capabilities = ["create", "read", "update", "patch", "list"]
       }
   providerConfigRef:
     name: default

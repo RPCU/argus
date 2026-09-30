@@ -28,9 +28,9 @@ rules:
 #     role that grants access to a CRD it doesn't itself hold requires
 #     `escalate` on clusterroles (RBAC's anti-escalation check);
 #   - oidc-tenant-secret-access creates RoleBindings to
-#     oidc-cluster-admin:secrets (`bind` on that role only), after listing the
-#     namespace's Secrets, the oidc-cluster-admin bindings and Flux
-#     Kustomizations.
+#     oidc-cluster-admin:secrets (`bind` on that role only), after reading
+#     kube-system/oidc-access-groups and listing namespaces, their Secrets
+#     and Flux Kustomizations.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -65,14 +65,15 @@ rules:
     resources: ["customresourcedefinitions"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
-    resources: ["namespaces", "secrets"]
+    resources: ["namespaces", "secrets", "configmaps"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["kustomize.toolkit.fluxcd.io"]
     resources: ["kustomizations"]
     verbs: ["get", "list", "watch"]
 ---
 # reports-controller: a GeneratingPolicy is only reported Ready once the
-# reports controller can list/watch its trigger kinds (CRDs, Namespaces).
+# reports controller can list/watch its trigger kinds (CRDs, Namespaces,
+# ConfigMaps).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -84,7 +85,7 @@ rules:
     resources: ["customresourcedefinitions"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
-    resources: ["namespaces"]
+    resources: ["namespaces", "configmaps"]
     verbs: ["get", "list", "watch"]
 ---
 # cleanup-controller: oidc-revoke-tenant-secret-access deletes the

@@ -49,17 +49,18 @@ metadata:
 data:
   oidc-rbac.yaml: |
     {{- /*
-      Staged rollout: the guarded model (oidc-cluster-admin + the Kyverno
-      guardrails from kyverno.yaml) only applies where the cluster also has
-      sveltos.argus.rpcu.io/kyverno: enabled. Elsewhere the legacy
-      cluster-admin bindings stay exactly as they were.
+      Every cluster chihiro manages (app.kubernetes.io/managed-by: chihiro,
+      i.e. created by chihiro) gets the guarded model: oidc-cluster-admin +
+      the Kyverno guardrails from kyverno.yaml. Other OIDC clusters (created
+      outside chihiro, e.g. shown in chihiro as read-only) keep the legacy
+      cluster-admin bindings exactly as they were.
       Bindings: kube-admin, plus one per group listed in the workload
       Cluster's `chihiro.io/groups` annotation (comma-separated, trimmed,
       empty entries skipped).
     */ -}}
     {{- $cluster := getResource "WorkloadCluster" }}
     {{- $groups := index ($cluster.metadata.annotations | default dict) "chihiro.io/groups" | default "" }}
-    {{- if eq (index ($cluster.metadata.labels | default dict) "sveltos.argus.rpcu.io/kyverno" | default "") "enabled" }}
+    {{- if eq (index ($cluster.metadata.labels | default dict) "app.kubernetes.io/managed-by" | default "") "chihiro" }}
     # oidc-cluster-admin: what OIDC humans (kube-admin + the cluster's chihiro
     # access groups) get on workload clusters. Everything cluster-admin has,
     # minus the ways around the platform guardrails (infrastructure/kyverno/

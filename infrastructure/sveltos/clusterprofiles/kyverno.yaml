@@ -1,20 +1,19 @@
-# Kyverno policy engine for OPT-IN workload clusters, delivered as a Flux
+# Kyverno + the OIDC guardrails, on workload clusters that grant OIDC access
+# (sveltos.argus.rpcu.io/oidc-rbac: enabled): the guardrails travel with the
+# oidc-cluster-admin role from oidc-rbac.yaml (staged: see clusterSelector). Delivered as a Flux
 # takeover (same pattern as dragonfly / csi-driver-nfs / external-dns).
 #
-# TWO things are pushed, ordered by dependsOn so the ClusterPolicies never land
+# TWO things are pushed, ordered by dependsOn so the policies never land
 # before their CRDs:
-#   1. `kyverno` — the Helm chart (installs the Kyverno CRDs + admission /
-#      background / reports / cleanup controllers) from ./infrastructure/kyverno.
-#   2. `kyverno-policies` — the ClusterPolicies from ./infrastructure/kyverno/policies
-#      (dependsOn kyverno) that:
-#        - deny OIDC users (groups kube-admin / kube-user) any write to resources
-#          labelled projectsveltos.io/reason (everything Sveltos deploys), and
-#        - deny those same OIDC users any write to the kube-system namespace.
-#      Deploying the ClusterPolicy CRs before the Kyverno CRDs exist would fail
-#      with `no matches for kind "ClusterPolicy"`; the dependency + retries fix
-#      that.
-#
-# Gated by the opt-in label sveltos.argus.rpcu.io/kyverno: enabled.
+#   1. `kyverno` — the Helm chart (CRDs + admission / background / reports /
+#      cleanup controllers) from ./infrastructure/kyverno.
+#   2. `kyverno-policies` — ./infrastructure/kyverno/policies (dependsOn
+#      kyverno): the OIDC guardrails and the per-CRD role generator. They only
+#      ever apply to OIDC humans (numeric Zitadel usernames); Sveltos, CAPI,
+#      Flux and every ServiceAccount are filtered out by the API server before
+#      any rule runs, and most rules are generated as native
+#      ValidatingAdmissionPolicies, so Kyverno being down never blocks the
+#      platform. See that directory for details.
 #
 # dependsOn flux-instance: the pushed Flux Kustomization CRs are reconciled by
 # the kustomize controller, which only exists once Flux is installed.
@@ -27,9 +26,13 @@ spec:
   syncMode: ContinuousWithDriftDetection
   dependsOn:
     - flux-instance
+  # Staged rollout: clusters opted in with the kyverno label first (matching
+  # the guarded branch in oidc-rbac.yaml); drop that label from the selector
+  # once verified to guard every OIDC cluster.
   clusterSelector:
     matchLabels:
       type: workload
+      sveltos.argus.rpcu.io/oidc-rbac: enabled
       sveltos.argus.rpcu.io/kyverno: enabled
   policyRefs:
     - name: kyverno-flux-kustomizations

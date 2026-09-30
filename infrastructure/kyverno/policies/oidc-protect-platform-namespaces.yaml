@@ -1,0 +1,52 @@
+# Deny OIDC humans ANY write in the platform namespaces — including
+# subresources and CONNECT: exec/attach/port-forward, scale, eviction,
+# ephemeral debug containers, ServiceAccount tokens, service/pod proxy.
+# Platform namespaces: the fixed system/platform set below, plus every
+# namespace Sveltos created (projectsveltos.io/reason). Add-on namespaces
+# installed through Flux are covered by oidc-protect-addons.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: oidc-protect-platform-namespaces
+  annotations:
+    policies.kyverno.io/title: Protect platform namespaces from OIDC users
+    policies.kyverno.io/category: Argus Platform
+    policies.kyverno.io/severity: high
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  evaluation:
+    background:
+      enabled: false
+  autogen:
+    validatingAdmissionPolicy:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE, DELETE, CONNECT]
+        resources: ["*/*"]
+        scope: Namespaced
+  matchConditions:
+    # OIDC humans only (see kustomization.yaml).
+    - name: oidc-user
+      expression: "request.userInfo.username.matches('^[0-9]+$')"
+    - name: not-break-glass
+      expression: >-
+        !has(request.userInfo.groups) ||
+        !request.userInfo.groups.exists(g, g in ['system:masters', 'kubeadm:cluster-admins'])
+  variables:
+    - name: platformNamespaces
+      expression: "['kube-system', 'kube-public', 'kube-node-lease', 'flux-system', 'projectsveltos', 'kyverno']"
+    - name: nsLabels
+      expression: "namespaceObject != null && has(namespaceObject.metadata.labels) ? namespaceObject.metadata.labels : {}"
+  validations:
+    - expression: >-
+        namespaceObject == null ||
+        !(namespaceObject.metadata.name in variables.platformNamespaces ||
+          'projectsveltos.io/reason' in variables.nsLabels)
+      messageExpression: >-
+        'namespace ' + namespaceObject.metadata.name + ' is managed by the platform:
+        OIDC users may not change anything in it (including exec, scale and
+        tokens). Change it through the argus GitOps repository.'

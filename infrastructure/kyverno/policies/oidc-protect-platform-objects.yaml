@@ -1,0 +1,79 @@
+# Deny OIDC humans writes to platform-owned objects anywhere in the cluster:
+#   - anything Sveltos deployed (projectsveltos.io/reason);
+#   - Helm releases installed into a platform namespace (e.g. Cilium's
+#     cluster-scoped CRDs/ClusterRoles, installed by Sveltos into kube-system);
+#   - anything Kyverno manages (generated roles/policies/webhooks);
+#   - the aggregated oidc-cluster-admin roles (so no one edits their own grant);
+#   - the platform Namespace objects themselves.
+# Objects are checked before (oldObject) and after (object) the change, so
+# removing a label or deleting is caught too.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: oidc-protect-platform-objects
+  annotations:
+    policies.kyverno.io/title: Protect platform-owned objects from OIDC users
+    policies.kyverno.io/category: Argus Platform
+    policies.kyverno.io/severity: high
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  evaluation:
+    background:
+      enabled: false
+  autogen:
+    validatingAdmissionPolicy:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE, DELETE]
+        resources: ["*"]
+  matchConditions:
+    # OIDC humans only (see kustomization.yaml).
+    - name: oidc-user
+      expression: "request.userInfo.username.matches('^[0-9]+$')"
+    - name: not-break-glass
+      expression: >-
+        !has(request.userInfo.groups) ||
+        !request.userInfo.groups.exists(g, g in ['system:masters', 'kubeadm:cluster-admins'])
+  variables:
+    - name: platformNamespaces
+      expression: "['kube-system', 'kube-public', 'kube-node-lease', 'flux-system', 'projectsveltos', 'kyverno']"
+    - name: newLabels
+      expression: "object != null && has(object.metadata) && has(object.metadata.labels) ? object.metadata.labels : {}"
+    - name: oldLabels
+      expression: "oldObject != null && has(oldObject.metadata) && has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}"
+    - name: newAnnotations
+      expression: "object != null && has(object.metadata) && has(object.metadata.annotations) ? object.metadata.annotations : {}"
+    - name: oldAnnotations
+      expression: "oldObject != null && has(oldObject.metadata) && has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}"
+  validations:
+    - expression: >-
+        !('projectsveltos.io/reason' in variables.newLabels) &&
+        !('projectsveltos.io/reason' in variables.oldLabels)
+      message: >-
+        This object was deployed by Sveltos and is managed by the platform.
+        Change it through the argus GitOps repository.
+    - expression: >-
+        !(variables.newAnnotations[?'meta.helm.sh/release-namespace'].orValue('') in variables.platformNamespaces) &&
+        !(variables.oldAnnotations[?'meta.helm.sh/release-namespace'].orValue('') in variables.platformNamespaces)
+      message: >-
+        This object belongs to a Helm release in a platform namespace and is
+        managed by the platform.
+    - expression: >-
+        !(variables.newLabels.exists(k, k.startsWith('generate.kyverno.io/') || k == 'webhook.kyverno.io/managed-by') ||
+          variables.oldLabels.exists(k, k.startsWith('generate.kyverno.io/') || k == 'webhook.kyverno.io/managed-by') ||
+          variables.newLabels[?'app.kubernetes.io/managed-by'].orValue('') == 'kyverno' ||
+          variables.oldLabels[?'app.kubernetes.io/managed-by'].orValue('') == 'kyverno')
+      message: This object is managed by Kyverno (platform guardrails).
+    - expression: >-
+        !('rbac.argus.rpcu.io/aggregate-to-oidc-cluster-admin' in variables.newLabels) &&
+        !('rbac.argus.rpcu.io/aggregate-to-oidc-cluster-admin' in variables.oldLabels) &&
+        !(request.resource.resource == 'clusterroles' && request.name == 'oidc-cluster-admin')
+      message: The oidc-cluster-admin roles are managed by the platform.
+    - expression: >-
+        !(request.resource.group == '' && request.resource.resource == 'namespaces' &&
+          request.name in variables.platformNamespaces)
+      messageExpression: "'namespace ' + request.name + ' is managed by the platform'"

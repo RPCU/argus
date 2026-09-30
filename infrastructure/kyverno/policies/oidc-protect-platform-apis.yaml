@@ -1,0 +1,53 @@
+# Deny OIDC humans writes to the APIs that run the platform or its
+# guardrails: Sveltos, Kyverno (policies, reports), admission webhooks,
+# API aggregation and flow control. oidc-cluster-admin already has no write
+# on the built-in ones; this also covers the CRD-based ones (Sveltos,
+# Kyverno), which the per-CRD role generator skips anyway.
+# Note: the API server exempts Validating/MutatingAdmissionPolicy objects
+# from all admission; those are protected by RBAC alone (oidc-rbac.yaml).
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: oidc-protect-platform-apis
+  annotations:
+    policies.kyverno.io/title: Protect platform APIs from OIDC users
+    policies.kyverno.io/category: Argus Platform
+    policies.kyverno.io/severity: high
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  evaluation:
+    background:
+      enabled: false
+  autogen:
+    validatingAdmissionPolicy:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - config.projectsveltos.io
+          - lib.projectsveltos.io
+          - kyverno.io
+          - policies.kyverno.io
+          - reports.kyverno.io
+          - wgpolicyk8s.io
+          - openreports.io
+          - admissionregistration.k8s.io
+          - apiregistration.k8s.io
+          - flowcontrol.apiserver.k8s.io
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE, DELETE]
+        resources: ["*/*"]
+  matchConditions:
+    # OIDC humans only (see kustomization.yaml).
+    - name: oidc-user
+      expression: "request.userInfo.username.matches('^[0-9]+$')"
+    - name: not-break-glass
+      expression: >-
+        !has(request.userInfo.groups) ||
+        !request.userInfo.groups.exists(g, g in ['system:masters', 'kubeadm:cluster-admins'])
+  validations:
+    - expression: "false"
+      messageExpression: >-
+        request.resource.group + ' objects are managed by the platform: OIDC
+        users may not create, change or delete them.'

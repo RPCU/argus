@@ -26,6 +26,16 @@ spec:
     - name: oidc-rbac
       namespace: projectsveltos
       kind: ConfigMap
+  # oidc-cluster-admin is an aggregated ClusterRole: Kubernetes fills its
+  # rules from the labelled roles, so they must not count as drift.
+  driftExclusions:
+    - paths:
+        - "/rules"
+      target:
+        group: rbac.authorization.k8s.io
+        version: v1
+        kind: ClusterRole
+        name: oidc-cluster-admin
 ---
 # The manifests Sveltos deploys to each matched child cluster.
 apiVersion: v1
@@ -38,6 +48,118 @@ metadata:
     projectsveltos.io/template: "true"
 data:
   oidc-rbac.yaml: |
+    {{- /*
+      Staged rollout: the guarded model (oidc-cluster-admin + the Kyverno
+      guardrails from kyverno.yaml) only applies where the cluster also has
+      sveltos.argus.rpcu.io/kyverno: enabled. Elsewhere the legacy
+      cluster-admin bindings stay exactly as they were.
+      Bindings: kube-admin, plus one per group listed in the workload
+      Cluster's `chihiro.io/groups` annotation (comma-separated, trimmed,
+      empty entries skipped).
+    */ -}}
+    {{- $cluster := getResource "WorkloadCluster" }}
+    {{- $groups := index ($cluster.metadata.annotations | default dict) "chihiro.io/groups" | default "" }}
+    {{- if eq (index ($cluster.metadata.labels | default dict) "sveltos.argus.rpcu.io/kyverno" | default "") "enabled" }}
+    # oidc-cluster-admin: what OIDC humans (kube-admin + the cluster's chihiro
+    # access groups) get on workload clusters. Everything cluster-admin has,
+    # minus the ways around the platform guardrails (infrastructure/kyverno/
+    # policies):
+    #   - no impersonate / escalate / bind / approve / sign verbs: no `--as`,
+    #     no granting more than you hold, no approving certificates;
+    #   - no writes to admission objects (webhooks, Validating/Mutating
+    #     AdmissionPolicies and their bindings), APIServices or flow control:
+    #     the API server exempts admission policies from admission, so RBAC is
+    #     the only thing that stops a human deleting a guardrail or injecting
+    #     into platform pods.
+    # Built-in API groups are listed here (they never change). CRD groups are
+    # NOT: the Kyverno GeneratingPolicy `oidc-cluster-admin-crd-roles` creates
+    # one ClusterRole per CRD, labelled for aggregation below, so a new CRD is
+    # writable within seconds without touching this file.
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    metadata:
+      name: oidc-cluster-admin
+    aggregationRule:
+      clusterRoleSelectors:
+        - matchLabels:
+            rbac.argus.rpcu.io/aggregate-to-oidc-cluster-admin: "true"
+    # rules are filled in by the aggregation controller (see driftExclusions).
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    metadata:
+      name: oidc-cluster-admin:base
+      labels:
+        rbac.argus.rpcu.io/aggregate-to-oidc-cluster-admin: "true"
+    rules:
+      # Read everything, including CRDs and admission objects.
+      - apiGroups: ["*"]
+        resources: ["*"]
+        verbs: ["get", "list", "watch"]
+      - nonResourceURLs: ["*"]
+        verbs: ["get"]
+      # Write the built-in API groups (all resources and subresources: exec,
+      # logs, scale, tokens, ...). RBAC objects are still subject to the
+      # escalation check, so bindings can only grant what the user holds.
+      - apiGroups:
+          - ""
+          - apps
+          - autoscaling
+          - batch
+          - policy
+          - apiextensions.k8s.io
+          - coordination.k8s.io
+          - discovery.k8s.io
+          - events.k8s.io
+          - networking.k8s.io
+          - node.k8s.io
+          - rbac.authorization.k8s.io
+          - resource.k8s.io
+          - scheduling.k8s.io
+          - storage.k8s.io
+        resources: ["*"]
+        verbs: ["create", "update", "patch", "delete", "deletecollection"]
+      # `kubectl auth can-i`, token/access reviews.
+      - apiGroups: ["authentication.k8s.io", "authorization.k8s.io"]
+        resources: ["*"]
+        verbs: ["create"]
+      # Submit certificate requests, but not approve/sign them, nor the
+      # nodeclient pseudo-resources the kubelet auto-approver checks.
+      - apiGroups: ["certificates.k8s.io"]
+        resources: ["certificatesigningrequests"]
+        verbs: ["create", "update", "patch", "delete"]
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: oidc-cluster-admin:kube-admin
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: oidc-cluster-admin
+    subjects:
+      - apiGroup: rbac.authorization.k8s.io
+        kind: Group
+        name: kube-admin
+    {{- range (splitList "," $groups) }}
+    {{- $group := trim . }}
+    {{- if $group }}
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: oidc-cluster-admin:group:{{ $group }}
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: oidc-cluster-admin
+    subjects:
+      - apiGroup: rbac.authorization.k8s.io
+        kind: Group
+        name: {{ $group }}
+    {{- end }}
+    {{- end }}
+    {{- else -}}
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:
@@ -50,12 +172,6 @@ data:
       - apiGroup: rbac.authorization.k8s.io
         kind: Group
         name: kube-admin
-    {{- /*
-      One cluster-admin ClusterRoleBinding per group name listed in the
-      workload Cluster's `chihiro.io/groups` annotation (comma-separated).
-      Whitespace around each name is trimmed; empty entries are skipped.
-    */ -}}
-    {{- $groups := index ((getResource "WorkloadCluster").metadata.annotations | default dict) "chihiro.io/groups" | default "" }}
     {{- range (splitList "," $groups) }}
     {{- $group := trim . }}
     {{- if $group }}
@@ -72,6 +188,7 @@ data:
       - apiGroup: rbac.authorization.k8s.io
         kind: Group
         name: {{ $group }}
+    {{- end }}
     {{- end }}
     {{- end }}
     # ---------------------------------------------------------------

@@ -1,0 +1,95 @@
+# Deny OIDC humans any write to platform add-ons that Flux installs for
+# Sveltos (the "Flux takeover" add-ons: cert-manager, kgateway, monitoring,
+# CSI drivers, Kyverno itself, ...). Those objects only carry Flux labels, so
+# ownership is resolved by lookup: an object (or its namespace) belongs to an
+# add-on when its Flux Kustomization — directly, or through the HelmRelease
+# that rendered it — was pushed by Sveltos (projectsveltos.io/reason).
+# Apps you deploy through Flux yourself (e.g. atlas) are not affected, and
+# new add-ons are covered automatically.
+#
+# Needs lookups, so it stays a Kyverno webhook (no native policy). The API
+# server only calls it for OIDC humans (matchConditions), with failurePolicy
+# Ignore: if Kyverno is down, humans are briefly not stopped here — nothing
+# else is ever affected. Kyverno's default webhook scope skips kube-system
+# and kyverno, which oidc-protect-platform-namespaces covers natively.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: oidc-protect-addons
+  annotations:
+    policies.kyverno.io/title: Protect Sveltos-delivered add-ons from OIDC users
+    policies.kyverno.io/category: Argus Platform
+    policies.kyverno.io/severity: high
+spec:
+  validationActions: [Deny]
+  failurePolicy: Ignore
+  webhookConfiguration:
+    timeoutSeconds: 5
+  evaluation:
+    background:
+      enabled: false
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE, DELETE, CONNECT]
+        resources: ["*/*"]
+  matchConditions:
+    # OIDC humans only (see kustomization.yaml).
+    - name: oidc-user
+      expression: "request.userInfo.username.matches('^[0-9]+$')"
+    - name: not-break-glass
+      expression: >-
+        !has(request.userInfo.groups) ||
+        !request.userInfo.groups.exists(g, g in ['system:masters', 'kubeadm:cluster-admins'])
+  variables:
+    - name: newLabels
+      expression: "object != null && has(object.metadata) && has(object.metadata.labels) ? object.metadata.labels : {}"
+    - name: oldLabels
+      expression: "oldObject != null && has(oldObject.metadata) && has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}"
+    - name: nsLabels
+      expression: "namespaceObject != null && has(namespaceObject.metadata.labels) ? namespaceObject.metadata.labels : {}"
+    # Flux ownership of the object (old labels win, so removing them is caught).
+    - name: ksName
+      expression: "variables.oldLabels[?'kustomize.toolkit.fluxcd.io/name'].orValue(variables.newLabels[?'kustomize.toolkit.fluxcd.io/name'].orValue(''))"
+    - name: ksNamespace
+      expression: "variables.oldLabels[?'kustomize.toolkit.fluxcd.io/namespace'].orValue(variables.newLabels[?'kustomize.toolkit.fluxcd.io/namespace'].orValue(''))"
+    - name: hrName
+      expression: "variables.oldLabels[?'helm.toolkit.fluxcd.io/name'].orValue(variables.newLabels[?'helm.toolkit.fluxcd.io/name'].orValue(''))"
+    - name: hrNamespace
+      expression: "variables.oldLabels[?'helm.toolkit.fluxcd.io/namespace'].orValue(variables.newLabels[?'helm.toolkit.fluxcd.io/namespace'].orValue(''))"
+    # Flux ownership of the namespace the object lives in.
+    - name: nsKsName
+      expression: "variables.nsLabels[?'kustomize.toolkit.fluxcd.io/name'].orValue('')"
+    - name: nsKsNamespace
+      expression: "variables.nsLabels[?'kustomize.toolkit.fluxcd.io/namespace'].orValue('')"
+    # Each check only lists when its name is set (&& short-circuits).
+    - name: objectKsIsAddon
+      expression: >-
+        variables.ksName != '' && variables.ksNamespace != '' &&
+        dyn(resource.List('kustomize.toolkit.fluxcd.io/v1', 'kustomizations', variables.ksNamespace,
+          {'projectsveltos.io/reason': 'Resources'}).items).exists(k, k.metadata.name == variables.ksName)
+    - name: objectHrIsAddon
+      expression: >-
+        variables.hrName != '' && variables.hrNamespace != '' &&
+        dyn(resource.List('helm.toolkit.fluxcd.io/v2', 'helmreleases', variables.hrNamespace).items).exists(h,
+          h.metadata.name == variables.hrName && has(h.metadata.labels) &&
+          ('projectsveltos.io/reason' in h.metadata.labels ||
+           (h.metadata.labels[?'kustomize.toolkit.fluxcd.io/name'].orValue('') != '' &&
+            dyn(resource.List('kustomize.toolkit.fluxcd.io/v1', 'kustomizations',
+              h.metadata.labels[?'kustomize.toolkit.fluxcd.io/namespace'].orValue(h.metadata.namespace),
+              {'projectsveltos.io/reason': 'Resources'}).items).exists(k,
+                k.metadata.name == h.metadata.labels['kustomize.toolkit.fluxcd.io/name']))))
+    - name: namespaceIsAddon
+      expression: >-
+        variables.nsKsName != '' && variables.nsKsNamespace != '' &&
+        dyn(resource.List('kustomize.toolkit.fluxcd.io/v1', 'kustomizations', variables.nsKsNamespace,
+          {'projectsveltos.io/reason': 'Resources'}).items).exists(k, k.metadata.name == variables.nsKsName)
+  validations:
+    - expression: "!variables.objectKsIsAddon && !variables.objectHrIsAddon && !variables.namespaceIsAddon"
+      messageExpression: >-
+        'This is part of a platform add-on (Flux Kustomization ' +
+        (variables.objectKsIsAddon ? variables.ksNamespace + '/' + variables.ksName :
+         variables.namespaceIsAddon ? variables.nsKsNamespace + '/' + variables.nsKsName :
+         'of HelmRelease ' + variables.hrNamespace + '/' + variables.hrName) +
+        ', delivered by Sveltos). OIDC users may not change it; change it through the argus GitOps repository.'

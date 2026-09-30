@@ -1,4 +1,32 @@
+# OIDC guardrails for workload clusters (see ../../sveltos/clusterprofiles/
+# kyverno.yaml and oidc-rbac.yaml).
+#
+# WHO: OIDC humans only. Every policy carries the same two matchConditions,
+# evaluated by the API server BEFORE any rule or webhook runs:
+#   - the username is a numeric Zitadel user id (`--oidc-username-claim=sub`,
+#     no prefix) — certificates (kubernetes-admin, which CAPI and Sveltos push
+#     with), ServiceAccounts, nodes and system:* identities never match;
+#   - not in system:masters / kubeadm:cluster-admins (break-glass certs).
+# Platform reconcilers are therefore never evaluated, so these policies can't
+# block Sveltos, Flux, CNI/CSI or the kubelet.
+#
+# HOW: most policies set `autogen.validatingAdmissionPolicy.enabled`, so
+# Kyverno turns them into native ValidatingAdmissionPolicies evaluated inside
+# the API server (and drops their webhook). Only two still go through Kyverno:
+#   - oidc-protect-addons needs lookups (which Flux Kustomization owns this
+#     object?) — OIDC requests only, failurePolicy Ignore;
+#   - oidc-cluster-admin-crd-roles generates per-CRD ClusterRoles —
+#     GeneratingPolicy webhooks are always failurePolicy Ignore.
+#
+# WHAT pairs with the RBAC in oidc-rbac.yaml (no impersonate/escalate/bind,
+# no writes to admission policies, which admission can't protect itself).
 resources:
-  - protect-sveltos-resources.yaml
-  - protect-kube-system.yaml
-  - protect-nodes.yaml
+  - kyverno-rbac.yaml
+  - oidc-protect-platform-namespaces.yaml
+  - oidc-protect-platform-objects.yaml
+  - oidc-protect-platform-apis.yaml
+  - oidc-protect-nodes.yaml
+  - oidc-restrict-serviceaccount-bindings.yaml
+  - oidc-restrict-privileged-workloads.yaml
+  - oidc-protect-addons.yaml
+  - oidc-cluster-admin-crd-roles.yaml

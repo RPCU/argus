@@ -143,6 +143,16 @@ cluster-api-providers`). The capi-janitor-openstack operator; purges dangling
   (`attribute.client_id`/`client_secret`) into chihiro-system.
 - `chihiro.yaml` — chihiro app (`./clusters/mgmt/apps/chihiro`). `oidc.yaml` ESO
   remaps `chihiro-oidc-conn` → `chihiro-oidc` (`clientId`/`clientSecret`).
+  **Vault push for hestia/OpenChoreo** (`vault-push.yaml`): ExternalSecret
+  `chihiro-vault-bundle` gathers `clientId`/`clientSecret`/`session_key` and a
+  kubeconfig for the `chihiro-external` SA (`external-sa.yaml`, bound to
+  `chihiro-viewer-role`, server `https://172.16.255.212:6443`), then PushSecrets
+  write them to `secrets-mgmt/chihiro` (OpenChoreo env `production`, on mgmt)
+  and `secrets-production/chihiro` (+ kubeconfig; env `public`, production
+  cluster, chihiro.rpcu.io). Vault access: Crossplane `Policy`/`AuthBackendRole`
+  `chihiro-push` (`clusters/mgmt/crossplane/vault/chihiro-push.yaml`, role on
+  mgmt's `kubernetes` mount, SA `chihiro-system/chihiro-vault-push`, write
+  only on those two paths).
   `cm.yaml` `cluster.template` writes the `sveltos.argus.rpcu.io/capo-version`
   **annotation** from a `capoVersion` `select` form field (default sentinel
   `"default"`; options `default`/`v0.14.4`) and add-on opt-in labels via toggles.
@@ -1370,7 +1380,10 @@ env; pre-commit quality gates; 1-minute Git sync.
 
 ---
 
-**Last Updated**: 2026-09-30 — **OpenChoreo data-plane agents as code**: mgmt
+**Last Updated**: 2026-09-30 — chihiro secrets pushed to Vault
+(`secrets-mgmt/chihiro`, `secrets-production/chihiro`) + `chihiro-external` SA
+for the OpenChoreo deployments; `openchoreo-control-plane` profile publishes the
+agent CA cert to platform. Earlier the same day: **OpenChoreo data-plane agents as code**: mgmt
 (`clusters/mgmt/openchoreo-data-plane.yaml`, shared agent CA; trust-manager
 now on mgmt for `rpcu-ca-trust`) and opt-in
 workload clusters (Sveltos `openchoreo-data-plane` profile; `production`

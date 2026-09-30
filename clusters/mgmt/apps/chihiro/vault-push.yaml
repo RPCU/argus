@@ -1,0 +1,174 @@
+# Publishes chihiro's secrets to Vault for the hestia/OpenChoreo deployments:
+#   - secrets-mgmt/chihiro       -> env "production" on mgmt (SecretReference
+#                                   chihiro-production): clientId, clientSecret,
+#                                   session_key
+#   - secrets-production/chihiro -> env "public" on the production cluster
+#                                   (SecretReference chihiro-public): the same
+#                                   + kubeconfig (chihiro-external SA on mgmt)
+#
+# 1. ExternalSecret chihiro-vault-bundle gathers everything from chihiro-system
+#    (via the existing Kubernetes-provider SecretStore chihiro-secrets) and
+#    renders the kubeconfig.
+# 2. Two PushSecrets write it to the two mounts, authenticated with the
+#    chihiro-push Vault role (clusters/mgmt/crossplane/vault/chihiro-push.yaml).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: chihiro-vault-push
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: vault-mgmt
+spec:
+  provider:
+    vault:
+      server: http://vault.vault.svc:8200
+      path: secrets-mgmt
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: chihiro-push
+          serviceAccountRef:
+            name: chihiro-vault-push
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: vault-production
+spec:
+  provider:
+    vault:
+      server: http://vault.vault.svc:8200
+      path: secrets-production
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: chihiro-push
+          serviceAccountRef:
+            name: chihiro-vault-push
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: chihiro-vault-bundle
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: SecretStore
+    name: chihiro-secrets
+  target:
+    name: chihiro-vault-bundle
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      mergePolicy: Merge
+      data:
+        kubeconfig: |
+          apiVersion: v1
+          kind: Config
+          clusters:
+            - name: mgmt
+              cluster:
+                server: https://172.16.255.212:6443
+                certificate-authority-data: {{ .ca | b64enc }}
+          users:
+            - name: chihiro-external
+              user:
+                token: {{ .token }}
+          contexts:
+            - name: mgmt
+              context:
+                cluster: mgmt
+                user: chihiro-external
+          current-context: mgmt
+  data:
+    - secretKey: clientId
+      remoteRef:
+        key: chihiro-oidc
+        property: clientId
+    - secretKey: clientSecret
+      remoteRef:
+        key: chihiro-oidc
+        property: clientSecret
+    - secretKey: session_key
+      remoteRef:
+        key: chihiro-session-key
+        property: session_key
+    - secretKey: token
+      remoteRef:
+        key: chihiro-external-token
+        property: token
+    - secretKey: ca
+      remoteRef:
+        key: chihiro-external-token
+        property: ca.crt
+---
+apiVersion: external-secrets.io/v1alpha1
+kind: PushSecret
+metadata:
+  name: chihiro-vault-mgmt
+spec:
+  refreshInterval: 1h
+  updatePolicy: Replace
+  deletionPolicy: None
+  secretStoreRefs:
+    - name: vault-mgmt
+      kind: SecretStore
+  selector:
+    secret:
+      name: chihiro-vault-bundle
+  data:
+    - match:
+        secretKey: clientId
+        remoteRef:
+          remoteKey: chihiro
+          property: clientId
+    - match:
+        secretKey: clientSecret
+        remoteRef:
+          remoteKey: chihiro
+          property: clientSecret
+    - match:
+        secretKey: session_key
+        remoteRef:
+          remoteKey: chihiro
+          property: session_key
+---
+apiVersion: external-secrets.io/v1alpha1
+kind: PushSecret
+metadata:
+  name: chihiro-vault-production
+spec:
+  refreshInterval: 1h
+  updatePolicy: Replace
+  deletionPolicy: None
+  secretStoreRefs:
+    - name: vault-production
+      kind: SecretStore
+  selector:
+    secret:
+      name: chihiro-vault-bundle
+  data:
+    - match:
+        secretKey: clientId
+        remoteRef:
+          remoteKey: chihiro
+          property: clientId
+    - match:
+        secretKey: clientSecret
+        remoteRef:
+          remoteKey: chihiro
+          property: clientSecret
+    - match:
+        secretKey: session_key
+        remoteRef:
+          remoteKey: chihiro
+          property: session_key
+    - match:
+        secretKey: kubeconfig
+        remoteRef:
+          remoteKey: chihiro
+          property: kubeconfig

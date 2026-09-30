@@ -1,0 +1,30 @@
+# Identity for the PUBLIC chihiro (hestia, OpenChoreo env "public" on the
+# production cluster): it manages the CAPI clusters on mgmt remotely, so it
+# needs its own mgmt credentials. Same ClusterRole as the in-cluster chihiro
+# (chihiro-viewer-role, rbacs.yaml). The long-lived token is turned into a
+# kubeconfig and pushed to Vault by vault-push.yaml.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: chihiro-external
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: chihiro-external-token
+  annotations:
+    kubernetes.io/service-account.name: chihiro-external
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: chihiro-external
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: chihiro-viewer-role
+subjects:
+  - kind: ServiceAccount
+    name: chihiro-external
+    namespace: chihiro-system

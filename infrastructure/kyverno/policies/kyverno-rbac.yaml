@@ -100,5 +100,5 @@ rules:
     resources: ["rolebindings"]
     verbs: ["get", "list", "watch", "delete"]
   - apiGroups: [""]
-    resources: ["secrets"]
+    resources: ["secrets", "namespaces"]
     verbs: ["get", "list", "watch"]

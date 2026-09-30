@@ -435,7 +435,7 @@ kyverno`) — CEL policies (`policies.kyverno.io/v1`; `ClusterPolicy` is removed
   (no webhook, failurePolicy Fail, can't wedge the platform):
   `oidc-protect-platform-namespaces` (all writes incl. `*/*` subresources and
   CONNECT — exec/scale/evict/debug/tokens — in kube-system/kube-public/
-  kube-node-lease/flux-system/projectsveltos/kyverno + any ns labelled
+  kube-node-lease/flux-system/projectsveltos/kyverno + any ns created by a Helm release in one of those (e.g. cilium-secrets) + any ns labelled
   `projectsveltos.io/reason`), `oidc-protect-platform-objects` (Sveltos-labelled,
   Helm releases whose `meta.helm.sh/release-namespace` is a platform ns — e.g.
   Cilium's cluster-scoped objects —, Kyverno-managed, the oidc-cluster-admin

@@ -12,7 +12,8 @@
 #
 # Server trust: the cluster-gateway cert chains pki-int.mgmt.rpcu.lan → root-mgmt,
 # so the agent trusts the rpcu-ca-trust ConfigMap (root-mgmt + root-rpcu), which
-# trust-manager distributes on workload clusters and mgmt ships statically.
+# trust-manager distributes (mgmt: clusters/mgmt/trust-manager.yaml; workload
+# clusters: the Sveltos trust-manager profile).
 #
 # The chart's own Gateway is disabled: DataPlane CRs route through the cluster's
 # existing kgateway-system/https Gateway (*.<cluster>.rpcu.lan wildcard).

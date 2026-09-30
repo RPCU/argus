@@ -1,0 +1,21 @@
+# Same content as the workload-cluster Bundle (Sveltos trust-manager profile),
+# but sourced straight from the CA Secrets that live on mgmt in the trust
+# namespace (cert-manager): root-mgmt (*.rpcu.lan, Vault PKI chain) and
+# root-rpcu (*.rpcu.vpn). Only the public ca.crt key is read.
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: rpcu-ca-trust
+spec:
+  sources:
+    - secret:
+        name: root-mgmt
+        key: "ca.crt"
+    - secret:
+        name: root-rpcu
+        key: "ca.crt"
+  target:
+    configMap:
+      key: "ca.crt"
+    secret:
+      key: "ca.crt"

@@ -5,6 +5,7 @@ resources:
   - kgateway-crds.yaml
   - kgateway.yaml
   - cert-manager-issuer.yaml
+  - trust-manager.yaml
   - external-secrets.yaml
   - cluster-api-operator.yaml
   - cluster-api-providers.yaml

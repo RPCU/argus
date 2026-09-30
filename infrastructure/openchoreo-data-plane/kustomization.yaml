@@ -1,0 +1,15 @@
+# OpenChoreo data-plane agent — shared base for mgmt and workload clusters.
+#
+# Deployed:
+#   - On mgmt: via clusters/mgmt/openchoreo-data-plane.yaml, which also creates
+#     the shared agent CA (clusters/mgmt/apps/openchoreo-data-plane/).
+#   - On workloads: via the openchoreo-data-plane Sveltos ClusterProfile, which
+#     copies that CA into the cluster and pushes a Flux Kustomization here.
+#
+# Requires ${OPENCHOREO_PLANE_ID} (Flux postBuild substitution): the plane ID
+# the agent announces to the control plane. It must match the planeID of the
+# DataPlane CR in hestia (openchoreo/namespaces/rpcu/platform/infra/dataplanes/).
+resources:
+  - namespace.yaml
+  - helmrepo.yaml
+  - helmrelease.yaml

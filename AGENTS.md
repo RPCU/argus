@@ -152,6 +152,14 @@ cluster-api-providers`). The capi-janitor-openstack operator; purges dangling
   ClusterProfiles targeting it (via ClusterSummary) and per-deployment status;
   `rbacs.yaml` grants read on `config.projectsveltos.io` `clustersummaries`.
 - `dragonfly-operator.yaml` — Dragonfly (Redis-compatible) for chihiro sessions.
+- `openchoreo-data-plane.yaml` — OpenChoreo data-plane agent on mgmt
+  (`./clusters/mgmt/apps/openchoreo-data-plane`, planeID `mgmt` via postBuild
+  `OPENCHOREO_PLANE_ID`), dependsOn cert-manager-issuer. Reuses the
+  `infrastructure/openchoreo-data-plane` base and adds the **shared agent CA**
+  (`agent-ca.yaml`: 10y ECDSA Certificate `openchoreo-agent-ca` from the
+  `selfsigned` ClusterIssuer) plus a static `rpcu-ca-trust` ConfigMap (public
+  root-mgmt cert; mgmt has no trust-manager). Every DataPlane CR in hestia
+  trusts that CA as `clientCA`; re-keying it means updating all of them.
 - `vault.yaml` — `./infrastructure/vault`, dependsOn kgateway +
   openstack-cinder-csi. HA Vault (3-node Raft, no Consul); chart Ingress off,
   HTTPRoute at `vault.mgmt.rpcu.lan`; PVCs request `cinder-delete`. 3 replicas
@@ -196,6 +204,20 @@ FALSE` **unconditionally**. The cert-manager base NEVER emits a ServiceMonitor
   that ships the ServiceMonitor CRD, so it can never race itself. Do NOT re-enable
   the chart SM via per-cluster HelmRelease patches; that reintroduced a
   monitoring↔cert-manager CRD deadlock (see §8 "monitoring-gated ServiceMonitors").
+- **openchoreo-data-plane/** (chart `openchoreo-data-plane` 1.2.2,
+  `oci://ghcr.io/openchoreo/helm-charts`) — OpenChoreo cluster agent dialing
+  `wss://cluster-gateway.platform.rpcu.lan/ws` (hestia's control plane).
+  Needs `${OPENCHOREO_PLANE_ID}` (Flux postBuild). `generateCerts: false` +
+  `caSecretName: openchoreo-agent-ca`: with generateCerts each 90-day renewal
+  mints a new self-signed cert that no longer matches the DataPlane CR's
+  clientCA. Chart Gateway (and its TLS listener validation) disabled: DataPlanes
+  route through the cluster's `kgateway-system/https`. Server trust:
+  `rpcu-ca-trust` (cluster-gateway chains pki-int.mgmt → root-mgmt). Consumed by
+  mgmt directly and by the `openchoreo-data-plane` Sveltos profile (label
+  `sveltos.argus.rpcu.io/openchoreo-data-plane: enabled`, dependsOn
+  flux-instance + trust-manager, so also needs the cert-manager label), which
+  copies the CA Secret from mgmt via templateResourceRefs. Enabled on
+  `production` by label; chihiro has an `openchoreoDataPlane` toggle.
 - **trust-manager/** (v0.18.0) — `setup/` (chart) + `configs/bundle.yaml` (RPCU root CA).
 - **cilium/** (v1.18.6) — `ciliumloadbalancerippool.yaml` (10.0.0.240-253),
   `ciliuml2announcementpolicy.yaml`, `values.yaml`.
@@ -1339,7 +1361,10 @@ env; pre-commit quality gates; 1-minute Git sync.
 
 ---
 
-**Last Updated**: 2026-09-29 — **chihiro v0.8.3** ("More details" button opens the cluster page). Earlier the same day: **chihiro v0.8.0 with Sveltos add-on status**
+**Last Updated**: 2026-09-30 — **OpenChoreo data-plane agents as code**: mgmt
+(`clusters/mgmt/openchoreo-data-plane.yaml`, shared agent CA) and opt-in
+workload clusters (Sveltos `openchoreo-data-plane` profile; `production`
+labelled, chihiro `openchoreoDataPlane` toggle). Earlier: 2026-09-29 — **chihiro v0.8.3** ("More details" button opens the cluster page). Earlier the same day: **chihiro v0.8.0 with Sveltos add-on status**
 (`clusters/mgmt/apps/chihiro`: image bump, `CHIHIRO_SVELTOS_ENABLED=true`,
 read RBAC on `clustersummaries`). Earlier: 2026-09-28 — **Tenant CP probes actually applied**
 (`controlplane-kamaji-v10`/`-external-v4`: component-level probes so the CAPI

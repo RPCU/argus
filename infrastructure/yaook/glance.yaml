@@ -85,10 +85,11 @@ spec:
           "mon_host": "rook-ceph-mon-a.rook-ceph:6789,rook-ceph-mon-d.rook-ceph:6789,rook-ceph-mon-f.rook-ceph:6789"
   policy:
     "context_is_admin": "role:admin"
-    # hephaestus CI (clusters/mgmt/crossplane/openstack/hephaestus-ci.yaml)
-    # publishes public hephaestus-kaas-* images for CAPO in every project with
-    # the narrow `image_publisher` role instead of admin.
-    "publicize_image": "role:admin or role:image_publisher"
+    # hephaestus CI (clusters/mgmt/crossplane/openstack/hephaestus-ci.yaml, a
+    # `member` app-cred in the ADMIN project) publishes public hephaestus-kaas-*
+    # images for CAPO in every project. Members of the admin project may
+    # publicize; that project only holds admin/CAPO identities.
+    "publicize_image": "role:admin or (role:member and project_id:bae33843e66e4028b574e36cd0953fac)"
   region:
     name: hetzner
   issuerRef:

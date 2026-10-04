@@ -1,0 +1,48 @@
+# Admin-project Application Credential for the hephaestus GitHub Actions
+# workflow that publishes CAPO node images (hephaestus-kaas-*) to Glance.
+#
+# Must be in the ADMIN project: CAPO authenticates with keystone-admin
+# (capo-variables) and the images are uploaded `--private`, so any other
+# project would hide them from CAPO's name lookup.
+#
+# Role `member` only, and access rules restrict it to the image API calls made
+# by hephaestus scripts/uploadGlanceImage (list, create, upload data, delete a
+# failed upload). Changing accessRules RECREATES the app-cred (new ID + secret)
+# — update the OPENSTACK_CLOUDS_YAML secret in RPCU/hephaestus afterwards.
+#
+# The connection secret (hephaestus-ci-app-cred) holds attribute.secret; the
+# app-cred ID is in this resource's status.atProvider.id.
+# =============================================================================
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: ApplicationCredentialV3
+metadata:
+  name: hephaestus-ci
+  namespace: crossplane-system
+spec:
+  forProvider:
+    name: hephaestus-ci
+    description: "hephaestus GitHub Actions: publish hephaestus-* images to Glance"
+    roles:
+      - member
+    unrestricted: false
+    accessRules:
+      - service: image
+        method: GET
+        path: /v2/images
+      - service: image
+        method: GET
+        path: /v2/**
+      - service: image
+        method: POST
+        path: /v2/images
+      - service: image
+        method: PUT
+        path: /v2/images/*/file
+      - service: image
+        method: DELETE
+        path: /v2/images/*
+  writeConnectionSecretToRef:
+    name: hephaestus-ci-app-cred
+  providerConfigRef:
+    name: default
+    kind: ClusterProviderConfig

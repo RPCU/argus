@@ -7,6 +7,7 @@ resources:
   - provider-config-production-eso.yaml
   - cloud-controller.yaml
   - cloud-controller-dns.yaml
+  - hephaestus-ci.yaml
   - roleassignments-lab.yaml
   - roleassignments-production.yaml
   - ccm-credential-lab.yaml

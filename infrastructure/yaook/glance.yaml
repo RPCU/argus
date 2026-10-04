@@ -69,6 +69,10 @@ spec:
       # images must be raw format for COW cloning to kick in). Safe here:
       # glance and cinder share the same Ceph cluster/pool.
       show_image_direct_url: true
+      # Max bytes per image upload. Yaook's default is 5 GiB, below the raw
+      # hephaestus-kaas images (~5.5 GB, published by hephaestus CI): Glance
+      # rejected them with 413 "The provided image is too large".
+      image_size_cap: 21474836480 # 20 GiB
     glance_store:
       default_store: "rbd"
   backends:

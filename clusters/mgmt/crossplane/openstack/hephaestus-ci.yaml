@@ -1,29 +1,62 @@
 # Admin-project Application Credential for the hephaestus GitHub Actions
 # workflow that publishes CAPO node images (hephaestus-kaas-*) to Glance.
 #
-# Must be in the ADMIN project: CAPO authenticates with keystone-admin
-# (capo-variables) and the images are uploaded `--private`, so any other
-# project would hide them from CAPO's name lookup.
+# Images are uploaded to the ADMIN project (CAPO's keystone-admin project) and
+# made PUBLIC so clusters in every project (lab, production, ...) can use them.
+# Glance only lets role:admin publicize images by default; the narrow custom
+# role `image_publisher` is allowed too (glance.yaml policy `publicize_image`),
+# so the app-cred never needs admin.
 #
-# Role `member` only, and access rules restrict it to the image API calls made
-# by hephaestus scripts/uploadGlanceImage (list, create, upload data, delete a
-# failed upload). Changing accessRules RECREATES the app-cred (new ID + secret)
-# — update the OPENSTACK_CLOUDS_YAML secret in RPCU/hephaestus afterwards.
+# Access rules restrict it to the image API calls made by hephaestus
+# scripts/uploadGlanceImage (list, create, upload data, set public, delete a
+# failed upload). Roles and accessRules are fixed at creation: changing them
+# means a NEW app-cred (new name), then updating the OPENSTACK_CLOUDS_YAML
+# secret of the RPCU org with its ID/secret.
 #
-# The connection secret (hephaestus-ci-app-cred) holds attribute.secret; the
+# The connection secret (hephaestus-ci-v2-app-cred) holds attribute.secret; the
 # app-cred ID is in this resource's status.atProvider.id.
 # =============================================================================
 apiVersion: identity.openstack.m.crossplane.io/v1alpha1
-kind: ApplicationCredentialV3
+kind: RoleV3
 metadata:
-  name: hephaestus-ci
+  name: image-publisher
   namespace: crossplane-system
 spec:
   forProvider:
-    name: hephaestus-ci
-    description: "hephaestus GitHub Actions: publish hephaestus-* images to Glance"
+    name: image_publisher
+  providerConfigRef:
+    name: default
+    kind: ClusterProviderConfig
+---
+# yaook-sys-maint → image_publisher in the admin project: Keystone requires an
+# app-cred's roles to be a subset of the creating user's roles.
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: RoleAssignmentV3
+metadata:
+  name: yaook-sys-maint-image-publisher-admin
+  namespace: crossplane-system
+spec:
+  forProvider:
+    roleIdRef:
+      name: image-publisher
+    userId: "44b2b48fb89d4fde9d659bf01831d3b0"
+    projectId: "bae33843e66e4028b574e36cd0953fac"
+  providerConfigRef:
+    name: default
+    kind: ClusterProviderConfig
+---
+apiVersion: identity.openstack.m.crossplane.io/v1alpha1
+kind: ApplicationCredentialV3
+metadata:
+  name: hephaestus-ci-v2
+  namespace: crossplane-system
+spec:
+  forProvider:
+    name: hephaestus-ci-v2
+    description: "hephaestus GitHub Actions: publish public hephaestus-* images to Glance"
     roles:
       - member
+      - image_publisher
     unrestricted: false
     accessRules:
       - service: image
@@ -39,10 +72,13 @@ spec:
         method: PUT
         path: /v2/images/*/file
       - service: image
+        method: PATCH
+        path: /v2/images/*
+      - service: image
         method: DELETE
         path: /v2/images/*
   writeConnectionSecretToRef:
-    name: hephaestus-ci-app-cred
+    name: hephaestus-ci-v2-app-cred
   providerConfigRef:
     name: default
     kind: ClusterProviderConfig

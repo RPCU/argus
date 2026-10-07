@@ -26,7 +26,7 @@ kind: Provider
 metadata:
   name: provider-openstack
 spec:
-  package: xpkg.crossplane.io/crossplane-contrib/provider-openstack:v0.10.0
+  package: xpkg.crossplane.io/crossplane-contrib/provider-openstack:v0.11.0
   runtimeConfigRef:
     name: provider-openstack
 ---

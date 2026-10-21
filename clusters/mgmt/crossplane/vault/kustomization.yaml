@@ -5,3 +5,4 @@ resources:
   - external-secret.yaml
   - pki-int.yaml
   - chihiro-push.yaml
+  - openchoreo-secrets.yaml

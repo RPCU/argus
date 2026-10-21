@@ -163,6 +163,46 @@ kubectl -n monitoring get externalsecret grafana-discord-webhook
 Until this is done the alert rules still evaluate, but the Discord contact point
 has no URL and notifications are not delivered.
 
+## OpenChoreo portal secrets on mgmt (one-time manual)
+
+OpenChoreo (hestia) stores a portal secret by creating a PushSecret on the
+target DataPlane cluster that writes `secret/<namespace>/generic/<name>` into
+that cluster's KV mount through its `vault-backend` store. For the **mgmt**
+DataPlane (OpenChoreo's `production` environment) that store authenticates as
+the hand-made `external-secrets` role above, which has no write access, so the
+push fails with `403 permission denied`.
+
+The `openchoreo-secrets` policy (read/write on `secrets-mgmt/{data,metadata}/secret/*`)
+is created by Crossplane (`clusters/mgmt/crossplane/vault/openchoreo-secrets.yaml`).
+Attach it to the role by hand: Crossplane's Vault identity can't write
+`auth/kubernetes/role/*`. **Read the current policies first and keep all of
+them**: the write below replaces the role, and the list above may be out of date
+(e.g. chihiro's production secrets are read through this role too).
+
+```bash
+export VAULT_POD="kubectl -n vault exec -it vault-0 --"
+
+# 1. Check the policy exists (Crossplane) and see what the role has today
+$VAULT_POD vault policy read openchoreo-secrets
+$VAULT_POD vault read -field=token_policies auth/kubernetes/role/external-secrets
+
+# 2. Rewrite the role with ALL existing policies + openchoreo-secrets
+#    (replace <existing> with the comma-separated list printed above)
+$VAULT_POD vault write auth/kubernetes/role/external-secrets \
+  bound_service_account_names=vault-auth \
+  bound_service_account_namespaces=external-secrets \
+  policies=<existing>,openchoreo-secrets \
+  ttl=1h
+```
+
+Then re-save the secret in the portal (or wait for the PushSecret's next
+refresh) and check it on mgmt:
+
+```bash
+kubectl -n openchoreo-kv-rpcu get pushsecret
+# STATUS should be Synced
+```
+
 ## Mimir S3 bucket bootstrap (one-time manual)
 
 Grafana Mimir (ns `monitoring`, mgmt) stores its TSDB blocks in a Ceph S3 bucket

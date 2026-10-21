@@ -16,10 +16,12 @@ resources:
   - templates/controlplane-kamaji-v8.yaml
   - templates/controlplane-kamaji-v9.yaml
   - templates/controlplane-kamaji-v10.yaml
+  - templates/controlplane-kamaji-v11.yaml
   - templates/controlplane-kamaji-external.yaml
   - templates/controlplane-kamaji-external-v2.yaml
   - templates/controlplane-kamaji-external-v3.yaml
   - templates/controlplane-kamaji-external-v4.yaml
+  - templates/controlplane-kamaji-external-v5.yaml
   - templates/bootstrap.yaml
   - templates/bootstrap-v2.yaml
   - templates/bootstrap-v3.yaml

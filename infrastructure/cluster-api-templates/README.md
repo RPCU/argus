@@ -313,8 +313,16 @@ This keeps the change explicit, auditable, and safely rolled out via GitOps.
   `externalClusterReference` + Gateway API; used by `clusterclass-kamaji-external`.
   Rotating either rolls the tenant control-plane Deployment (brief tenant API
   blip). Delete `-v7` / `-external` once every KamajiControlPlane has rolled.
-- **Current (2026-09-28): `openstack-kamaji-control-plane-v10` /
-  `-external-v4`** = `-v9` / `-external-v3` + the same relaxed probes on
+- **Current (2026-10-21): `openstack-kamaji-control-plane-v11` /
+  `-external-v5`** = `-v10` / `-external-v4` + more tenant control-plane
+  headroom: kube-apiserver CPU request 750m (was 250m) and memory limit 6144Mi
+  (was ~4.2Gi; the platform tenant apiserver OOMKilled there every ~20 min),
+  controller-manager 100m / 512Mi, scheduler 20m / 256Mi; memory requests
+  unchanged. `clusterclass-kamaji`, `-kamaji-v1` and `-kamaji-external` point
+  at them. Delete `-v10` / `-external-v4` once every KamajiControlPlane has
+  rolled.
+- `openstack-kamaji-control-plane-v10` /
+  `-external-v4` = `-v9` / `-external-v3` + the same relaxed probes on
   `apiServer`, `controllerManager` and `scheduler`. The CAPI Kamaji provider
   (v0.21.0) only copies probes to the TenantControlPlane when
   `deployment.probes` AND all three component `probes` are set; `-v9` /

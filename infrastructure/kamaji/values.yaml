@@ -53,7 +53,12 @@ kamaji-etcd:
       # on a 2-node fleet; 150m is ~1.1x peak with headroom. Memory: 72h
       # P95 ~358Mi / max ~408Mi (above the old 256Mi request); no memory
       # limit on purpose — an OOMKilled member drops every tenant CP's quorum.
-      cpu: 150m
+      # CPU 150m -> 500m (2026-10-22): the request is etcd's cpu.weight. At
+      # 150m it lost every contention fight on its CPU-saturated VM (apply p99
+      # 3-6s even after the raft-timing fix). mgmt workers have room (2+1
+      # members, ~0.9-1.2 cores of requests free each). Production overrides
+      # this in atlas (clusters/production/kamaji.yaml).
+      cpu: 500m
       memory: 368Mi
   # Raft timings for slow, shared storage (2026-10-22). etcd's defaults (100ms
   # heartbeat / 1s election) are tuned for local SSDs; these members fsync to

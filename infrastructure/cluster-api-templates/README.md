@@ -313,15 +313,19 @@ This keeps the change explicit, auditable, and safely rolled out via GitOps.
   `externalClusterReference` + Gateway API; used by `clusterclass-kamaji-external`.
   Rotating either rolls the tenant control-plane Deployment (brief tenant API
   blip). Delete `-v7` / `-external` once every KamajiControlPlane has rolled.
-- **Current (2026-10-22): `openstack-kamaji-control-plane-v12` /
-  `-external-v6`** = `-v11` / `-external-v5` + longer leader-election leases
+- **Current (2026-10-22): `openstack-kamaji-control-plane-v13` /
+  `-external-v7`** = `-v12` / `-external-v6` + kube-scheduler memory limit
+  512Mi (was 256Mi; the production tenant scheduler OOMKilled there twice
+  during the kamaji-etcd roll — informer relist after a datastore disruption).
+  `clusterclass-kamaji`, `-kamaji-v1` and `-kamaji-external` point at them.
+  Delete `-v12` / `-external-v6` once every KamajiControlPlane has rolled.
+- `openstack-kamaji-control-plane-v12` /
+  `-external-v6` = `-v11` / `-external-v5` + longer leader-election leases
   for kube-controller-manager and kube-scheduler (`--leader-elect-lease-duration=60s`,
   `--leader-elect-renew-deadline=40s`, `--leader-elect-retry-period=5s`; k8s
   defaults are 15s/10s/2s). kamaji-etcd stalls (applies up to ~1s, frequent
   leader elections) outlasted the 10s renew deadline, so both components exited
-  with `leaderelection lost` ~1/h on every tenant. `clusterclass-kamaji`,
-  `-kamaji-v1` and `-kamaji-external` point at them. Delete `-v11` /
-  `-external-v5` once every KamajiControlPlane has rolled.
+  with `leaderelection lost` ~1/h on every tenant.
 - `openstack-kamaji-control-plane-v11` /
   `-external-v5` = `-v10` / `-external-v4` + more tenant control-plane
   headroom: kube-apiserver CPU request 750m (was 250m) and memory limit 6144Mi

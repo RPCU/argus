@@ -672,7 +672,12 @@ operator).`capo-variables`is created **manually** (README). ORC is a hard
   UNSET: StatefulSet `volumeClaimTemplates` are immutable and the live etcd
   StatefulSets on mgmt + production were both created without it (inheriting the
   default Cinder SC), so setting it now would fail every upgrade with
-  `updates to statefulset spec ... are forbidden`. See §8 "Kamaji".
+  `updates to statefulset spec ... are forbidden`. kamaji-etcd runs
+  `--heartbeat-interval=500 --election-timeout=5000` (`extraArgs`; defaults
+  100/1000 caused leader-election storms on Ceph-backed members) and a hard
+  `topologySpreadConstraints` (maxSkew 1, `nodeTaintsPolicy: Honor`) on top of
+  the preferred anti-affinity, which alone let all 3 mgmt members share one
+  worker. See §8 "Kamaji".
 - **cluster-api-templates/** — versioned base templates (`OpenStackClusterTemplate`
   / `KubeadmControlPlaneTemplate` / `KubeadmConfigTemplate` / `OpenStackMachineTemplate`),
   split per-component with `-vN` suffixes; per-cluster values are ClusterClass
@@ -1393,14 +1398,26 @@ CreateReplace` with no cert-manager dependency (self-signed webhook certs), so
   mgmt.yaml). KCP doesn't requeue for that timestamp — it acts on its next
   reconcile (≤ resync), so set a time in the past or touch the KCP.
 - **Tenant apiservers on a busy host crashloop** on Kamaji's default probes
-  (1s/3×10s startup); `-v10`/`-external-v4` relax them (current `-v11`/`-external-v5`
-  keep those probes and add CPU/memory headroom, see the templates README). **The CAPI Kamaji
+  (1s/3×10s startup); `-v10`/`-external-v4` relax them (`-v11`/`-external-v5`
+  add CPU/memory headroom; current `-v12`/`-external-v6` add 60s/40s/5s
+  controller-manager + scheduler leader-election leases, see the templates README). **The CAPI Kamaji
   provider drops `deployment.probes` unless `apiServer`/`controllerManager`/
   `scheduler` `probes` are ALL set too** (`-v9`/`-external-v3` only set the
   deployment ones → TCP `probes: nil` → 1s/3× defaults → single tenant
   apiserver SIGKILLed on any VM steal spike → Cilium ICMP-rejects the LB
   NodePort → every workload-cluster controller exits on `no route to host`).
   Check the TCP, not the KCP.
+- **KCP instability = kamaji-etcd latency, not the KCPs** (2026-10-22). Tenant
+  apiservers barely restarted; controller-manager/scheduler exited ~1/h on
+  `leaderelection lost` (15s/10s defaults) whenever mgmt kamaji-etcd stalled
+  (~8000 applies >100ms/h, 14 elections/h, slow fdatasync on Cinder/Ceph, all 3
+  members on one worker VM on lucy at ~91% host CPU). The single-replica
+  production CP (a tenant on mgmt) then failed `/livez` (etcd check), production
+  Kamaji crashlooped on `10.108.0.1:443 connection refused`, and the
+  platform/test tenants lost leases too. Fix: etcd timings + spread
+  (infrastructure/kamaji/values.yaml) and longer leases (`-v12`/`-external-v6`).
+  Production CP replicas deliberately left at 1 (user decision: resources).
+  Diagnose: `kubectl -n kamaji-system logs kamaji-etcd-N --since=1h | grep -c 'took too long'`.
 - **Rollouts pile pods onto the first new node** → descheduler (see
   infrastructure/descheduler).
 
@@ -1445,7 +1462,7 @@ env; pre-commit quality gates; 1-minute Git sync.
 
 ---
 
-**Last Updated**: 2026-10-21 — **OpenChoreo secrets on mgmt**: dedicated ClusterSecretStore `openchoreo-vault` (`clusters/mgmt/crossplane/vault/openchoreo-secrets.yaml`, chihiro-style: Crossplane policy `openchoreo-secrets` + role `openchoreo-vault` on the `clusters/mgmt` mount), used by hestia's mgmt DataPlane. OpenChoreo's portal PushSecrets got 403 through `vault-backend`, whose hand-made `kubernetes` role `external-secrets` is read-only. Earlier the same day: **Tenant control-plane headroom** (`controlplane-kamaji-v11`/`-external-v5`, all three Kamaji ClusterClasses rotated): kube-apiserver CPU request 750m + memory limit 6144Mi, controller-manager 100m/512Mi, scheduler 20m/256Mi. The platform tenant apiserver was OOMKilled at ~4.2Gi every ~20 min on the CPU-saturated production workers. Earlier: 2026-10-04 — **hephaestus images are public**: Glance `publicize_image` allows admin-project members; the `hephaestus-ci` app-cred (and its GitHub secret) is kept. Earlier: **Glance `image_size_cap` 20 GiB** (yaook's 5 GiB default rejected the raw hephaestus-kaas images with 413). Earlier: **`hephaestus-ci` app-cred** (admin project, Glance-only access rules) for the hephaestus workflow that publishes `hephaestus-kaas-*` images for CAPO. Earlier: **CRD roles skip names over 63 chars** (one such CRD, from ESO, failed whole generation batches on production, leaving ~100 CRDs without a role). Earlier: **OIDC guardrails on `platform` and `production`** (`sveltos.argus.rpcu.io/kyverno: enabled` in `clusters/mgmt/clusters/{platform,production}.yaml` — Flux-managed Clusters must carry the label in git, a hand-set label is reverted). Earlier: **Secret grants follow chihiro access groups** (oidc-rbac pushes `kube-system/oidc-access-groups`; Kyverno rewrites every per-namespace grant when it changes). Earlier: **OIDC guardrails switched by the `sveltos.argus.rpcu.io/kyverno` label** (chihiro sets it on every cluster it creates; set by hand elsewhere — #843's managed-by condition reverted). Earlier: **OIDC Secret protection (phase 1b, test only)**: oidc-cluster-admin loses cluster-wide Secret access (per-namespace grants generated by Kyverno only where no Sveltos Secret lives, revoked when one appears); Sveltos Secrets unusable from pods/exec in shared namespaces; the Flux (cluster-admin, no default SA) and External Secrets (ClusterSecretStore) confused-deputy paths closed for OIDC users. Earlier: **OIDC guardrails reworked (phase 1, staged)**: `oidc-cluster-admin` (no impersonate/escalate/bind, no admission-policy writes, per-CRD roles generated by Kyverno) replaces `cluster-admin` for OIDC groups on clusters opted in with `.../kyverno`; Kyverno `ClusterPolicy`s replaced by CEL `ValidatingPolicy`s (mostly native VAPs, OIDC-only matchConditions on Zitadel usernames `<issuer>#<id>`) covering platform namespaces incl. exec/scale/tokens, Sveltos/Kyverno/Flux-takeover add-ons, Nodes, SA escalation and privileged workloads. Earlier: **`NodeCPUHigh` no longer notifies Discord** (warning only; muted by a route + the `always` mute timing, still visible in Grafana). Earlier: **chihiro moved to hestia/OpenChoreo**: argus
+**Last Updated**: 2026-10-22 — **KCP stability**: kamaji-etcd `--heartbeat-interval=500 --election-timeout=5000` + hard spread (maxSkew 1, `nodeTaintsPolicy: Honor`) on mgmt and production; new `controlplane-kamaji-v12`/`-external-v6` (all three Kamaji ClusterClasses rotated) with 60s/40s/5s controller-manager + scheduler leader-election leases. Tenant controller-managers/schedulers (and production's own, hosted on mgmt) restarted ~1/h on `leaderelection lost` during kamaji-etcd stalls. Earlier: 2026-10-21 — **OpenChoreo secrets on mgmt**: dedicated ClusterSecretStore `openchoreo-vault` (`clusters/mgmt/crossplane/vault/openchoreo-secrets.yaml`, chihiro-style: Crossplane policy `openchoreo-secrets` + role `openchoreo-vault` on the `clusters/mgmt` mount), used by hestia's mgmt DataPlane. OpenChoreo's portal PushSecrets got 403 through `vault-backend`, whose hand-made `kubernetes` role `external-secrets` is read-only. Earlier the same day: **Tenant control-plane headroom** (`controlplane-kamaji-v11`/`-external-v5`, all three Kamaji ClusterClasses rotated): kube-apiserver CPU request 750m + memory limit 6144Mi, controller-manager 100m/512Mi, scheduler 20m/256Mi. The platform tenant apiserver was OOMKilled at ~4.2Gi every ~20 min on the CPU-saturated production workers. Earlier: 2026-10-04 — **hephaestus images are public**: Glance `publicize_image` allows admin-project members; the `hephaestus-ci` app-cred (and its GitHub secret) is kept. Earlier: **Glance `image_size_cap` 20 GiB** (yaook's 5 GiB default rejected the raw hephaestus-kaas images with 413). Earlier: **`hephaestus-ci` app-cred** (admin project, Glance-only access rules) for the hephaestus workflow that publishes `hephaestus-kaas-*` images for CAPO. Earlier: **CRD roles skip names over 63 chars** (one such CRD, from ESO, failed whole generation batches on production, leaving ~100 CRDs without a role). Earlier: **OIDC guardrails on `platform` and `production`** (`sveltos.argus.rpcu.io/kyverno: enabled` in `clusters/mgmt/clusters/{platform,production}.yaml` — Flux-managed Clusters must carry the label in git, a hand-set label is reverted). Earlier: **Secret grants follow chihiro access groups** (oidc-rbac pushes `kube-system/oidc-access-groups`; Kyverno rewrites every per-namespace grant when it changes). Earlier: **OIDC guardrails switched by the `sveltos.argus.rpcu.io/kyverno` label** (chihiro sets it on every cluster it creates; set by hand elsewhere — #843's managed-by condition reverted). Earlier: **OIDC Secret protection (phase 1b, test only)**: oidc-cluster-admin loses cluster-wide Secret access (per-namespace grants generated by Kyverno only where no Sveltos Secret lives, revoked when one appears); Sveltos Secrets unusable from pods/exec in shared namespaces; the Flux (cluster-admin, no default SA) and External Secrets (ClusterSecretStore) confused-deputy paths closed for OIDC users. Earlier: **OIDC guardrails reworked (phase 1, staged)**: `oidc-cluster-admin` (no impersonate/escalate/bind, no admission-policy writes, per-CRD roles generated by Kyverno) replaces `cluster-admin` for OIDC groups on clusters opted in with `.../kyverno`; Kyverno `ClusterPolicy`s replaced by CEL `ValidatingPolicy`s (mostly native VAPs, OIDC-only matchConditions on Zitadel usernames `<issuer>#<id>`) covering platform namespaces incl. exec/scale/tokens, Sveltos/Kyverno/Flux-takeover add-ons, Nodes, SA escalation and privileged workloads. Earlier: **`NodeCPUHigh` no longer notifies Discord** (warning only; muted by a route + the `always` mute timing, still visible in Grafana). Earlier: **chihiro moved to hestia/OpenChoreo**: argus
 keeps only its support objects (OIDC chain, session key, Vault push,
 `chihiro-external` SA + `chihiro-viewer-role`); deployment, Service/LB,
 HTTPRoute, Dragonfly and form config removed. Earlier the same day: chihiro secrets pushed to Vault

@@ -55,6 +55,17 @@ kamaji-etcd:
       # limit on purpose — an OOMKilled member drops every tenant CP's quorum.
       cpu: 150m
       memory: 368Mi
+  # Raft timings for slow, shared storage (2026-10-22). etcd's defaults (100ms
+  # heartbeat / 1s election) are tuned for local SSDs; these members fsync to
+  # Ceph RBD (Cinder) from VMs on CPU-saturated hypervisors. mgmt logged ~8000
+  # applies >100ms/h (max ~1s), ~100 slow fdatasync/h and 14 leader elections/h;
+  # each election stalled every tenant apiserver (production's included) long
+  # enough to fail /livez and lose controller leases. Election timeout stays at
+  # 10x heartbeat (etcd guidance). Changing it rolls the StatefulSet one member
+  # at a time (PDB maxUnavailable 1); mixed timings during the roll are fine.
+  extraArgs:
+    - --heartbeat-interval=500
+    - --election-timeout=5000
   # Spread the 3 etcd members across distinct nodes. Without this, node
   # churn (CAPI remediation) packed 2/3 members onto ONE worker (observed
   # 2026-07-07), so a single node degraded EVERY tenant control plane.
@@ -76,3 +87,18 @@ kamaji-etcd:
                   values:
                     - kamaji-etcd
             topologyKey: "kubernetes.io/hostname"
+  # The preferred anti-affinity alone still let ALL 3 mgmt members land on one
+  # worker (observed 2026-10-22: every member fsyncing from the same VM on the
+  # busiest hypervisor). A hard skew of 1 forces 2+1 on a 2-node fleet while
+  # still allowing 3 members on 2 nodes. nodeTaintsPolicy: Honor keeps the
+  # tainted mgmt control-plane node out of the domain count — otherwise it is
+  # an empty domain and the 3rd member could never be scheduled.
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      nodeTaintsPolicy: Honor
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: kamaji-etcd
+          app.kubernetes.io/instance: kamaji

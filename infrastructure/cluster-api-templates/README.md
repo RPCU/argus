@@ -313,14 +313,21 @@ This keeps the change explicit, auditable, and safely rolled out via GitOps.
   `externalClusterReference` + Gateway API; used by `clusterclass-kamaji-external`.
   Rotating either rolls the tenant control-plane Deployment (brief tenant API
   blip). Delete `-v7` / `-external` once every KamajiControlPlane has rolled.
-- **Current (2026-10-21): `openstack-kamaji-control-plane-v11` /
-  `-external-v5`** = `-v10` / `-external-v4` + more tenant control-plane
+- **Current (2026-10-22): `openstack-kamaji-control-plane-v12` /
+  `-external-v6`** = `-v11` / `-external-v5` + longer leader-election leases
+  for kube-controller-manager and kube-scheduler (`--leader-elect-lease-duration=60s`,
+  `--leader-elect-renew-deadline=40s`, `--leader-elect-retry-period=5s`; k8s
+  defaults are 15s/10s/2s). kamaji-etcd stalls (applies up to ~1s, frequent
+  leader elections) outlasted the 10s renew deadline, so both components exited
+  with `leaderelection lost` ~1/h on every tenant. `clusterclass-kamaji`,
+  `-kamaji-v1` and `-kamaji-external` point at them. Delete `-v11` /
+  `-external-v5` once every KamajiControlPlane has rolled.
+- `openstack-kamaji-control-plane-v11` /
+  `-external-v5` = `-v10` / `-external-v4` + more tenant control-plane
   headroom: kube-apiserver CPU request 750m (was 250m) and memory limit 6144Mi
   (was ~4.2Gi; the platform tenant apiserver OOMKilled there every ~20 min),
   controller-manager 100m / 512Mi, scheduler 20m / 256Mi; memory requests
-  unchanged. `clusterclass-kamaji`, `-kamaji-v1` and `-kamaji-external` point
-  at them. Delete `-v10` / `-external-v4` once every KamajiControlPlane has
-  rolled.
+  unchanged.
 - `openstack-kamaji-control-plane-v10` /
   `-external-v4` = `-v9` / `-external-v3` + the same relaxed probes on
   `apiServer`, `controllerManager` and `scheduler`. The CAPI Kamaji provider

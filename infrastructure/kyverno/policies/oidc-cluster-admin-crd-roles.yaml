@@ -2,7 +2,8 @@
 # without listing them: for each CustomResourceDefinition, generate a
 # ClusterRole granting full access to its resources, labelled for aggregation
 # into oidc-cluster-admin (see oidc-rbac.yaml). A new CRD is writable within
-# seconds; deleting the CRD deletes its role (synchronize).
+# seconds. Deleting the CRD leaves its role behind (synchronize is off, see
+# below) — harmless, it only grants access to a resource that no longer exists.
 #
 # Skipped: the Sveltos and Kyverno APIs (the guardrails' own machinery).
 # Admission policies/webhooks are built-in APIs, not CRDs, so they never get
@@ -23,8 +24,15 @@ spec:
   evaluation:
     generateExisting:
       enabled: true
+    # synchronize is OFF on purpose: Kyverno v1.19.1 (still on main) starts the
+    # downstream watcher from the generated object's own resourceVersion
+    # (gpol/dynamic_watcher.go startWatcherWithCache). Once that object is older
+    # than the etcd compaction window, every (re)start gets 410 Expired and is
+    # retried on every trigger, so the background controller spun at ~1 core
+    # and lost its leader lease every ~2h (2026-10-29). Without synchronize no
+    # watcher is started.
     synchronize:
-      enabled: true
+      enabled: false
   webhookConfiguration:
     timeoutSeconds: 5
   matchConstraints:

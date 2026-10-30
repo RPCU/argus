@@ -11,6 +11,10 @@
 # - pods not owned by a ReplicaSet/StatefulSet/DaemonSet (Jobs never reach
 #   readiness, bare pods have no stable identity);
 # - CloudNativePG instances (the operator owns their resources);
+# - Kamaji tenant control planes wherever they run (production's lives in ns
+#   mgmt): Ballast cut kube-apiserver's 6Gi limit to ~3Gi (OOMKilled) and put
+#   a few-MB ephemeral-storage limit on konnectivity-server (pod evicted every
+#   1-2 days). Sized by the TenantControlPlane / ClusterClass instead;
 # - pods that already carry a mode label (explicit opt-in/out wins).
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingAdmissionPolicy
@@ -36,7 +40,8 @@ spec:
       expression: >-
         !has(object.metadata.labels) ||
         !("ballast.tightlinesoftware.com/mode" in object.metadata.labels ||
-          "cnpg.io/cluster" in object.metadata.labels)
+          "cnpg.io/cluster" in object.metadata.labels ||
+          "kamaji.clastix.io/name" in object.metadata.labels)
     - name: no-cpu-limit
       expression: >-
         !object.spec.containers.exists(c, has(c.resources) &&

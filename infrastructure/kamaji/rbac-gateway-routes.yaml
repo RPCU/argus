@@ -1,0 +1,26 @@
+# Kamaji 26.10.x watches HTTPRoutes and GRPCRoutes, but the chart's ClusterRole
+# only grants gateways + tlsroutes. Without these read permissions the
+# controller's caches never sync and it exits after the cache-sync timeout
+# (CrashLoopBackOff on mgmt and production, 2026-11-08). Read-only: drop this
+# once the upstream chart grants them.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kamaji-gateway-routes-reader
+rules:
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["httproutes", "grpcroutes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kamaji-gateway-routes-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kamaji-gateway-routes-reader
+subjects:
+  - kind: ServiceAccount
+    name: kamaji-controller-manager
+    namespace: kamaji-system

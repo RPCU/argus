@@ -5,6 +5,7 @@ resources:
   - helmrelease-crds.yaml
   - helmrelease.yaml
   - etcd-pdb.yaml
+  - rbac-gateway-routes.yaml
 configMapGenerator:
   - name: kamaji-values
     files:

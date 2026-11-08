@@ -14,6 +14,13 @@ serviceAccount:
   create: false
   name: internal-dns
 
+# Ballast measures only, never sizes (see AGENTS.md, Ballast): its ~15.5Mi
+# memory limit for the webhook sidecar (idle p99 x 1.2) is below the Go
+# startup peak, so the container thrashed on page faults without being
+# OOM-killed and never answered /healthz (mgmt CrashLoopBackOff, 2026-11-08).
+podLabels:
+  ballast.tightlinesoftware.com/mode: measure
+
 sources:
   - ingress
   - gateway-httproute

@@ -45,6 +45,13 @@ spec:
           memory: 1Gi
     reportsController:
       replicas: 1
+      # Ballast measures only, never sizes (see AGENTS.md, Ballast): it sized
+      # the CPU request at ~930m (real use, the Kyverno watcher loop), which
+      # fits no production node, so the pod stayed Pending and the 3.9.2
+      # upgrade stalled (2026-11-08). Back to the 10m request until the CPU
+      # use itself is fixed.
+      podLabels:
+        ballast.tightlinesoftware.com/mode: measure
       resources:
         requests:
           cpu: 10m

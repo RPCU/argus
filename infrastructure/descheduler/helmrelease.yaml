@@ -39,6 +39,11 @@ spec:
     kind: Deployment
     deschedulingInterval: 10m
     replicas: 1
+    # Ballast measures only, never sizes (see AGENTS.md, Ballast): it set CPU
+    # request 0 and a 44Mi memory limit from idle usage; v0.37.0 then could not
+    # finish starting before the liveness probe on a busy node (2026-11-08).
+    podLabels:
+      ballast.tightlinesoftware.com/mode: measure
     resources:
       requests:
         cpu: 10m

@@ -46,6 +46,28 @@ spec:
       # profile (e.g. every mimir component is name=mimir,instance=mimir).
       identityLabels:
         - ballast.rpcu.io/workload
+    # Requests only: Ballast never sets limits, so manifest limits (or their
+    # absence) stay authoritative. The chart default also set memory and
+    # ephemeral-storage LIMITS at idle p99 x 1.2, below startup / burst peaks:
+    # Go pods thrashed on page faults (external-dns webhook ~15Mi), Kamaji
+    # 26.10 and Jellyfin transcodes were OOMKilled, konnectivity was evicted
+    # on a few-MB ephemeral limit (2026-10-29 .. 2026-11-08). Same entries as
+    # the chart default minus the two `field: limit` ones (Helm replaces lists).
+    defaultClusterResourcePolicy:
+      metrics:
+        - resource: cpu
+          field: request
+          aggregation: avg
+          headroom: "1.25"
+        - resource: memory
+          field: request
+          aggregation: p75
+          headroom: "1.0"
+        - resource: ephemeral-storage
+          field: request
+          source: kubelet-summary
+          aggregation: p90
+          headroom: "1.0"
   postRenderers:
     - kustomize:
         patches:

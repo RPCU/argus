@@ -40,3 +40,17 @@ spec:
   valuesFrom:
     - kind: ConfigMap
       name: kamaji-values
+  # Ballast measures only, never sizes (see AGENTS.md, Ballast). It cut the
+  # memory limit to 152-213Mi from 26.9.x usage; 26.10.x watches more kinds
+  # and was OOMKilled ~20s after becoming leader (2026-11-08). The chart has no
+  # podLabels value, so the label is added by post-render.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+              name: kamaji
+            patch: |
+              - op: add
+                path: /spec/template/metadata/labels/ballast.tightlinesoftware.com~1mode
+                value: measure

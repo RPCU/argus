@@ -10,7 +10,7 @@ metadata:
   namespace: capo-system
 spec:
   # renovate: datasource=github-releases depName=kubernetes-sigs/cluster-api-provider-openstack
-  version: v0.15.0
+  version: v0.15.1
   # 72h Mimir: mem P95/max ~98Mi, CPU P95 ~14m (was BestEffort).
   # Replaces the provider manifest's container resources wholesale (no CPU
   # limit — request-only policy, §8).

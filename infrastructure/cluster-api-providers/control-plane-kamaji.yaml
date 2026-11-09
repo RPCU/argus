@@ -6,7 +6,7 @@ metadata:
   namespace: capi-kamaji-control-plane-system
 spec:
   # renovate: datasource=github-releases depName=clastix/cluster-api-control-plane-provider-kamaji
-  version: v0.21.0
+  version: v0.22.0
   # 72h Mimir: mem P95 ~124Mi / max ~126Mi against the upstream 128Mi limit,
   # CPU P95 ~193m against a 500m limit (inflated by ~330 restarts/3d — each
   # restart re-syncs caches). The restarts are leader-election losses (lease
